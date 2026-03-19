@@ -92,7 +92,7 @@ export default function IngresosEgresos() {
       <PageHeader title="Ingresos / Egresos" subtitle="Seguimiento financiero del negocio" />
 
       {/* KPIs */}
-      <div className="grid grid-cols-4 gap-4 mb-6">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
         <KpiCard label="Ingresos" value={`$${totalIn.toLocaleString()}`} trend="up" sub={`${filtered.filter(t => t.type === 'ingreso').length} transacciones`} />
         <KpiCard label="Egresos"  value={`$${totalOut.toLocaleString()}`} trend="down" sub={`${filtered.filter(t => t.type === 'egreso').length} transacciones`} />
         <KpiCard label="Balance Neto" value={`$${Math.abs(balance).toLocaleString()}`} trend={balance >= 0 ? 'up' : 'down'}
@@ -101,7 +101,7 @@ export default function IngresosEgresos() {
       </div>
 
       {/* Charts */}
-      <div className="grid grid-cols-[1fr_320px] gap-4 mb-6">
+      <div className="grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-4 mb-6">
         <GlassCard padding>
           <h3 className="text-sm font-medium text-gray-400 mb-4">Ingresos vs Egresos por semana</h3>
           <ResponsiveContainer width="100%" height={200}>
@@ -149,12 +149,12 @@ export default function IngresosEgresos() {
 
       {/* Filters */}
       <div className="flex flex-wrap gap-3 mb-4">
-        <div className="flex items-center gap-2">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2 w-full sm:w-auto">
           <input type="date" value={dateStart} onChange={e => setDateStart(e.target.value)}
-            className="rounded-xl border border-white/10 bg-white/5 px-3 py-1.5 text-sm text-gray-300 focus:border-yellow-500/50 focus:outline-none" />
-          <span className="text-gray-600">–</span>
+            className="w-full sm:w-auto rounded-xl border border-white/10 bg-white/5 px-3 py-1.5 text-sm text-gray-300 focus:border-yellow-500/50 focus:outline-none" />
+          <span className="hidden sm:inline text-gray-600">–</span>
           <input type="date" value={dateEnd} onChange={e => setDateEnd(e.target.value)}
-            className="rounded-xl border border-white/10 bg-white/5 px-3 py-1.5 text-sm text-gray-300 focus:border-yellow-500/50 focus:outline-none" />
+            className="w-full sm:w-auto rounded-xl border border-white/10 bg-white/5 px-3 py-1.5 text-sm text-gray-300 focus:border-yellow-500/50 focus:outline-none" />
         </div>
         <div className="flex gap-2">
           {(['all', 'ingreso', 'egreso'] as const).map(t => (
@@ -173,15 +173,15 @@ export default function IngresosEgresos() {
       </div>
 
       {/* Table */}
-      <div className="rounded-2xl border border-white/8 bg-white/[0.02] overflow-hidden">
+      <div className="rounded-2xl border border-white/8 bg-white/[0.02] overflow-hidden overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-white/8">
               <th className="text-left px-5 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider">Fecha</th>
               <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider">Tipo</th>
-              <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider">Categoría</th>
+              <th className="hidden sm:table-cell text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider">Categoría</th>
               <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider">Descripción</th>
-              <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider">Orden</th>
+              <th className="hidden sm:table-cell text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider">Orden</th>
               <th className="text-right px-5 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider">Monto</th>
             </tr>
           </thead>
@@ -196,9 +196,9 @@ export default function IngresosEgresos() {
                     {t.type === 'ingreso' ? '↑ Ingreso' : '↓ Egreso'}
                   </Badge>
                 </td>
-                <td className="px-4 py-3 text-gray-400 text-xs">{t.category ?? '—'}</td>
-                <td className="px-4 py-3 text-gray-300 max-w-[260px] truncate">{t.description ?? '—'}</td>
-                <td className="px-4 py-3 text-gray-500 text-xs font-mono">
+                <td className="hidden sm:table-cell px-4 py-3 text-gray-400 text-xs">{t.category ?? '—'}</td>
+                <td className="px-4 py-3 text-gray-300 truncate max-w-[160px] sm:max-w-[260px]">{t.description ?? '—'}</td>
+                <td className="hidden sm:table-cell px-4 py-3 text-gray-500 text-xs font-mono">
                   {t.order_id ? `#${t.order_id}` : '—'}
                 </td>
                 <td className={cn('px-5 py-3 text-right font-semibold', t.type === 'ingreso' ? 'text-green-400' : 'text-red-400')}>

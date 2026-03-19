@@ -115,13 +115,13 @@ export default function Documentos() {
       />
 
       {/* Filters */}
-      <div className="flex gap-3 mb-6">
-        <div className="relative flex-1 max-w-xs">
+      <div className="flex flex-wrap gap-3 mb-6">
+        <div className="relative w-full sm:flex-1 sm:max-w-xs">
           <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" />
           <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Buscar documento..."
             className="w-full rounded-xl border border-white/10 bg-white/5 pl-9 pr-3 py-2 text-sm text-gray-100 placeholder:text-gray-500 focus:border-yellow-500/50 focus:outline-none focus:ring-2 focus:ring-yellow-500/20" />
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           {['all', 'contrato', 'factura', 'recibo', 'otro'].map(t => (
             <button key={t} onClick={() => setTypeFilter(t)}
               className={cn('rounded-xl px-3 py-2 text-sm transition-colors capitalize',
@@ -139,7 +139,7 @@ export default function Documentos() {
             action={<Button variant="primary" size="md" onClick={() => setShowModal(true)}><Upload size={16} /> Subir</Button>} />
         ) : (
           <motion.div variants={stagger} initial="hidden" animate="show"
-            className="grid grid-cols-4 gap-4">
+            className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
             {filtered.map(doc => {
               const tc = typeConfig[doc.type ?? 'otro'] ?? typeConfig['otro']
               return (
@@ -228,7 +228,7 @@ export default function Documentos() {
           <Input label="Nombre del documento *" id="doc-name" value={uploadForm.name}
             onChange={e => setUploadForm(f => ({ ...f, name: e.target.value }))} />
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div className="flex flex-col gap-1.5">
               <label className="text-sm font-medium text-gray-300">Tipo</label>
               <select value={uploadForm.type} onChange={e => setUploadForm(f => ({ ...f, type: e.target.value }))}

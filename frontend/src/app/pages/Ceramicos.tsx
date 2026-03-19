@@ -73,27 +73,29 @@ export default function Ceramicos() {
       />
 
       {/* Filter tabs */}
-      <div className="flex gap-2 mb-6">
-        {FILTERS.map(f => (
-          <button key={f.key} onClick={() => setFilter(f.key)}
-            className={cn(
-              'flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-medium transition-all duration-200',
-              filter === f.key
-                ? 'bg-yellow-500/15 text-yellow-400 ring-1 ring-yellow-500/30'
-                : 'bg-white/5 text-gray-400 hover:bg-white/8 hover:text-gray-200'
-            )}>
-            {f.label}
-            <motion.span
-              key={counts[f.key]}
-              initial={{ scale: 1.2 }} animate={{ scale: 1 }}
+      <div className="overflow-x-auto pb-1 -mb-1 mb-6">
+        <div className="flex gap-2 min-w-max">
+          {FILTERS.map(f => (
+            <button key={f.key} onClick={() => setFilter(f.key)}
               className={cn(
-                'rounded-full px-1.5 py-0.5 text-xs',
-                filter === f.key ? 'bg-yellow-500/25 text-yellow-300' : 'bg-white/10 text-gray-500'
+                'flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-medium whitespace-nowrap transition-all duration-200',
+                filter === f.key
+                  ? 'bg-yellow-500/15 text-yellow-400 ring-1 ring-yellow-500/30'
+                  : 'bg-white/5 text-gray-400 hover:bg-white/8 hover:text-gray-200'
               )}>
-              {counts[f.key]}
-            </motion.span>
-          </button>
-        ))}
+              {f.label}
+              <motion.span
+                key={counts[f.key]}
+                initial={{ scale: 1.2 }} animate={{ scale: 1 }}
+                className={cn(
+                  'rounded-full px-1.5 py-0.5 text-xs',
+                  filter === f.key ? 'bg-yellow-500/25 text-yellow-300' : 'bg-white/10 text-gray-500'
+                )}>
+                {counts[f.key]}
+              </motion.span>
+            </button>
+          ))}
+        </div>
       </div>
 
       <AnimatePresence mode="popLayout">
@@ -102,10 +104,10 @@ export default function Ceramicos() {
           variants={stagger}
           initial="hidden"
           animate="show"
-          className="grid grid-cols-3 gap-4"
+          className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4"
         >
           {filtered.length === 0 ? (
-            <div className="col-span-3">
+            <div className="col-span-1 sm:col-span-2 lg:col-span-3">
               <EmptyState icon={Sparkles} title="Sin tratamientos" description={`No hay cerámicos en la categoría "${FILTERS.find(f => f.key === filter)?.label}"`} />
             </div>
           ) : (

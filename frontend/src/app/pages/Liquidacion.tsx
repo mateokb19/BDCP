@@ -103,7 +103,7 @@ export default function LiquidacionPage() {
           </button>
         </div>
 
-        <div className="grid grid-cols-[1fr_320px] gap-5">
+        <div className="grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-5">
           {/* Main card */}
           <div className="space-y-5">
             {/* Operator header */}
@@ -241,7 +241,7 @@ export default function LiquidacionPage() {
     <div className="max-w-5xl mx-auto">
       <PageHeader title="Liquidación de Operarios" subtitle="Gestiona el pago de comisiones" />
 
-      <div className="grid grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
         {mockOperators.filter(o => o.active).map(operator => {
           const opLiqs    = liquidations.filter(l => l.operator_id === operator.id)
           const pending   = opLiqs.filter(l => l.status === 'pendiente')

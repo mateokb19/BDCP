@@ -267,7 +267,7 @@ export default function IngresarServicio() {
                 </button>
                 <span className="text-gray-700">|</span>
                 <span className="text-sm text-gray-300">
-                  {vehicleType === 'automovil' ? '🚗 Automóvil' : vehicleType === 'camion_estandar' ? '🚛 Camioneta Estándar' : '🚚 Camioneta XL'}
+                  {vehicleType === 'automovil' ? 'Automóvil' : vehicleType === 'camion_estandar' ? 'Camioneta Estándar' : 'Camioneta XL'}
                 </span>
               </div>
 
@@ -356,14 +356,24 @@ export default function IngresarServicio() {
 
                   <GlassCard padding className="space-y-3">
                     <h3 className="text-sm font-semibold text-gray-300 uppercase tracking-wider">Cliente</h3>
-                    <Input label="Nombre *" id="client-name" value={form.clientName}
-                      placeholder="Nombre completo"
-                      onChange={e => setForm(f => ({ ...f, clientName: e.target.value }))}
-                      leftIcon={<User size={14} />} />
-                    <Input label="Teléfono *" id="client-phone" value={form.clientPhone}
-                      placeholder="555-1234"
-                      onChange={e => setForm(f => ({ ...f, clientPhone: e.target.value }))}
-                      leftIcon={<Phone size={14} />} />
+                    <div className="space-y-1">
+                      <Input label="Nombre *" id="client-name" value={form.clientName}
+                        placeholder="Nombre completo"
+                        onChange={e => setForm(f => ({ ...f, clientName: e.target.value.slice(0, 60) }))}
+                        leftIcon={<User size={14} />} />
+                      {form.clientName.length >= 60 && (
+                        <p className="text-[11px] text-red-400 pl-1">Máximo 60 caracteres</p>
+                      )}
+                    </div>
+                    <div className="space-y-1">
+                      <Input label="Teléfono *" id="client-phone" value={form.clientPhone}
+                        placeholder="555-1234"
+                        onChange={e => setForm(f => ({ ...f, clientPhone: e.target.value.slice(0, 15) }))}
+                        leftIcon={<Phone size={14} />} />
+                      {form.clientPhone.length >= 15 && (
+                        <p className="text-[11px] text-red-400 pl-1">Máximo 15 caracteres</p>
+                      )}
+                    </div>
                     <Select
                       label="Operario (opcional)"
                       value={form.operatorId ? String(form.operatorId) : '0'}

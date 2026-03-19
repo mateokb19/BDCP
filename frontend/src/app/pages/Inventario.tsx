@@ -17,14 +17,14 @@ import type { InventoryItem } from '@/types'
 const stagger = { hidden: {}, show: { transition: { staggerChildren: 0.04 } } }
 const row = { hidden: { opacity: 0, y: 8 }, show: { opacity: 1, y: 0, transition: { duration: 0.2 } } }
 
-function StockBar({ quantity, minStock }: { quantity: number; minStock: number }) {
+function StockBar({ quantity, minStock, wide }: { quantity: number; minStock: number; wide?: boolean }) {
   const max   = Math.max(minStock * 3, quantity)
   const pct   = Math.min((quantity / max) * 100, 100)
   const color = quantity <= minStock ? 'bg-red-500' : quantity <= minStock * 1.5 ? 'bg-yellow-500' : 'bg-green-500'
 
   return (
     <div className="flex items-center gap-2">
-      <div className="h-1.5 w-20 rounded-full bg-white/10 overflow-hidden">
+      <div className={cn('h-1.5 rounded-full bg-white/10 overflow-hidden', wide ? 'flex-1' : 'w-20')}>
         <motion.div
           initial={{ width: 0 }}
           animate={{ width: `${pct}%` }}
@@ -123,23 +123,25 @@ export default function Inventario() {
       </AnimatePresence>
 
       {/* Filters */}
-      <div className="flex gap-3 mb-5">
-        <div className="relative flex-1 max-w-xs">
+      <div className="flex flex-col sm:flex-row gap-3 mb-5">
+        <div className="relative w-full sm:flex-1 sm:max-w-xs">
           <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" />
           <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Buscar ítem..."
             className="w-full rounded-xl border border-white/10 bg-white/5 pl-9 pr-3 py-2 text-sm text-gray-100 placeholder:text-gray-500 focus:border-yellow-500/50 focus:outline-none focus:ring-2 focus:ring-yellow-500/20" />
         </div>
-        <div className="flex gap-2">
-          <button onClick={() => setCatFilter('all')}
-            className={cn('rounded-xl px-3 py-2 text-sm transition-colors', catFilter === 'all' ? 'bg-yellow-500/15 text-yellow-400' : 'bg-white/5 text-gray-400 hover:bg-white/8')}>
-            Todos
-          </button>
-          {mockInventoryCategories.map(cat => (
-            <button key={cat.id} onClick={() => setCatFilter(cat.id)}
-              className={cn('rounded-xl px-3 py-2 text-sm transition-colors', catFilter === cat.id ? 'bg-yellow-500/15 text-yellow-400' : 'bg-white/5 text-gray-400 hover:bg-white/8')}>
-              {cat.name}
+        <div className="overflow-x-auto pb-1 -mb-1 shrink-0">
+          <div className="flex gap-2 min-w-max">
+            <button onClick={() => setCatFilter('all')}
+              className={cn('rounded-xl px-3 py-2 text-sm whitespace-nowrap transition-colors', catFilter === 'all' ? 'bg-yellow-500/15 text-yellow-400' : 'bg-white/5 text-gray-400 hover:bg-white/8')}>
+              Todos
             </button>
-          ))}
+            {mockInventoryCategories.map(cat => (
+              <button key={cat.id} onClick={() => setCatFilter(cat.id)}
+                className={cn('rounded-xl px-3 py-2 text-sm whitespace-nowrap transition-colors', catFilter === cat.id ? 'bg-yellow-500/15 text-yellow-400' : 'bg-white/5 text-gray-400 hover:bg-white/8')}>
+                {cat.name}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
 
@@ -149,14 +151,14 @@ export default function Inventario() {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-white/8">
-                <th className="text-left px-5 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider">Producto</th>
-                <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider">Categoría</th>
-                <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider">Stock</th>
-                <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider">Mínimo</th>
-                <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider">Unidad</th>
-                <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider">Costo/u</th>
-                <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider">Actualizado</th>
-                <th className="px-4 py-3" />
+                <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider">Producto</th>
+                <th className="hidden sm:table-cell text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider">Categoría</th>
+                <th className="hidden sm:table-cell text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider">Stock</th>
+                <th className="hidden sm:table-cell text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider">Mínimo</th>
+                <th className="hidden md:table-cell text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider">Unidad</th>
+                <th className="hidden md:table-cell text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider">Costo/u</th>
+                <th className="hidden lg:table-cell text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider">Actualizado</th>
+                <th className="px-3 py-3 w-10" />
               </tr>
             </thead>
             <motion.tbody variants={stagger} initial="hidden" animate="show">
@@ -168,30 +170,34 @@ export default function Inventario() {
                   return (
                     <motion.tr key={item.id} variants={row}
                       className="border-b border-white/5 hover:bg-white/[0.02] transition-colors">
-                      <td className="px-5 py-3">
-                        <div className="flex items-center gap-2">
-                          {isLow && <div className="w-1.5 h-1.5 rounded-full bg-red-500 shrink-0" />}
-                          <div>
-                            <div className="text-white font-medium">{item.name}</div>
-                            {item.description && <div className="text-xs text-gray-500">{item.description}</div>}
+                      <td className="px-4 py-3">
+                        <div className="flex items-start gap-2">
+                          {isLow && <div className="w-1.5 h-1.5 rounded-full bg-red-500 shrink-0 mt-1.5" />}
+                          <div className="min-w-0 flex-1">
+                            <div className="text-white font-medium leading-snug">{item.name}</div>
+                            {item.description && <div className="text-xs text-gray-500 mt-0.5">{item.description}</div>}
+                            {/* Stock bar visible only on mobile */}
+                            <div className="mt-2 sm:hidden">
+                              <StockBar quantity={item.quantity} minStock={item.min_stock} wide />
+                            </div>
                           </div>
                         </div>
                       </td>
-                      <td className="px-4 py-3">
+                      <td className="hidden sm:table-cell px-4 py-3">
                         <Badge variant="default">{getInventoryCategoryName(item.category_id)}</Badge>
                       </td>
-                      <td className="px-4 py-3">
+                      <td className="hidden sm:table-cell px-4 py-3">
                         <StockBar quantity={item.quantity} minStock={item.min_stock} />
                       </td>
-                      <td className="px-4 py-3 text-gray-400">{item.min_stock}</td>
-                      <td className="px-4 py-3 text-gray-400">{item.unit}</td>
-                      <td className="px-4 py-3 text-gray-400">
+                      <td className="hidden sm:table-cell px-4 py-3 text-gray-400">{item.min_stock}</td>
+                      <td className="hidden md:table-cell px-4 py-3 text-gray-400">{item.unit}</td>
+                      <td className="hidden md:table-cell px-4 py-3 text-gray-400">
                         {item.cost_per_unit != null ? `$${item.cost_per_unit}` : '—'}
                       </td>
-                      <td className="px-4 py-3 text-gray-500 text-xs">
+                      <td className="hidden lg:table-cell px-4 py-3 text-gray-500 text-xs">
                         {format(parseISO(item.updated_at), 'd MMM', { locale: es })}
                       </td>
-                      <td className="px-4 py-3">
+                      <td className="px-3 py-3">
                         <button onClick={() => openEdit(item)}
                           className="p-1.5 rounded-lg text-gray-500 hover:text-yellow-400 hover:bg-yellow-500/10 transition-colors">
                           <Edit2 size={14} />
@@ -219,11 +225,11 @@ export default function Inventario() {
             </select>
           </div>
           <Input label="Descripción" id="item-desc" value={form.description ?? ''} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} />
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <Input label="Cantidad" id="item-qty" type="number" value={String(form.quantity)} onChange={e => setForm(f => ({ ...f, quantity: Number(e.target.value) }))} />
             <Input label="Stock Mínimo" id="item-min" type="number" value={String(form.min_stock)} onChange={e => setForm(f => ({ ...f, min_stock: Number(e.target.value) }))} />
           </div>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <Input label="Unidad" id="item-unit" value={form.unit} placeholder="litros, unidades, kg..." onChange={e => setForm(f => ({ ...f, unit: e.target.value }))} />
             <Input label="Costo por unidad" id="item-cost" type="number" value={String(form.cost_per_unit ?? '')} onChange={e => setForm(f => ({ ...f, cost_per_unit: e.target.value ? Number(e.target.value) : undefined }))} />
           </div>

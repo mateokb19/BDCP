@@ -98,7 +98,7 @@ export default function CalendarioCitas() {
         }
       />
 
-      <div className="grid grid-cols-[380px_1fr] gap-5">
+      <div className="grid grid-cols-1 md:grid-cols-[380px_1fr] gap-5">
         {/* Calendar */}
         <GlassCard padding={false} className="overflow-hidden">
           {/* Month nav */}
@@ -205,7 +205,7 @@ export default function CalendarioCitas() {
                           <StatusBadge status={appt.status} />
                         </div>
 
-                        <div className="grid grid-cols-2 gap-2 text-sm">
+                        <div className="flex flex-col gap-1.5 text-sm">
                           {appt.time && (
                             <div className="flex items-center gap-1.5 text-gray-400">
                               <Clock size={13} /> {appt.time}
@@ -248,7 +248,7 @@ export default function CalendarioCitas() {
       {/* Add Appointment Modal */}
       <Modal open={showModal} onClose={() => setShowModal(false)} title="Nueva Cita" size="lg">
         <div className="p-6 space-y-4">
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <Input label="Fecha *" id="appt-date" type="date" value={newAppt.date}
               onChange={e => setNewAppt(p => ({ ...p, date: e.target.value }))} />
             <Input label="Hora" id="appt-time" type="time" value={newAppt.time}
@@ -257,7 +257,7 @@ export default function CalendarioCitas() {
 
           <div className="flex flex-col gap-1.5">
             <label className="text-sm font-medium text-gray-300">Tipo de Vehículo</label>
-            <div className="grid grid-cols-3 gap-2">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
               {(['automovil', 'camion_estandar', 'camion_xl'] as VehicleType[]).map(t => (
                 <button key={t} onClick={() => setNewAppt(p => ({ ...p, vehicleType: t }))}
                   className={cn('rounded-xl border py-2 px-3 text-sm transition-colors', newAppt.vehicleType === t
@@ -269,7 +269,7 @@ export default function CalendarioCitas() {
             </div>
           </div>
 
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <Input label="Placa" id="appt-plate" value={newAppt.plate} placeholder="ABC-123"
               onChange={e => setNewAppt(p => ({ ...p, plate: e.target.value.toUpperCase() }))} />
             <Input label="Marca" id="appt-brand" value={newAppt.brand} placeholder="Toyota"
@@ -278,7 +278,7 @@ export default function CalendarioCitas() {
               onChange={e => setNewAppt(p => ({ ...p, model: e.target.value }))} />
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <Input label="Nombre Cliente *" id="appt-client" value={newAppt.clientName}
               onChange={e => setNewAppt(p => ({ ...p, clientName: e.target.value }))} />
             <Input label="Teléfono" id="appt-phone" value={newAppt.clientPhone} placeholder="555-1234"
