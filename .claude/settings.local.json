@@ -1,0 +1,30 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm install:*)",
+      "Bash(npx tsc:*)",
+      "Bash(pip --version)",
+      "Bash(pip install:*)",
+      "Bash(curl -s -L http://localhost:8000/)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code} %{redirect_url}\" http://localhost:8000/)",
+      "Bash(curl -sv http://localhost:8000/)",
+      "Bash(python -c \"from app.main import app; print\\([r.path for r in app.routes]\\)\")",
+      "Bash(netstat -ano)",
+      "Bash(taskkill /PID 8264 /PID 16696 /PID 21032 /F 2)",
+      "Bash(1 sleep:*)",
+      "Bash(kill 8264 16696 21032 2)",
+      "Bash(powershell -Command \"Stop-Process -Id 8264,16696,21032 -Force\" 2)",
+      "Bash(python -c \":*)",
+      "Bash(powershell -Command \"Get-Service -Name ''postgresql*'' 2>&1 | Select-Object Name,Status,DisplayName\")",
+      "Bash(powershell -Command \"Get-Command psql -ErrorAction SilentlyContinue | Select-Object Source\")",
+      "Bash(powershell -Command \"Get-ChildItem ''C:\\\\Program Files\\\\PostgreSQL'' -ErrorAction SilentlyContinue | Select-Object Name\")",
+      "Bash(python seed_dev.py)",
+      "Bash(powershell.exe -NonInteractive -Command \"Stop-Process -Id 21032,24560,16696 -Force -ErrorAction SilentlyContinue; Write-Output ''Done''\")",
+      "Bash(curl -sv http://localhost:8001/)",
+      "Bash(docker --version)",
+      "Bash(docker compose:*)",
+      "Bash(powershell.exe -NonInteractive -Command \"docker --version; docker compose version\")",
+      "WebFetch(domain:bogotadetailingcenter.com)"
+    ]
+  }
+}
