@@ -1,0 +1,47 @@
+# ── Python / FastAPI ──────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+.eggs/
+.venv/
+venv/
+env/
+*.env
+.env.*
+!.env.example
+
+# ── Node / Vite / React ───────────────────────────────────────────────────────
+node_modules/
+dist/
+.vite/
+*.local
+
+# ── Docker ────────────────────────────────────────────────────────────────────
+# Don't ignore docker-compose.yml — it's part of the project
+# Ignore any override files with secrets
+docker-compose.override.yml
+
+# ── IDE / OS ─────────────────────────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ── Logs ─────────────────────────────────────────────────────────────────────
+*.log
+logs/
+
+# ── Database ─────────────────────────────────────────────────────────────────
+*.sqlite
+*.db
+
+# ── Uploads / generated files ────────────────────────────────────────────────
+backend/uploads/
