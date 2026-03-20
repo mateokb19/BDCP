@@ -262,11 +262,18 @@ export default function EstadoPatio() {
                 </div>
 
                 <div className="flex-1 p-3 space-y-3 min-h-[200px]">
-                  <AnimatePresence>
+                  <AnimatePresence mode="popLayout">
                     {colEntries.length === 0 ? (
-                      <div className="flex items-center justify-center h-20">
+                      <motion.div
+                        key="empty"
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                        transition={{ duration: 0.2 }}
+                        className="flex items-center justify-center h-20"
+                      >
                         <p className="text-xs text-gray-700">Sin vehículos</p>
-                      </div>
+                      </motion.div>
                     ) : (
                       colEntries.map(entry => {
                         const opName = entry.order?.operator_id

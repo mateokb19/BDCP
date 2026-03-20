@@ -139,6 +139,7 @@ export default function IngresarServicio() {
     if (!form.clientPhone)  { toast.error('El teléfono del cliente es obligatorio'); return }
     if (form.selectedServices.length === 0) { toast.error('Selecciona al menos un servicio'); return }
     goTo(3)
+    window.scrollTo({ top: 0, behavior: 'smooth' })
   }
 
   function toggleService(id: number) {
@@ -367,8 +368,9 @@ export default function IngresarServicio() {
                     </div>
                     <div className="space-y-1">
                       <Input label="Teléfono *" id="client-phone" value={form.clientPhone}
-                        placeholder="555-1234"
-                        onChange={e => setForm(f => ({ ...f, clientPhone: e.target.value.slice(0, 15) }))}
+                        placeholder="+57 555-1234"
+                        inputMode="tel"
+                        onChange={e => setForm(f => ({ ...f, clientPhone: e.target.value.replace(/[^0-9+]/g, '').slice(0, 15) }))}
                         leftIcon={<Phone size={14} />} />
                       {form.clientPhone.length >= 15 && (
                         <p className="text-[11px] text-red-400 pl-1">Máximo 15 caracteres</p>
@@ -467,17 +469,17 @@ export default function IngresarServicio() {
               <p className="text-gray-400 text-center mb-8">Revisa los detalles antes de guardar</p>
 
               <GlassCard padding className="space-y-5">
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
                     <p className="text-xs text-gray-500 uppercase tracking-wider mb-1">Vehículo</p>
-                    <p className="text-white font-medium">{form.brand} {form.model}</p>
+                    <p className="text-white font-medium break-words">{form.brand} {form.model}</p>
                     <p className="text-gray-400 text-sm">{form.plate}{form.color ? ` · ${form.color}` : ''}</p>
                     <p className="text-gray-500 text-sm mt-1">{TODAY}</p>
                   </div>
                   <div>
                     <p className="text-xs text-gray-500 uppercase tracking-wider mb-1">Cliente</p>
-                    <p className="text-white font-medium">{form.clientName}</p>
-                    <p className="text-gray-400 text-sm">{form.clientPhone}</p>
+                    <p className="text-white font-medium break-words">{form.clientName}</p>
+                    <p className="text-gray-400 text-sm break-all">{form.clientPhone}</p>
                     {form.operatorId && (
                       <p className="text-gray-400 text-sm mt-1">
                         Operario: {operators.find(o => o.id === form.operatorId)?.name}
