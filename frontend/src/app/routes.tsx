@@ -8,6 +8,7 @@ import Ceramicos         from '@/app/pages/Ceramicos'
 import Liquidacion       from '@/app/pages/Liquidacion'
 import IngresosEgresos   from '@/app/pages/IngresosEgresos'
 import Documentos        from '@/app/pages/Documentos'
+import Historial         from '@/app/pages/Historial'
 
 export const router = createBrowserRouter([
   {
@@ -22,6 +23,7 @@ export const router = createBrowserRouter([
       { path: 'liquidacion',       element: <Liquidacion /> },
       { path: 'ingresos-egresos',  element: <IngresosEgresos /> },
       { path: 'documentos',        element: <Documentos /> },
+      { path: 'historial',         element: <Historial /> },
     ],
   },
 ])

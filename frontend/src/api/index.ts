@@ -84,6 +84,39 @@ export interface PatioPatchPayload {
   notes?: string | null
 }
 
+export interface ApiHistorialItem {
+  service_name:     string
+  service_category: string
+  unit_price:       string
+  quantity:         number
+  subtotal:         string
+}
+
+export interface ApiHistorialVehicle {
+  plate: string
+  brand?: string
+  model?: string
+  color?: string
+  type:   string
+  client?: { name: string; phone?: string }
+}
+
+export interface ApiHistorialOperator {
+  id:   number
+  name: string
+}
+
+export interface ApiHistorialEntry {
+  id:           number
+  order_number: string
+  date:         string
+  status:       string
+  total?:       string
+  vehicle?:     ApiHistorialVehicle
+  items:        ApiHistorialItem[]
+  operator?:    ApiHistorialOperator
+}
+
 // ── API methods ────────────────────────────────────────────────────────────────
 
 export const api = {
@@ -107,5 +140,14 @@ export const api = {
       apiFetch<ApiPatioEntry>(`/patio/${id}/advance`, { method: 'POST' }),
     edit: (id: number, payload: PatioPatchPayload) =>
       apiFetch<ApiPatioEntry>(`/patio/${id}`, { method: 'PATCH', body: JSON.stringify(payload) }),
+  },
+  history: {
+    list: (params?: { date_filter?: string; search?: string }) => {
+      const qs = new URLSearchParams()
+      if (params?.date_filter) qs.set('date_filter', params.date_filter)
+      if (params?.search)      qs.set('search', params.search)
+      const query = qs.toString() ? `?${qs}` : ''
+      return apiFetch<ApiHistorialEntry[]>(`/history${query}`)
+    },
   },
 }

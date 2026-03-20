@@ -1,5 +1,6 @@
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy import or_, func
 from sqlalchemy.orm import Session, joinedload
 from app.database import get_db
 from app import models, schemas
@@ -45,6 +46,15 @@ def list_patio(
         except ValueError:
             raise HTTPException(status_code=422, detail=f"Estado inválido: {status}")
         q = q.filter(models.PatioEntry.status == status_enum)
+    else:
+        # Show all non-delivered entries + only today's delivered entries
+        today = date.today()
+        q = q.filter(
+            or_(
+                models.PatioEntry.status != models.PatioStatusEnum.entregado,
+                func.date(models.PatioEntry.delivered_at) == today,
+            )
+        )
     return q.order_by(models.PatioEntry.entered_at.desc()).all()
 
 

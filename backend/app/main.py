@@ -4,7 +4,7 @@ from fastapi.responses import RedirectResponse
 
 from app.database import engine, SessionLocal
 from app import models
-from app.routers import services, operators, vehicles, orders, patio
+from app.routers import services, operators, vehicles, orders, patio, history
 
 # Create tables (no-op if already exist)
 models.Base.metadata.create_all(bind=engine)
@@ -66,6 +66,7 @@ app.include_router(operators.router, prefix=API)
 app.include_router(vehicles.router,  prefix=API)
 app.include_router(orders.router,    prefix=API)
 app.include_router(patio.router,     prefix=API)
+app.include_router(history.router,   prefix=API)
 
 
 @app.get("/", include_in_schema=False)

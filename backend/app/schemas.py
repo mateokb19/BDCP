@@ -1,7 +1,7 @@
 import re
 from datetime import date, datetime
 from decimal import Decimal
-from typing import Optional
+from typing import List, Optional
 from pydantic import BaseModel, field_validator, model_validator
 
 
@@ -161,3 +161,43 @@ class PatioPatch(BaseModel):
     color:       Optional[str] = None
     operator_id: Optional[int] = None
     notes:       Optional[str] = None
+
+
+# ── Historial ─────────────────────────────────────────────────────────────────
+
+class HistorialClientOut(OrmBase):
+    name:  str
+    phone: Optional[str]
+
+
+class HistorialVehicleOut(OrmBase):
+    plate: str
+    brand: Optional[str]
+    model: Optional[str]
+    color: Optional[str]
+    type:  str
+    client: Optional[HistorialClientOut]
+
+
+class HistorialOperatorOut(OrmBase):
+    id:   int
+    name: str
+
+
+class HistorialItemOut(OrmBase):
+    service_name:     str
+    service_category: str
+    unit_price:       Decimal
+    quantity:         int
+    subtotal:         Decimal
+
+
+class HistorialEntryOut(OrmBase):
+    id:           int
+    order_number: str
+    date:         date
+    status:       str
+    total:        Optional[Decimal]
+    vehicle:      Optional[HistorialVehicleOut]
+    items:        List[HistorialItemOut]
+    operator:     Optional[HistorialOperatorOut]
