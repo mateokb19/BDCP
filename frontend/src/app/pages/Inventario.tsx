@@ -129,8 +129,8 @@ export default function Inventario() {
           <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Buscar ítem..."
             className="w-full rounded-xl border border-white/10 bg-white/5 pl-9 pr-3 py-2 text-sm text-gray-100 placeholder:text-gray-500 focus:border-yellow-500/50 focus:outline-none focus:ring-2 focus:ring-yellow-500/20" />
         </div>
-        <div className="overflow-x-auto pb-1 -mb-1 shrink-0">
-          <div className="flex gap-2 min-w-max">
+        <div className="shrink-0">
+          <div className="flex flex-wrap gap-2">
             <button onClick={() => setCatFilter('all')}
               className={cn('rounded-xl px-3 py-2 text-sm whitespace-nowrap transition-colors', catFilter === 'all' ? 'bg-yellow-500/15 text-yellow-400' : 'bg-white/5 text-gray-400 hover:bg-white/8')}>
               Todos

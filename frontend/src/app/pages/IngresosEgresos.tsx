@@ -8,7 +8,6 @@ import {
 } from 'recharts'
 import { TrendingUp, TrendingDown, Minus } from 'lucide-react'
 import { PageHeader } from '@/app/components/ui/PageHeader'
-import { Badge } from '@/app/components/ui/Badge'
 import { GlassCard } from '@/app/components/ui/GlassCard'
 import { cn } from '@/app/components/ui/cn'
 import { mockTransactions } from '@/data/mock'
@@ -177,31 +176,29 @@ export default function IngresosEgresos() {
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-white/8">
-              <th className="text-left px-5 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider">Fecha</th>
-              <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider">Tipo</th>
+              <th className="text-left px-2 sm:px-5 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider">Fecha</th>
+              <th className="px-2 sm:px-4 py-3 w-6" />
               <th className="hidden sm:table-cell text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider">Categoría</th>
-              <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider">Descripción</th>
+              <th className="text-left px-2 sm:px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider">Descripción</th>
               <th className="hidden sm:table-cell text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider">Orden</th>
-              <th className="text-right px-5 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider">Monto</th>
+              <th className="text-right px-2 sm:px-5 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider">Monto</th>
             </tr>
           </thead>
           <motion.tbody variants={stagger} initial="hidden" animate="show">
             {filtered.map(t => (
               <motion.tr key={t.id} variants={rowAnim} className="border-b border-white/5 hover:bg-white/[0.02] transition-colors">
-                <td className="px-5 py-3 text-gray-400 text-xs">
-                  {format(parseISO(t.date), "d MMM yyyy", { locale: es })}
+                <td className="px-2 sm:px-5 py-3 text-gray-400 text-xs whitespace-nowrap">
+                  {format(parseISO(t.date), "d MMM yy", { locale: es })}
                 </td>
-                <td className="px-4 py-3">
-                  <Badge variant={t.type === 'ingreso' ? 'green' : 'red'}>
-                    {t.type === 'ingreso' ? '↑ Ingreso' : '↓ Egreso'}
-                  </Badge>
+                <td className="px-2 sm:px-4 py-3">
+                  <div className={cn('w-2.5 h-2.5 rounded-full mx-auto', t.type === 'ingreso' ? 'bg-green-400' : 'bg-red-400')} />
                 </td>
                 <td className="hidden sm:table-cell px-4 py-3 text-gray-400 text-xs">{t.category ?? '—'}</td>
-                <td className="px-4 py-3 text-gray-300 truncate max-w-[160px] sm:max-w-[260px]">{t.description ?? '—'}</td>
+                <td className="px-2 sm:px-4 py-3 text-gray-300 truncate max-w-[120px] sm:max-w-[260px] text-xs sm:text-sm">{t.description ?? '—'}</td>
                 <td className="hidden sm:table-cell px-4 py-3 text-gray-500 text-xs font-mono">
                   {t.order_id ? `#${t.order_id}` : '—'}
                 </td>
-                <td className={cn('px-5 py-3 text-right font-semibold', t.type === 'ingreso' ? 'text-green-400' : 'text-red-400')}>
+                <td className={cn('px-2 sm:px-5 py-3 text-right font-semibold text-xs sm:text-sm whitespace-nowrap', t.type === 'ingreso' ? 'text-green-400' : 'text-red-400')}>
                   {t.type === 'ingreso' ? '+' : '-'}${t.amount}
                 </td>
               </motion.tr>

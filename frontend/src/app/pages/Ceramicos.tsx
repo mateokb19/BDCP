@@ -73,8 +73,8 @@ export default function Ceramicos() {
       />
 
       {/* Filter tabs */}
-      <div className="overflow-x-auto pb-1 -mb-1 mb-6">
-        <div className="flex gap-2 min-w-max">
+      <div className="mb-6">
+        <div className="flex flex-wrap gap-2">
           {FILTERS.map(f => (
             <button key={f.key} onClick={() => setFilter(f.key)}
               className={cn(
