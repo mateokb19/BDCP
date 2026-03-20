@@ -19,7 +19,7 @@ import type { Liquidation } from '@/types'
 const CORRECT_PASSWORD = 'BDCP123'
 
 export default function LiquidacionPage() {
-  const [unlocked, setUnlocked]       = useState(() => sessionStorage.getItem('liq_unlocked') === '1')
+  const [unlocked, setUnlocked]       = useState(false)
   const [pwd, setPwd]                 = useState('')
   const [shake, setShake]             = useState(false)
   const [selectedOp, setSelectedOp]   = useState<number | null>(null)
@@ -29,7 +29,6 @@ export default function LiquidacionPage() {
   function handleLogin(e: React.FormEvent) {
     e.preventDefault()
     if (pwd === CORRECT_PASSWORD) {
-      sessionStorage.setItem('liq_unlocked', '1')
       setUnlocked(true)
     } else {
       setShake(true)
