@@ -261,34 +261,34 @@ export default function EstadoPatio() {
                   </motion.span>
                 </div>
 
-                <div className="flex-1 p-3 space-y-3 min-h-[200px]">
+                <div className="flex-1 p-3 space-y-3 min-h-[200px] relative">
                   <AnimatePresence mode="popLayout">
-                    {colEntries.length === 0 ? (
+                    {colEntries.map(entry => {
+                      const opName = entry.order?.operator_id
+                        ? operators.find(o => o.id === entry.order!.operator_id)?.name
+                        : undefined
+                      return (
+                        <PatioCard
+                          key={entry.id}
+                          entry={entry}
+                          opName={opName}
+                          onAdvance={advanceStatus}
+                          onEdit={openEdit}
+                        />
+                      )
+                    })}
+                  </AnimatePresence>
+                  <AnimatePresence>
+                    {colEntries.length === 0 && (
                       <motion.div
                         key="empty"
                         initial={{ opacity: 0 }}
-                        animate={{ opacity: 1 }}
-                        exit={{ opacity: 0 }}
-                        transition={{ duration: 0.2 }}
-                        className="flex items-center justify-center h-20"
+                        animate={{ opacity: 1, transition: { delay: 0.15, duration: 0.2 } }}
+                        exit={{ opacity: 0, transition: { duration: 0.1 } }}
+                        className="absolute inset-0 flex items-center justify-center pointer-events-none"
                       >
                         <p className="text-xs text-gray-700">Sin vehículos</p>
                       </motion.div>
-                    ) : (
-                      colEntries.map(entry => {
-                        const opName = entry.order?.operator_id
-                          ? operators.find(o => o.id === entry.order!.operator_id)?.name
-                          : undefined
-                        return (
-                          <PatioCard
-                            key={entry.id}
-                            entry={entry}
-                            opName={opName}
-                            onAdvance={advanceStatus}
-                            onEdit={openEdit}
-                          />
-                        )
-                      })
                     )}
                   </AnimatePresence>
                 </div>

@@ -219,7 +219,7 @@ export default function Inventario() {
           <div className="flex flex-col gap-1.5">
             <label className="text-sm font-medium text-gray-300">Categoría</label>
             <select value={form.category_id ?? ''} onChange={e => setForm(f => ({ ...f, category_id: e.target.value ? Number(e.target.value) : undefined }))}
-              className="w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-gray-100 focus:border-yellow-500/50 focus:outline-none focus:ring-2 focus:ring-yellow-500/20">
+              className="w-full appearance-none rounded-xl border border-white/10 bg-gray-900 px-3 py-2 text-sm text-gray-100 focus:border-yellow-500/50 focus:outline-none focus:ring-2 focus:ring-yellow-500/20">
               <option value="">Sin categoría</option>
               {mockInventoryCategories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
             </select>

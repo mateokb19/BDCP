@@ -232,7 +232,7 @@ export default function Documentos() {
             <div className="flex flex-col gap-1.5">
               <label className="text-sm font-medium text-gray-300">Tipo</label>
               <select value={uploadForm.type} onChange={e => setUploadForm(f => ({ ...f, type: e.target.value }))}
-                className="w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-gray-100 focus:border-yellow-500/50 focus:outline-none focus:ring-2 focus:ring-yellow-500/20">
+                className="w-full appearance-none rounded-xl border border-white/10 bg-gray-900 px-3 py-2 text-sm text-gray-100 focus:border-yellow-500/50 focus:outline-none focus:ring-2 focus:ring-yellow-500/20">
                 <option value="contrato">Contrato</option>
                 <option value="factura">Factura</option>
                 <option value="recibo">Recibo</option>
@@ -242,7 +242,7 @@ export default function Documentos() {
             <div className="flex flex-col gap-1.5">
               <label className="text-sm font-medium text-gray-300">Relacionado con</label>
               <select value={uploadForm.related_to} onChange={e => setUploadForm(f => ({ ...f, related_to: e.target.value }))}
-                className="w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-gray-100 focus:border-yellow-500/50 focus:outline-none focus:ring-2 focus:ring-yellow-500/20">
+                className="w-full appearance-none rounded-xl border border-white/10 bg-gray-900 px-3 py-2 text-sm text-gray-100 focus:border-yellow-500/50 focus:outline-none focus:ring-2 focus:ring-yellow-500/20">
                 <option value="general">General</option>
                 <option value="order">Orden</option>
                 <option value="vehicle">Vehículo</option>
