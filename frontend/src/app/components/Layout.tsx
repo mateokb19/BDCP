@@ -51,7 +51,9 @@ function NavLinks({ onClick }: { onClick?: () => void }) {
 export default function Layout() {
   const [collapsed,   setCollapsed]   = useState(true)
   const [mobileOpen,  setMobileOpen]  = useState(false)
-  const [isMobile,    setIsMobile]    = useState(false)
+  const [isMobile,    setIsMobile]    = useState(() =>
+    typeof window !== 'undefined' ? window.innerWidth < 768 : false
+  )
   const location = useLocation()
 
   useEffect(() => {
@@ -67,7 +69,7 @@ export default function Layout() {
   const sidebarW = isMobile ? 0 : (collapsed ? 64 : 256)
 
   return (
-    <div className="flex min-h-screen bg-gray-950">
+    <div className="flex min-h-screen bg-gray-950 overflow-x-hidden">
 
       {/* ── Mobile top bar ───────────────────────────────────────────────── */}
       <header className="md:hidden fixed top-0 left-0 right-0 z-50 h-14 bg-gray-900 border-b border-white/6 flex items-center px-4 gap-3">
