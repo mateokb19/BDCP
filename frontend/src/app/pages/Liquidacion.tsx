@@ -279,22 +279,51 @@ function LiquidarModal({ open, onClose, operator, weekData, debts, onConfirm }: 
               {/* Método de pago */}
               <div className="space-y-3">
                 <p className="text-xs font-semibold text-gray-300 uppercase tracking-wider">Método de pago</p>
+
+                {/* Quick-fill buttons */}
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => { setPayTransfer(String(netAmount > 0 ? netAmount : 0)); setPayCash('0') }}
+                    className="flex items-center justify-center gap-1.5 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs text-gray-300 hover:border-yellow-500/40 hover:text-yellow-300 transition-colors"
+                  >
+                    <CreditCard size={13} />
+                    Todo transferencia
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setPayCash(String(netAmount > 0 ? netAmount : 0)); setPayTransfer('0') }}
+                    className="flex items-center justify-center gap-1.5 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs text-gray-300 hover:border-yellow-500/40 hover:text-yellow-300 transition-colors"
+                  >
+                    <Banknote size={13} />
+                    Todo efectivo
+                  </button>
+                </div>
+
                 <div className="grid grid-cols-2 gap-2">
                   <div>
                     <label className="text-xs text-gray-500 mb-1 block">Transferencia</label>
                     <input
-                      type="number" min={0} placeholder="0"
+                      type="number" min={0} max={netAmount} placeholder="0"
                       value={payTransfer}
-                      onChange={e => setPayTransfer(e.target.value)}
+                      onChange={e => {
+                        const val = Math.min(Math.max(0, Number(e.target.value)), netAmount)
+                        setPayTransfer(String(val))
+                        setPayCash(String(Math.max(0, netAmount - val)))
+                      }}
                       className="w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-gray-100 placeholder:text-gray-600 focus:border-yellow-500/50 focus:outline-none"
                     />
                   </div>
                   <div>
                     <label className="text-xs text-gray-500 mb-1 block">Efectivo</label>
                     <input
-                      type="number" min={0} placeholder="0"
+                      type="number" min={0} max={netAmount} placeholder="0"
                       value={payCash}
-                      onChange={e => setPayCash(e.target.value)}
+                      onChange={e => {
+                        const val = Math.min(Math.max(0, Number(e.target.value)), netAmount)
+                        setPayCash(String(val))
+                        setPayTransfer(String(Math.max(0, netAmount - val)))
+                      }}
                       className="w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-gray-100 placeholder:text-gray-600 focus:border-yellow-500/50 focus:outline-none"
                     />
                   </div>
