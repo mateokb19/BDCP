@@ -306,7 +306,7 @@ function LiquidarModal({ open, onClose, operator, weekData, debts, onConfirm }: 
                     <input
                       type="number" min={0} max={netAmount} placeholder="0"
                       value={payTransfer}
-                      onChange={e => setPayTransfer(String(Math.min(Math.max(0, Number(e.target.value)), netAmount)))}
+                      onChange={e => setPayTransfer(String(Math.min(Math.max(0, Number(e.target.value)), netAmount - Math.max(0, Number(payCash) || 0))))}
                       className="w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-gray-100 placeholder:text-gray-600 focus:border-yellow-500/50 focus:outline-none"
                     />
                   </div>
@@ -315,7 +315,7 @@ function LiquidarModal({ open, onClose, operator, weekData, debts, onConfirm }: 
                     <input
                       type="number" min={0} max={netAmount} placeholder="0"
                       value={payCash}
-                      onChange={e => setPayCash(String(Math.min(Math.max(0, Number(e.target.value)), netAmount)))}
+                      onChange={e => setPayCash(String(Math.min(Math.max(0, Number(e.target.value)), netAmount - Math.max(0, Number(payTransfer) || 0))))}
                       className="w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-gray-100 placeholder:text-gray-600 focus:border-yellow-500/50 focus:outline-none"
                     />
                   </div>

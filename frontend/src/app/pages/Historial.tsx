@@ -32,8 +32,9 @@ function OrderCard({ entry }: { entry: ApiHistorialEntry }) {
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: -4 }}
       transition={{ duration: 0.2 }}
+      className="w-full overflow-hidden"
     >
-      <GlassCard padding className="space-y-3 overflow-hidden">
+      <GlassCard padding className="space-y-3 overflow-hidden w-full">
         {/* Header row */}
         <div className="flex items-start justify-between gap-2">
           <div className="min-w-0 flex-1">
@@ -43,7 +44,7 @@ function OrderCard({ entry }: { entry: ApiHistorialEntry }) {
               </span>
               <StatusBadge status={entry.status as any} />
             </div>
-            <div className="text-white font-medium text-sm leading-snug">
+            <div className="text-white font-medium text-sm leading-snug truncate">
               {vehicle?.brand ?? '—'} {vehicle?.model}
               <span className="text-gray-500 font-normal ml-1.5">{vehicle?.plate}</span>
             </div>
@@ -217,7 +218,7 @@ export default function Historial() {
         />
       ) : (
         <AnimatePresence mode="popLayout">
-          <div className="space-y-3">
+          <div className="space-y-3 overflow-hidden">
             {entries.map(entry => (
               <OrderCard key={entry.id} entry={entry} />
             ))}
