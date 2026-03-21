@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import {
   Lock, ChevronLeft, ChevronRight, ChevronDown,
   Plus, Check, X, TrendingUp, TrendingDown, Download, Banknote,
-  Phone, CreditCard,
+  Phone, CreditCard, Calendar,
 } from 'lucide-react'
 import { format, startOfWeek, addWeeks, addDays, parseISO } from 'date-fns'
 import { es } from 'date-fns/locale'
@@ -13,7 +13,7 @@ import { Button } from '@/app/components/ui/Button'
 import { Badge } from '@/app/components/ui/Badge'
 import { GlassCard } from '@/app/components/ui/GlassCard'
 import { cn } from '@/app/components/ui/cn'
-import { api, type ApiLiqWeekResponse, type ApiDebt, type LiquidatePayload } from '@/api'
+import { api, type ApiLiqWeekResponse, type ApiDebt, type LiquidatePayload, type ApiReportResponse } from '@/api'
 import type { Operator } from '@/types'
 
 const CORRECT_PASSWORD = 'BDCP123'
@@ -36,6 +36,11 @@ const PATIO_STATUS_LABEL: Record<string, string> = {
 
 function getInitials(name: string) {
   return name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()
+}
+
+function escapeHtml(s: string | undefined | null) {
+  if (!s) return ''
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
 }
 
 function getWeekStart(offset: number): Date {
@@ -379,6 +384,12 @@ export default function LiquidacionPage() {
   const [openDays,    setOpenDays]    = useState<Set<string>>(new Set())
   const [addDebtOpen, setAddDebtOpen] = useState(false)
   const [liquidarOpen, setLiquidarOpen] = useState(false)
+  const [reportModalOpen, setReportModalOpen] = useState(false)
+  const [customMonthOpen, setCustomMonthOpen] = useState(false)
+  const [customMonthValue, setCustomMonthValue] = useState(() => {
+    const now = new Date()
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
+  })
   const [debtForm, setDebtForm] = useState({
     direction: 'empresa_operario' as 'empresa_operario' | 'operario_empresa',
     amount: '',
@@ -469,6 +480,233 @@ export default function LiquidacionPage() {
     toast.success('Semana liquidada correctamente')
   }
 
+  async function downloadReport(period: 'week' | 'month', refDate: string) {
+    if (!selectedOp) return
+    setReportModalOpen(false)
+    try {
+      const report = await api.liquidation.getReport(selectedOp, period, refDate)
+      printReport(report)
+    } catch {
+      toast.error('Error al generar el reporte')
+    }
+  }
+
+  async function downloadCustomMonth() {
+    if (!selectedOp || !customMonthValue) return
+    setCustomMonthOpen(false)
+    try {
+      const report = await api.liquidation.getReport(selectedOp, 'month', `${customMonthValue}-01`)
+      printReport(report)
+    } catch {
+      toast.error('Error al generar el reporte')
+    }
+  }
+
+  function printReport(r: ApiReportResponse) {
+    const fmt     = (n: string | number) => Number(n).toLocaleString('es-CO')
+    const fmtDate = (s: string) => { const [y, m, d] = s.split('-'); return `${d}/${m}/${y}` }
+    const today   = new Date().toLocaleDateString('es-CO', { day: '2-digit', month: 'long', year: 'numeric' })
+
+    // ── Detalle de servicios ─────────────────────────────────────────────────
+    const orderRows = r.orders.map(o => {
+      const itemRows = o.items.map(i =>
+        `<tr>
+          <td style="padding:6px 10px;color:#555;font-size:13px;">${escapeHtml(i.service_name)}</td>
+          <td style="padding:6px 10px;text-align:center;font-size:13px;">${i.quantity}</td>
+          <td style="padding:6px 10px;text-align:right;font-size:13px;">$${fmt(i.unit_price)}</td>
+          <td style="padding:6px 10px;text-align:right;font-size:13px;">$${fmt(i.subtotal)}</td>
+        </tr>`
+      ).join('')
+      const vehicle = [o.vehicle_brand, o.vehicle_model].filter(Boolean).join(' ') || '—'
+      return `
+        <tr style="background:#f5f5f5;">
+          <td colspan="4" style="padding:8px 10px;font-weight:600;font-size:13px;">
+            ${escapeHtml(o.order_number)} &nbsp;·&nbsp; ${escapeHtml(o.vehicle_plate)} &nbsp;·&nbsp; ${escapeHtml(vehicle)}
+            <span style="font-weight:400;color:#888;margin-left:8px;">${escapeHtml(o.date)}</span>
+          </td>
+        </tr>
+        ${itemRows}
+        <tr style="border-top:1px solid #eee;">
+          <td colspan="3" style="padding:6px 10px;text-align:right;font-size:13px;color:#888;">Subtotal orden</td>
+          <td style="padding:6px 10px;text-align:right;font-weight:600;font-size:13px;">$${fmt(o.total)}</td>
+        </tr>`
+    }).join('<tr><td colspan="4" style="height:8px;"></td></tr>')
+
+    // ── Estado de liquidacion por semana ─────────────────────────────────────
+    const visibleWeeks = r.week_statuses.filter(w => Number(w.week_gross) > 0 || w.is_liquidated)
+    const weekRows = visibleWeeks.map(w => {
+      const badge = w.is_liquidated
+        ? `<span style="background:#dcfce7;color:#166534;font-size:11px;font-weight:700;padding:2px 8px;border-radius:999px;">&#10003; LIQUIDADA</span>`
+        : `<span style="background:#fef9c3;color:#854d0e;font-size:11px;font-weight:700;padding:2px 8px;border-radius:999px;">&#9888; PENDIENTE</span>`
+      const breakdown = w.is_liquidated
+        ? `<div style="font-size:11px;color:#555;margin-top:4px;">
+            Transferencia $${fmt(w.payment_transfer ?? 0)} &nbsp;·&nbsp;
+            Efectivo $${fmt(w.payment_cash ?? 0)}
+            ${Number(w.amount_pending ?? 0) > 0 ? `&nbsp;·&nbsp; <span style="color:#dc2626;font-weight:600;">Pendiente $${fmt(w.amount_pending!)}</span>` : ''}
+          </div>`
+        : `<div style="font-size:11px;color:#888;margin-top:3px;">No liquidada – comision pendiente de pago</div>`
+      return `<tr>
+        <td style="padding:8px 10px;font-size:13px;">${fmtDate(w.week_start)} – ${fmtDate(w.week_end)}</td>
+        <td style="padding:8px 10px;text-align:right;font-size:13px;">$${fmt(w.week_gross)}</td>
+        <td style="padding:8px 10px;text-align:right;font-size:13px;">$${fmt(w.week_commission)}</td>
+        <td style="padding:8px 10px;">${badge}${breakdown}</td>
+      </tr>`
+    }).join('')
+
+    // ── Deudas pendientes empresa → operario ─────────────────────────────────
+    const debtRows = r.pending_debts.map(d =>
+      `<tr>
+        <td style="padding:6px 10px;font-size:13px;">${escapeHtml(d.description || '—')}</td>
+        <td style="padding:6px 10px;text-align:right;font-size:13px;">$${fmt(d.amount)}</td>
+        <td style="padding:6px 10px;text-align:right;font-size:13px;color:#888;">$${fmt(d.paid_amount)}</td>
+        <td style="padding:6px 10px;text-align:right;font-size:13px;font-weight:600;color:#dc2626;">$${fmt(d.remaining)}</td>
+      </tr>`
+    ).join('')
+
+    const html = `<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<title>Liquidacion - ${escapeHtml(r.operator_name)}</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Segoe UI', Arial, sans-serif; color: #222; background: #fff; padding: 32px; }
+  h1 { font-size: 22px; font-weight: 700; }
+  .header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 28px; }
+  .logo { font-size: 18px; font-weight: 800; color: #d97706; letter-spacing: -0.5px; }
+  .meta { font-size: 12px; color: #888; margin-top: 4px; }
+  .section { margin-bottom: 24px; }
+  .section-title { font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: #888; margin-bottom: 8px; border-bottom: 1px solid #eee; padding-bottom: 6px; }
+  table { width: 100%; border-collapse: collapse; }
+  th { background: #222; color: #fff; padding: 8px 10px; text-align: left; font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.4px; }
+  th:last-child, td:last-child { text-align: right; }
+  th:nth-child(2), td:nth-child(2) { text-align: center; }
+  tr:nth-child(even) td { background: #fafafa; }
+  .totals { display: flex; justify-content: flex-end; margin-top: 20px; }
+  .totals table { width: 320px; }
+  .totals td { padding: 6px 10px; font-size: 14px; }
+  .totals tr.highlight td { font-weight: 700; font-size: 15px; border-top: 2px solid #d97706; color: #d97706; padding-top: 10px; }
+  .alert { background: #fef2f2; border: 1px solid #fecaca; border-radius: 8px; padding: 12px 16px; margin-top: 20px; font-size: 13px; color: #dc2626; }
+  .footer { margin-top: 32px; font-size: 11px; color: #aaa; text-align: center; border-top: 1px solid #eee; padding-top: 16px; }
+  @media print { body { padding: 20px; } }
+</style>
+</head>
+<body onload="window.print()">
+<div class="header">
+  <div>
+    <div class="logo">BDCPolo</div>
+    <div class="meta">Bogota Detailing Center</div>
+  </div>
+  <div style="text-align:right;">
+    <h1>Liquidacion de Operario</h1>
+    <div class="meta">${escapeHtml(r.period_label)} &nbsp;·&nbsp; ${escapeHtml(r.date_start)} al ${escapeHtml(r.date_end)}</div>
+    <div class="meta">Generado el ${today}</div>
+  </div>
+</div>
+
+<div class="section">
+  <div class="section-title">Operario</div>
+  <table>
+    <tr>
+      <td style="padding:6px 10px;font-size:14px;font-weight:600;">${escapeHtml(r.operator_name)}</td>
+      <td style="padding:6px 10px;font-size:14px;">Comision ${Number(r.commission_rate)}%</td>
+      <td style="padding:6px 10px;font-size:14px;text-align:right;">${r.total_services} servicio${r.total_services !== 1 ? 's' : ''}</td>
+    </tr>
+  </table>
+</div>
+
+<div class="section">
+  <div class="section-title">Estado de liquidacion por semana</div>
+  ${visibleWeeks.length === 0
+    ? '<p style="color:#aaa;font-size:13px;padding:8px 0;">Sin semanas con actividad en este periodo.</p>'
+    : `<table>
+        <thead>
+          <tr>
+            <th>Semana</th>
+            <th style="text-align:right;">Total bruto</th>
+            <th style="text-align:right;">Comision</th>
+            <th>Estado de pago</th>
+          </tr>
+        </thead>
+        <tbody>${weekRows}</tbody>
+      </table>`}
+</div>
+
+<div class="section">
+  <div class="section-title">Detalle de servicios</div>
+  ${r.orders.length === 0
+    ? '<p style="color:#aaa;font-size:13px;padding:12px 0;">Sin servicios en este periodo.</p>'
+    : `<table>
+        <thead>
+          <tr>
+            <th>Servicio</th>
+            <th style="text-align:center;">Cant.</th>
+            <th style="text-align:right;">Precio unit.</th>
+            <th style="text-align:right;">Subtotal</th>
+          </tr>
+        </thead>
+        <tbody>${orderRows}</tbody>
+      </table>`}
+</div>
+
+<div class="totals">
+  <table>
+    <tr>
+      <td style="color:#888;">Total bruto del periodo</td>
+      <td style="text-align:right;">$${fmt(r.gross_total)}</td>
+    </tr>
+    <tr>
+      <td style="color:#888;">Comision total (${Number(r.commission_rate)}%)</td>
+      <td style="text-align:right;">$${fmt(r.commission_amount)}</td>
+    </tr>
+    <tr class="highlight">
+      <td>Total a favor del operario</td>
+      <td style="text-align:right;">$${fmt(r.commission_amount)}</td>
+    </tr>
+    ${Number(r.total_pending_owed) > 0 ? `
+    <tr>
+      <td style="color:#dc2626;font-weight:600;padding-top:8px;">Deudas empresa pendientes</td>
+      <td style="text-align:right;color:#dc2626;font-weight:600;padding-top:8px;">+ $${fmt(r.total_pending_owed)}</td>
+    </tr>` : ''}
+  </table>
+</div>
+
+${r.pending_debts.length > 0 ? `
+<div class="section" style="margin-top:28px;">
+  <div class="section-title">Deudas de la empresa pendientes de pago al operario</div>
+  <table>
+    <thead>
+      <tr>
+        <th>Descripcion</th>
+        <th style="text-align:right;">Total deuda</th>
+        <th style="text-align:right;">Ya pagado</th>
+        <th style="text-align:right;">Pendiente</th>
+      </tr>
+    </thead>
+    <tbody>${debtRows}</tbody>
+    <tfoot>
+      <tr style="border-top:2px solid #222;">
+        <td colspan="3" style="padding:8px 10px;text-align:right;font-weight:700;font-size:13px;">Total pendiente</td>
+        <td style="padding:8px 10px;text-align:right;font-weight:700;font-size:14px;color:#dc2626;">$${fmt(r.total_pending_owed)}</td>
+      </tr>
+    </tfoot>
+  </table>
+  <div class="alert">
+    La empresa le debe al operario un total de <strong>$${fmt(r.total_pending_owed)}</strong> en deudas pendientes.
+  </div>
+</div>` : ''}
+
+<div class="footer">Bogota Detailing Center · BDCPolo · Comprobante interno de liquidacion</div>
+</body>
+</html>`
+
+    const blob = new Blob([html], { type: 'text/html' })
+    const url  = URL.createObjectURL(blob)
+    const win  = window.open(url, '_blank')
+    if (!win) { toast.error('Permite ventanas emergentes para descargar el PDF'); }
+    setTimeout(() => URL.revokeObjectURL(url), 30_000)
+  }
+
   // ── Lock screen ─────────────────────────────────────────────────────────────
   if (!unlocked) {
     return (
@@ -523,8 +761,117 @@ export default function LiquidacionPage() {
     const unpaidOperatorOwes = debts.filter(d => d.direction === 'operario_empresa' && !d.paid)
     const paidDebts          = debts.filter(d => d.paid)
 
+    const weekStartStr    = format(weekStart, 'yyyy-MM-dd')
+    const now             = new Date()
+    const isCurrentMonth  = weekStart.getFullYear() === now.getFullYear() && weekStart.getMonth() === now.getMonth()
+    const monthBtnLabel   = isCurrentMonth
+      ? `Mes actual (hasta hoy)`
+      : `Mes de ${format(weekStart, 'MMMM yyyy', { locale: es })}`
+    const monthBtnSub     = isCurrentMonth
+      ? `Del 1 al ${format(now, 'd')} de ${format(now, 'MMMM', { locale: es })}`
+      : `Mes completo de ${format(weekStart, 'MMMM yyyy', { locale: es })}`
+
     return (
       <div className="max-w-4xl mx-auto space-y-5">
+        {/* Report period picker modal */}
+        <AnimatePresence>
+          {reportModalOpen && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+              <motion.div
+                initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+                className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+                onClick={() => setReportModalOpen(false)}
+              />
+              <motion.div
+                initial={{ opacity: 0, scale: 0.95, y: 16 }}
+                animate={{ opacity: 1, scale: 1,    y: 0  }}
+                exit={{   opacity: 0, scale: 0.95,  y: 8  }}
+                transition={{ duration: 0.2 }}
+                className="relative w-full max-w-xs rounded-2xl border border-white/10 bg-gray-900 shadow-2xl p-6 space-y-5"
+              >
+                <div className="flex items-center justify-between">
+                  <h2 className="text-base font-semibold text-white">Generar reporte</h2>
+                  <button onClick={() => setReportModalOpen(false)} className="text-gray-500 hover:text-gray-300">
+                    <X size={18} />
+                  </button>
+                </div>
+                <p className="text-sm text-gray-400">Selecciona el período del reporte:</p>
+                <div className="grid grid-cols-1 gap-3">
+                  <button
+                    onClick={() => downloadReport('week', weekStartStr)}
+                    className="flex items-center gap-3 rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-left hover:bg-white/10 hover:border-yellow-500/30 transition-colors"
+                  >
+                    <div className="rounded-lg bg-yellow-500/15 p-2">
+                      <Download size={16} className="text-yellow-400" />
+                    </div>
+                    <div>
+                      <p className="text-sm font-medium text-white">Esta semana</p>
+                      <p className="text-xs text-gray-500">
+                        {format(weekStart, "d MMM", { locale: es })} – {format(weekEnd, "d MMM yyyy", { locale: es })}
+                      </p>
+                    </div>
+                  </button>
+                  <button
+                    onClick={() => downloadReport('month', weekStartStr)}
+                    className="flex items-center gap-3 rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-left hover:bg-white/10 hover:border-yellow-500/30 transition-colors"
+                  >
+                    <div className="rounded-lg bg-blue-500/15 p-2">
+                      <Download size={16} className="text-blue-400" />
+                    </div>
+                    <div>
+                      <p className="text-sm font-medium text-white capitalize">{monthBtnLabel}</p>
+                      <p className="text-xs text-gray-500 capitalize">{monthBtnSub}</p>
+                    </div>
+                  </button>
+                </div>
+              </motion.div>
+            </div>
+          )}
+        </AnimatePresence>
+
+        {/* Custom month modal */}
+        <AnimatePresence>
+          {customMonthOpen && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+              <motion.div
+                initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+                className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+                onClick={() => setCustomMonthOpen(false)}
+              />
+              <motion.div
+                initial={{ opacity: 0, scale: 0.95, y: 16 }}
+                animate={{ opacity: 1, scale: 1,    y: 0  }}
+                exit={{   opacity: 0, scale: 0.95,  y: 8  }}
+                transition={{ duration: 0.2 }}
+                className="relative w-full max-w-xs rounded-2xl border border-white/10 bg-gray-900 shadow-2xl p-6 space-y-5"
+              >
+                <div className="flex items-center justify-between">
+                  <h2 className="text-base font-semibold text-white">Factura por mes</h2>
+                  <button onClick={() => setCustomMonthOpen(false)} className="text-gray-500 hover:text-gray-300">
+                    <X size={18} />
+                  </button>
+                </div>
+                <p className="text-sm text-gray-400">Elige el mes y año:</p>
+                <input
+                  type="month"
+                  value={customMonthValue}
+                  onChange={e => setCustomMonthValue(e.target.value)}
+                  max={format(now, 'yyyy-MM')}
+                  className="w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2.5 text-sm text-gray-100 focus:border-yellow-500/50 focus:outline-none focus:ring-2 focus:ring-yellow-500/20 appearance-none"
+                />
+                <button
+                  onClick={downloadCustomMonth}
+                  disabled={!customMonthValue}
+                  className="w-full flex items-center justify-center gap-2 rounded-xl bg-yellow-500 py-2.5 text-sm font-semibold text-gray-900 hover:bg-yellow-400 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  <Download size={15} />
+                  Generar factura
+                </button>
+              </motion.div>
+            </div>
+          )}
+        </AnimatePresence>
+
         {/* Liquidar modal */}
         {operator && weekData && (
           <LiquidarModal
@@ -568,12 +915,23 @@ export default function LiquidacionPage() {
                   </div>
                 </div>
               </div>
-              <button
-                className="flex items-center gap-1.5 rounded-xl border border-white/10 bg-white/5 p-2 sm:px-3 sm:py-2 text-gray-400 hover:bg-white/10 hover:text-gray-200 transition-colors shrink-0"
-              >
-                <Download size={15} />
-                <span className="hidden sm:inline text-sm">Descargar</span>
-              </button>
+              <div className="flex items-center gap-2 shrink-0">
+                <button
+                  onClick={() => setReportModalOpen(true)}
+                  className="flex items-center gap-1.5 rounded-xl border border-white/10 bg-white/5 p-2 sm:px-3 sm:py-2 text-gray-400 hover:bg-white/10 hover:text-gray-200 transition-colors"
+                >
+                  <Download size={15} />
+                  <span className="hidden sm:inline text-sm">Descargar</span>
+                </button>
+                <button
+                  onClick={() => setCustomMonthOpen(true)}
+                  className="flex items-center gap-1.5 rounded-xl border border-white/10 bg-white/5 p-2 sm:px-3 sm:py-2 text-gray-400 hover:bg-white/10 hover:text-gray-200 transition-colors"
+                  title="Factura de otro mes"
+                >
+                  <Calendar size={15} />
+                  <span className="hidden sm:inline text-sm">Otro mes</span>
+                </button>
+              </div>
             </div>
           </GlassCard>
         )}

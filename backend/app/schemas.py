@@ -316,3 +316,58 @@ class LiquidatePayload(BaseModel):
     company_settlements:  List[AbonoItem] = []
     payment_transfer:     Decimal = Decimal("0")
     payment_cash:         Decimal = Decimal("0")
+
+
+# ── Report ─────────────────────────────────────────────────────────────────────
+
+class ReportOrderItem(BaseModel):
+    service_name:     str
+    service_category: str
+    unit_price:       Decimal
+    quantity:         int
+    subtotal:         Decimal
+
+
+class ReportOrder(BaseModel):
+    order_number:  str
+    date:          str
+    vehicle_plate: str
+    vehicle_brand: Optional[str]
+    vehicle_model: Optional[str]
+    items:         List[ReportOrderItem]
+    total:         Decimal
+
+
+class ReportWeekStatus(BaseModel):
+    week_start:        str
+    week_end:          str
+    is_liquidated:     bool
+    week_gross:        Decimal
+    week_commission:   Decimal
+    net_amount:        Optional[Decimal] = None
+    payment_transfer:  Optional[Decimal] = None
+    payment_cash:      Optional[Decimal] = None
+    amount_pending:    Optional[Decimal] = None
+
+
+class ReportPendingDebt(BaseModel):
+    description: Optional[str]
+    amount:      Decimal
+    paid_amount: Decimal
+    remaining:   Decimal
+
+
+class ReportResponse(BaseModel):
+    operator_id:         int
+    operator_name:       str
+    commission_rate:     Decimal
+    period_label:        str
+    date_start:          str
+    date_end:            str
+    orders:              List[ReportOrder]
+    total_services:      int
+    gross_total:         Decimal
+    commission_amount:   Decimal
+    week_statuses:       List[ReportWeekStatus]
+    pending_debts:       List[ReportPendingDebt]
+    total_pending_owed:  Decimal

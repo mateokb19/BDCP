@@ -222,6 +222,59 @@ export interface ApiHistorialEntry {
   operator?:    ApiHistorialOperator
 }
 
+export interface ApiReportOrderItem {
+  service_name:     string
+  service_category: string
+  unit_price:       string
+  quantity:         number
+  subtotal:         string
+}
+
+export interface ApiReportOrder {
+  order_number:  string
+  date:          string
+  vehicle_plate: string
+  vehicle_brand?: string
+  vehicle_model?: string
+  items:         ApiReportOrderItem[]
+  total:         string
+}
+
+export interface ApiReportWeekStatus {
+  week_start:       string
+  week_end:         string
+  is_liquidated:    boolean
+  week_gross:       string
+  week_commission:  string
+  net_amount?:      string
+  payment_transfer?: string
+  payment_cash?:    string
+  amount_pending?:  string
+}
+
+export interface ApiReportPendingDebt {
+  description?: string
+  amount:       string
+  paid_amount:  string
+  remaining:    string
+}
+
+export interface ApiReportResponse {
+  operator_id:        number
+  operator_name:      string
+  commission_rate:    string
+  period_label:       string
+  date_start:         string
+  date_end:           string
+  orders:             ApiReportOrder[]
+  total_services:     number
+  gross_total:        string
+  commission_amount:  string
+  week_statuses:      ApiReportWeekStatus[]
+  pending_debts:      ApiReportPendingDebt[]
+  total_pending_owed: string
+}
+
 // ── API methods ────────────────────────────────────────────────────────────────
 
 export const api = {
@@ -269,5 +322,10 @@ export const api = {
       apiFetch<ApiDebt>(`/liquidation/debts/${debtId}/paid`, { method: 'PATCH' }),
     liquidate: (opId: number, weekStart: string, payload: LiquidatePayload) =>
       apiFetch<ApiLiqWeekResponse>(`/liquidation/${opId}/liquidate?week_start=${weekStart}`, { method: 'POST', body: JSON.stringify(payload) }),
+    getReport: (opId: number, period: 'week' | 'month', refDate?: string) => {
+      const qs = new URLSearchParams({ period })
+      if (refDate) qs.set('ref_date', refDate)
+      return apiFetch<ApiReportResponse>(`/liquidation/${opId}/report?${qs}`)
+    },
   },
 }

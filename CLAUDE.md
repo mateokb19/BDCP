@@ -153,7 +153,40 @@ DebtDirection:      empresa_operario | operario_empresa
    - Payment methods: Transferencia + Efectivo fields; if sum < net → auto-creates `empresa_operario` debt for the pending amount
    - On confirm: creates `WeekLiquidation` record, links `DebtPayment` records to it
 6. Post-liquidation shows payment breakdown (neto, transferencia, efectivo, pendiente).
-7. **Descargar** button present but not yet implemented.
+7. **Descargar** button opens a period picker modal:
+   - "Esta semana" → calls `GET /api/v1/liquidation/{op_id}/report?period=week&ref_date=<weekStart>`
+   - "Mes de X" → calls `GET /api/v1/liquidation/{op_id}/report?period=month&ref_date=<weekStart>`
+     - If the selected week is in the **current month**: `de = today` (month-to-date). Label: "Mes actual (hasta hoy)"
+     - If the selected week is in a **past month**: `de = last day of that month` (full month). Label: "Mes de Febrero 2026"
+8. **"Otro mes"** button (Calendar icon, next to Descargar) opens a `<input type="month">` picker to generate a report for any arbitrary month.
+
+## PDF Invoice template
+
+The invoice HTML template is generated entirely in the frontend at:
+
+**`frontend/src/app/pages/Liquidacion.tsx`** — function `printReport(r: ApiReportResponse)`
+
+Structure of the generated HTML:
+```
+<html>
+  <head>  → inline <style> block (no external CSS)
+  <body onload="window.print()">  → auto-opens print dialog
+    .header       → BDCPolo logo (left) + "Liquidacion de Operario" title + period/date (right)
+    .section      → Operario: name, commission %, service count
+    .section      → Detalle de servicios: <table> Servicio | Cant. | Precio unit. | Subtotal
+                    Rows grouped by order (order_number · plate · brand/model + date as header)
+    .totals       → right-aligned: Total bruto / Comision (X%) / Neto a pagar
+    .footer       → "Bogota Detailing Center · BDCPolo · Comprobante interno"
+```
+
+Key implementation details:
+- Opened as a **Blob URL** via `URL.createObjectURL` — avoids DOM injection APIs
+- All user-supplied strings pass through `escapeHtml()` before insertion
+- `body onload` triggers the browser Save-as-PDF dialog automatically
+- Prices formatted with `Number(n).toLocaleString('es-CO')` (Colombian pesos)
+- Backend endpoint: `GET /api/v1/liquidation/{op_id}/report?period=week|month&ref_date=YYYY-MM-DD`
+  - Defined in `backend/app/routers/liquidation.py` → `def get_report(...)`
+  - Response schema: `ReportResponse` in `backend/app/schemas.py`
 
 ## Key decisions
 

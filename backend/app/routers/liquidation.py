@@ -1,5 +1,7 @@
+import calendar
 from datetime import date, timedelta
 from decimal import Decimal
+from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session, joinedload
@@ -243,6 +245,128 @@ def create_debt(op_id: int, body: schemas.DebtCreate, db: Session = Depends(get_
     db.commit()
     db.refresh(debt)
     return debt
+
+
+@router.get("/{op_id}/report", response_model=schemas.ReportResponse)
+def get_report(
+    op_id: int,
+    period: str = Query("week"),
+    ref_date: Optional[str] = Query(None),
+    db: Session = Depends(get_db),
+):
+    operator = db.query(models.Operator).filter_by(id=op_id).first()
+    if not operator:
+        raise HTTPException(404, "Operario no encontrado")
+
+    real_today = date.today()
+    ref = date.fromisoformat(ref_date) if ref_date else real_today
+
+    MONTH_NAMES = [
+        "", "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
+        "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre",
+    ]
+
+    if period == "month":
+        ds = ref.replace(day=1)
+        is_current_month = (ref.year == real_today.year and ref.month == real_today.month)
+        if is_current_month:
+            de = real_today
+            period_label = f"Mes actual ({MONTH_NAMES[ref.month]} {ref.year})"
+        else:
+            last_day = calendar.monthrange(ref.year, ref.month)[1]
+            de = ref.replace(day=last_day)
+            period_label = f"{MONTH_NAMES[ref.month]} {ref.year}"
+    else:
+        # Monday of the week containing ref
+        ds = ref - timedelta(days=ref.weekday())
+        de = min(ds + timedelta(days=6), real_today)
+        period_label = f"Semana del {ds.strftime('%d/%m')} al {de.strftime('%d/%m/%Y')}"
+
+    qualifying = _fetch_qualifying(op_id, ds, de, db)
+    rate = Decimal(str(operator.commission_rate)) / Decimal("100")
+    gross_total = sum((o.total or Decimal("0")) for o in qualifying)
+    commission = (rate * gross_total).quantize(Decimal("0.01"))
+
+    orders = [
+        schemas.ReportOrder(
+            order_number=o.order_number,
+            date=str(o.date),
+            vehicle_plate=o.vehicle.plate,
+            vehicle_brand=o.vehicle.brand,
+            vehicle_model=o.vehicle.model,
+            items=[
+                schemas.ReportOrderItem(
+                    service_name=i.service_name,
+                    service_category=i.service_category,
+                    unit_price=i.unit_price,
+                    quantity=i.quantity,
+                    subtotal=i.subtotal,
+                )
+                for i in o.items
+            ],
+            total=o.total or Decimal("0"),
+        )
+        for o in sorted(qualifying, key=lambda x: x.date)
+    ]
+
+    # ── Per-week liquidation status (Sunday-based weeks) ──────────────────────
+    # Find the first Sunday on or before ds
+    first_sunday = ds - timedelta(days=ds.isoweekday() % 7)
+    week_statuses: list[schemas.ReportWeekStatus] = []
+    cur = first_sunday
+    while cur <= de:
+        ws_end = cur + timedelta(days=6)
+        liq = db.query(models.WeekLiquidation).filter_by(operator_id=op_id, week_start=cur).first()
+        week_orders = [o for o in qualifying if cur <= o.date <= ws_end]
+        wk_gross = sum((o.total or Decimal("0")) for o in week_orders)
+        wk_comm  = (rate * wk_gross).quantize(Decimal("0.01"))
+        week_statuses.append(schemas.ReportWeekStatus(
+            week_start=str(cur),
+            week_end=str(ws_end),
+            is_liquidated=liq is not None,
+            week_gross=wk_gross,
+            week_commission=wk_comm,
+            net_amount=liq.net_amount if liq else None,
+            payment_transfer=liq.payment_transfer if liq else None,
+            payment_cash=liq.payment_cash if liq else None,
+            amount_pending=liq.amount_pending if liq else None,
+        ))
+        cur += timedelta(days=7)
+
+    # ── Pending debts owed by the company to the operator ─────────────────────
+    raw_debts = (
+        db.query(models.Debt)
+        .filter_by(operator_id=op_id, direction="empresa_operario", paid=False)
+        .order_by(models.Debt.created_at)
+        .all()
+    )
+    pending_debts = [
+        schemas.ReportPendingDebt(
+            description=d.description,
+            amount=d.amount,
+            paid_amount=d.paid_amount or Decimal("0"),
+            remaining=d.amount - (d.paid_amount or Decimal("0")),
+        )
+        for d in raw_debts
+        if d.amount - (d.paid_amount or Decimal("0")) > 0
+    ]
+    total_pending_owed = sum(pd.remaining for pd in pending_debts)
+
+    return schemas.ReportResponse(
+        operator_id=operator.id,
+        operator_name=operator.name,
+        commission_rate=operator.commission_rate,
+        period_label=period_label,
+        date_start=str(ds),
+        date_end=str(de),
+        orders=orders,
+        total_services=len(qualifying),
+        gross_total=gross_total,
+        commission_amount=commission,
+        week_statuses=week_statuses,
+        pending_debts=pending_debts,
+        total_pending_owed=total_pending_owed,
+    )
 
 
 @router.patch("/debts/{debt_id}/paid", response_model=schemas.DebtOut)
