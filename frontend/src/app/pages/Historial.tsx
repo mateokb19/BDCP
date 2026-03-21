@@ -79,16 +79,16 @@ function OrderCard({ entry }: { entry: ApiHistorialEntry }) {
           </div>
         )}
 
-        {/* Fila 4: badges de servicios — máximo 2 por fila */}
+        {/* Fila 4: badges de servicios */}
         {entry.items.length > 0 && (
-          <div className="grid grid-cols-2 gap-1">
+          <div className="flex flex-wrap gap-1">
             {entry.items.map((item, i) => (
               <Badge
                 key={i}
                 variant={(categoryColors[item.service_category] ?? 'default') as any}
-                className="text-[10px] py-0.5 w-full justify-start"
+                className="text-[10px] py-0.5 max-w-[calc(50%-2px)] shrink-0"
               >
-                <span className="truncate">{item.service_name}</span>
+                <span className="truncate block">{item.service_name}</span>
               </Badge>
             ))}
           </div>
