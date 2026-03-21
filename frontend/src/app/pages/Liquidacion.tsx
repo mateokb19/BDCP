@@ -556,30 +556,31 @@ export default function LiquidacionPage() {
         {/* Operator header */}
         {operator && (
           <GlassCard padding>
-            <div className="flex items-start justify-between gap-4">
-              <div className="flex items-start gap-4">
-                <div className={cn('rounded-2xl p-4 text-2xl font-bold leading-none min-w-[56px] text-center shrink-0', opColor.bg, opColor.text)}>
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex items-start gap-3 min-w-0">
+                <div className={cn('rounded-2xl p-3 text-lg sm:text-2xl font-bold leading-none min-w-[48px] sm:min-w-[56px] text-center shrink-0', opColor.bg, opColor.text)}>
                   {getInitials(operator.name)}
                 </div>
-                <div className="space-y-0.5">
-                  <h2 className="text-xl font-semibold text-white">{operator.name}</h2>
-                  <p className="text-sm text-gray-500">Comisión {Number(operator.commission_rate)}%</p>
-                  <div className="flex flex-wrap gap-x-4 gap-y-0.5 pt-1">
-                    <span className="flex items-center gap-1.5 text-xs text-gray-500">
-                      <Phone size={11} />
+                <div className="space-y-0.5 min-w-0">
+                  <h2 className="text-base sm:text-xl font-semibold text-white leading-snug">{operator.name}</h2>
+                  <p className="text-xs sm:text-sm text-gray-500">Comisión {Number(operator.commission_rate)}%</p>
+                  <div className="flex flex-wrap gap-x-3 gap-y-0.5 pt-1">
+                    <span className="flex items-center gap-1 text-xs text-gray-500">
+                      <Phone size={10} />
                       {operator.phone || '—'}
                     </span>
-                    <span className="flex items-center gap-1.5 text-xs text-gray-500">
-                      <CreditCard size={11} />
+                    <span className="flex items-center gap-1 text-xs text-gray-500">
+                      <CreditCard size={10} />
                       {(operator as any).cedula || '—'}
                     </span>
                   </div>
                 </div>
               </div>
               <button
-                className="flex items-center gap-1.5 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-gray-400 hover:bg-white/10 hover:text-gray-200 transition-colors shrink-0"
+                className="flex items-center gap-1.5 rounded-xl border border-white/10 bg-white/5 p-2 sm:px-3 sm:py-2 text-gray-400 hover:bg-white/10 hover:text-gray-200 transition-colors shrink-0"
               >
-                <Download size={15} /> Descargar
+                <Download size={15} />
+                <span className="hidden sm:inline text-sm">Descargar</span>
               </button>
             </div>
           </GlassCard>
@@ -613,15 +614,15 @@ export default function LiquidacionPage() {
         {/* Week summary */}
         {weekData && (
           <>
-            <div className="grid grid-cols-3 gap-3">
+            <div className="grid grid-cols-3 gap-2">
               {[
                 { label: 'Servicios', value: weekData.week_services },
-                { label: 'Total bruto', value: `$${cop(weekData.week_total)}` },
-                { label: `Comisión (${Number(weekData.commission_rate)}%)`, value: `$${cop(weekData.commission_amount)}`, highlight: true },
+                { label: 'Total', value: `$${cop(weekData.week_total)}` },
+                { label: `Com. ${Number(weekData.commission_rate)}%`, value: `$${cop(weekData.commission_amount)}`, highlight: true },
               ].map(item => (
-                <GlassCard key={item.label} padding className="text-center !py-3">
-                  <p className="text-xs text-gray-500 mb-1">{item.label}</p>
-                  <p className={cn('text-lg font-bold', item.highlight ? 'text-yellow-400' : 'text-white')}>
+                <GlassCard key={item.label} padding className="text-center !px-2 !py-3">
+                  <p className="text-[10px] sm:text-xs text-gray-500 mb-1 leading-tight">{item.label}</p>
+                  <p className={cn('text-sm sm:text-lg font-bold truncate', item.highlight ? 'text-yellow-400' : 'text-white')}>
                     {item.value}
                   </p>
                 </GlassCard>
@@ -804,26 +805,26 @@ export default function LiquidacionPage() {
                     <button
                       onClick={() => setDebtForm(f => ({ ...f, direction: 'empresa_operario' }))}
                       className={cn(
-                        'rounded-xl border px-3 py-2 text-xs transition-colors text-left',
+                        'rounded-xl border px-2 py-2 text-[11px] sm:text-xs transition-colors text-left',
                         debtForm.direction === 'empresa_operario'
                           ? 'border-green-500/40 bg-green-500/10 text-green-400'
                           : 'border-white/8 bg-white/3 text-gray-400 hover:bg-white/8'
                       )}
                     >
-                      <TrendingDown size={12} className="mb-1" />
-                      Empresa → Operario
+                      <TrendingDown size={11} className="mb-1" />
+                      Empresa → Op.
                     </button>
                     <button
                       onClick={() => setDebtForm(f => ({ ...f, direction: 'operario_empresa' }))}
                       className={cn(
-                        'rounded-xl border px-3 py-2 text-xs transition-colors text-left',
+                        'rounded-xl border px-2 py-2 text-[11px] sm:text-xs transition-colors text-left',
                         debtForm.direction === 'operario_empresa'
                           ? 'border-red-500/40 bg-red-500/10 text-red-400'
                           : 'border-white/8 bg-white/3 text-gray-400 hover:bg-white/8'
                       )}
                     >
-                      <TrendingUp size={12} className="mb-1" />
-                      Operario → Empresa
+                      <TrendingUp size={11} className="mb-1" />
+                      Op. → Empresa
                     </button>
                   </div>
                   <div className="grid grid-cols-2 gap-2">
@@ -947,7 +948,7 @@ export default function LiquidacionPage() {
           <p className="text-sm text-gray-500">Cargando operarios...</p>
         </div>
       ) : (
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
           {operators.map((operator, idx) => {
             const color = OP_COLORS[idx % OP_COLORS.length]
             return (
@@ -956,12 +957,12 @@ export default function LiquidacionPage() {
                 whileHover={{ scale: 1.03 }}
                 whileTap={{ scale: 0.97 }}
                 onClick={() => { setSelectedOp(operator.id); setWeekOffset(0) }}
-                className="flex flex-col items-center gap-3 rounded-2xl border border-white/8 bg-white/[0.03] p-6 hover:bg-white/[0.06] hover:border-white/15 transition-all duration-200"
+                className="flex flex-col items-center gap-2 rounded-2xl border border-white/8 bg-white/[0.03] p-4 sm:p-6 hover:bg-white/[0.06] hover:border-white/15 transition-all duration-200"
               >
-                <div className={cn('rounded-2xl p-4 text-2xl font-bold leading-none min-w-[64px] text-center', color.bg, color.text)}>
+                <div className={cn('rounded-2xl p-3 sm:p-4 text-xl sm:text-2xl font-bold leading-none min-w-[52px] sm:min-w-[64px] text-center', color.bg, color.text)}>
                   {getInitials(operator.name)}
                 </div>
-                <p className="text-sm font-medium text-gray-200 text-center leading-tight">{operator.name}</p>
+                <p className="text-xs sm:text-sm font-medium text-gray-200 text-center leading-tight">{operator.name}</p>
               </motion.button>
             )
           })}
