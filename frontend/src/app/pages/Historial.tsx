@@ -33,7 +33,7 @@ function OrderCard({ entry }: { entry: ApiHistorialEntry }) {
       exit={{ opacity: 0, y: -4 }}
       transition={{ duration: 0.2 }}
     >
-      <GlassCard padding className="space-y-3">
+      <GlassCard padding className="space-y-3 overflow-hidden">
         {/* Header row */}
         <div className="flex items-start justify-between gap-2">
           <div className="min-w-0 flex-1">
@@ -52,7 +52,7 @@ function OrderCard({ entry }: { entry: ApiHistorialEntry }) {
             )}
           </div>
           <div className="text-right shrink-0">
-            <div className="text-xl font-bold text-yellow-400">
+            <div className="text-base font-bold text-yellow-400">
               ${Number(entry.total ?? 0).toLocaleString('es-CO')}
             </div>
             <div className="text-xs text-gray-600 mt-0.5">
@@ -114,17 +114,17 @@ function OrderCard({ entry }: { entry: ApiHistorialEntry }) {
             >
               <div className="space-y-1.5 pt-1">
                 {entry.items.map((item, i) => (
-                  <div key={i} className="flex items-center justify-between text-sm">
-                    <div className="flex items-center gap-2">
+                  <div key={i} className="flex items-start justify-between gap-2 text-sm">
+                    <div className="flex items-center gap-1.5 min-w-0 flex-1">
                       <Badge
                         variant={(categoryColors[item.service_category] ?? 'default') as any}
                         className="text-[10px] py-0.5 shrink-0"
                       >
                         {item.service_category}
                       </Badge>
-                      <span className="text-gray-300">{item.service_name}</span>
+                      <span className="text-gray-300 truncate">{item.service_name}</span>
                     </div>
-                    <span className="text-yellow-400 font-medium shrink-0 ml-2">
+                    <span className="text-yellow-400 font-medium shrink-0">
                       ${Number(item.subtotal).toLocaleString('es-CO')}
                     </span>
                   </div>
@@ -177,7 +177,7 @@ export default function Historial() {
   const totalDay = entries.reduce((sum, e) => sum + Number(e.total ?? 0), 0)
 
   return (
-    <div className="max-w-3xl mx-auto">
+    <div className="max-w-xl mx-auto">
       <PageHeader
         title="Historial"
         subtitle={`${entries.length} servicio${entries.length !== 1 ? 's' : ''} · $${totalDay.toLocaleString('es-CO')}`}
