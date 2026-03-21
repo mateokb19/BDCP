@@ -222,6 +222,48 @@ export interface ApiHistorialEntry {
   operator?:    ApiHistorialOperator
 }
 
+export interface ApiAppointment {
+  id:           number
+  date:         string
+  time?:        string
+  vehicle_type?: string
+  brand?:       string
+  model?:       string
+  plate?:       string
+  client_name?: string
+  client_phone?: string
+  comments?:    string
+  status:       string
+  order_id?:    number
+  created_at:   string
+  updated_at:   string
+}
+
+export interface AppointmentCreatePayload {
+  date:          string
+  time?:         string
+  vehicle_type?: string
+  brand?:        string
+  model?:        string
+  plate?:        string
+  client_name:   string
+  client_phone?: string
+  comments?:     string
+}
+
+export interface AppointmentPatchPayload {
+  date?:         string
+  time?:         string
+  vehicle_type?: string
+  brand?:        string
+  model?:        string
+  plate?:        string
+  client_name?:  string
+  client_phone?: string
+  comments?:     string
+  status?:       string
+}
+
 export interface ApiReportOrderItem {
   service_name:     string
   service_category: string
@@ -310,6 +352,18 @@ export const api = {
       const query = qs.toString() ? `?${qs}` : ''
       return apiFetch<ApiHistorialEntry[]>(`/history${query}`)
     },
+  },
+  appointments: {
+    list: (month?: string) => {
+      const qs = month ? `?month=${month}` : ''
+      return apiFetch<ApiAppointment[]>(`/appointments${qs}`)
+    },
+    create: (payload: AppointmentCreatePayload) =>
+      apiFetch<ApiAppointment>('/appointments', { method: 'POST', body: JSON.stringify(payload) }),
+    patch: (id: number, payload: AppointmentPatchPayload) =>
+      apiFetch<ApiAppointment>(`/appointments/${id}`, { method: 'PATCH', body: JSON.stringify(payload) }),
+    delete: (id: number) =>
+      apiFetch<void>(`/appointments/${id}`, { method: 'DELETE' }),
   },
   liquidation: {
     getWeek: (opId: number, weekStart: string) =>

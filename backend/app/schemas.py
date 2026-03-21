@@ -234,6 +234,50 @@ class HistorialEntryOut(OrmBase):
     operator:     Optional[HistorialOperatorOut]
 
 
+# ── Appointments ──────────────────────────────────────────────────────────────
+
+class AppointmentOut(OrmBase):
+    id:           int
+    date:         date
+    time:         Optional[str]
+    vehicle_type: Optional[str]
+    brand:        Optional[str]
+    model:        Optional[str]
+    plate:        Optional[str]
+    client_name:  Optional[str]
+    client_phone: Optional[str]
+    comments:     Optional[str]
+    status:       str
+    order_id:     Optional[int]
+    created_at:   datetime
+    updated_at:   datetime
+
+
+class AppointmentCreate(BaseModel):
+    date:         date
+    time:         Optional[str]  = None
+    vehicle_type: Optional[str]  = None
+    brand:        Optional[str]  = None
+    model:        Optional[str]  = None
+    plate:        Optional[str]  = None
+    client_name:  str
+    client_phone: Optional[str]  = None
+    comments:     Optional[str]  = None
+
+
+class AppointmentPatch(BaseModel):
+    date:         Optional[date] = None
+    time:         Optional[str]  = None
+    vehicle_type: Optional[str]  = None
+    brand:        Optional[str]  = None
+    model:        Optional[str]  = None
+    plate:        Optional[str]  = None
+    client_name:  Optional[str]  = None
+    client_phone: Optional[str]  = None
+    comments:     Optional[str]  = None
+    status:       Optional[str]  = None
+
+
 # ── Liquidation ───────────────────────────────────────────────────────────────
 
 class LiqWeekOrderItem(BaseModel):

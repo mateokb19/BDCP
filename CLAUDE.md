@@ -82,6 +82,10 @@ All routes are prefixed `/api/v1/`.
 | GET    | `/patio` | List all patio entries with nested vehicle + order + items |
 | POST   | `/patio/{id}/advance` | Advance status: esperando→en_proceso→listo→entregado |
 | PATCH  | `/patio/{id}` | Edit color, assign operator, add/remove services; syncs operator to ceramic_treatments |
+| GET    | `/appointments?month=YYYY-MM` | List appointments for a month |
+| POST   | `/appointments` | Create appointment |
+| PATCH  | `/appointments/{id}` | Edit appointment (date, time, vehicle, client, status) |
+| DELETE | `/appointments/{id}` | Delete appointment |
 | GET    | `/ceramics` | List all ceramic treatments with vehicle + operator |
 | GET    | `/history` | Order history with optional `date_filter` and `search` query params |
 | GET    | `/liquidation/{op_id}/week?week_start=YYYY-MM-DD` | Weekly liquidation data (7 days, qualifying orders) |
@@ -95,7 +99,7 @@ All routes are prefixed `/api/v1/`.
 | Path               | Page              | Backend wired? | Description |
 |--------------------|-------------------|----------------|-------------|
 | `/`                | IngresarServicio  | ✅ | 3-step wizard → `POST /orders` |
-| `/calendario`      | CalendarioCitas   | ❌ mock | Monthly calendar + appointment management |
+| `/calendario`      | CalendarioCitas   | ✅ | Monthly calendar + appointment management |
 | `/patio`           | EstadoPatio       | ✅ | Kanban fetched from `GET /patio`; advance/edit via API |
 | `/inventario`      | Inventario        | ❌ mock | Inventory management with stock levels |
 | `/ceramicos`       | Ceramicos         | ✅ | Ceramic treatment tracking; fetched from `GET /ceramics` |
