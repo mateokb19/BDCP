@@ -86,20 +86,20 @@ def advance_status(id: int, db: Session = Depends(get_db)):
 @router.patch("/{id}", response_model=schemas.PatioEntryOut)
 def edit_patio_entry(id: int, payload: schemas.PatioPatch, db: Session = Depends(get_db)):
     """
-    Edit the non-mandatory fields of a patio entry:
-    - vehicle.model, vehicle.color
+    Edit a patio entry:
+    - vehicle.color
     - order.operator_id
+    - order items (service_ids replaces all current items)
     - patio notes
     """
     entry = _get_entry_or_404(id, db)
 
-    # Update vehicle
-    if payload.model is not None:
-        entry.vehicle.model = payload.model
+    # Update vehicle color
     if payload.color is not None:
         entry.vehicle.color = payload.color
 
     # Update order's operator
+    new_operator_id: int | None = entry.order.operator_id  # keep current by default
     if payload.operator_id is not None:
         op = db.query(models.Operator).filter(
             models.Operator.id == payload.operator_id,
@@ -108,9 +108,60 @@ def edit_patio_entry(id: int, payload: schemas.PatioPatch, db: Session = Depends
         if not op:
             raise HTTPException(status_code=404, detail="Operario no encontrado")
         entry.order.operator_id = payload.operator_id
+        new_operator_id = payload.operator_id
     elif "operator_id" in payload.model_fields_set:
-        # Explicit null → unassign
         entry.order.operator_id = None
+        new_operator_id = None
+
+    # Sync operator to any ceramic treatments linked to this order
+    if "operator_id" in payload.model_fields_set:
+        db.query(models.CeramicTreatment).filter(
+            models.CeramicTreatment.order_id == entry.order_id
+        ).update({"operator_id": new_operator_id})
+
+    # Replace order items if service_ids provided
+    if payload.service_ids is not None:
+        if not payload.service_ids:
+            raise HTTPException(status_code=422, detail="Debe seleccionar al menos un servicio")
+
+        services = db.query(models.Service).filter(
+            models.Service.id.in_(payload.service_ids),
+            models.Service.active == True,
+        ).all()
+        if len(services) != len(set(payload.service_ids)):
+            raise HTTPException(status_code=404, detail="Uno o más servicios no encontrados")
+
+        vehicle_type = entry.vehicle.type
+        def _price(svc):
+            if vehicle_type == "camion_estandar":
+                return svc.price_camion_estandar or svc.price_automovil
+            if vehicle_type == "camion_xl":
+                return svc.price_camion_xl or svc.price_automovil
+            return svc.price_automovil
+
+        # Delete old items
+        db.query(models.ServiceOrderItem).filter(
+            models.ServiceOrderItem.order_id == entry.order_id
+        ).delete()
+
+        # Insert new items
+        new_items = []
+        for svc in services:
+            p = _price(svc)
+            new_items.append(models.ServiceOrderItem(
+                order_id=entry.order_id,
+                service_id=svc.id,
+                service_name=svc.name,
+                service_category=svc.category,
+                unit_price=p,
+                quantity=1,
+                subtotal=p,
+            ))
+        db.add_all(new_items)
+
+        total = sum(_price(s) for s in services)
+        entry.order.subtotal = total
+        entry.order.total    = total
 
     if payload.notes is not None:
         entry.notes = payload.notes

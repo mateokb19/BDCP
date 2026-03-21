@@ -78,10 +78,115 @@ export interface OrderCreatePayload {
 }
 
 export interface PatioPatchPayload {
-  model?: string | null
   color?: string | null
   operator_id?: number | null
   notes?: string | null
+  service_ids?: number[]
+}
+
+export interface ApiCeramicVehicle {
+  plate: string
+  brand?: string
+  model?: string
+  color?: string
+  type:   string
+}
+
+export interface ApiCeramicOperator {
+  id:   number
+  name: string
+}
+
+export interface ApiCeramicTreatment {
+  id:               number
+  order_id?:        number
+  vehicle_id:       number
+  service_id?:      number
+  treatment_type:   string
+  operator_id?:     number
+  application_date: string
+  next_maintenance?: string
+  notes?:           string
+  created_at:       string
+  vehicle?:         ApiCeramicVehicle
+  operator?:        ApiCeramicOperator
+}
+
+export interface ApiLiqWeekOrderItem {
+  service_name: string
+  unit_price:   string
+  quantity:     number
+  subtotal:     string
+}
+
+export interface ApiLiqWeekOrder {
+  order_id:      number
+  order_number:  string
+  patio_status:  string
+  vehicle_plate: string
+  vehicle_brand?: string
+  vehicle_model?: string
+  items:         ApiLiqWeekOrderItem[]
+  total:         string
+}
+
+export interface ApiLiqWeekDay {
+  date:         string
+  day_name:     string
+  orders:       ApiLiqWeekOrder[]
+  day_total:    string
+  day_services: number
+}
+
+export interface ApiLiqWeekResponse {
+  operator_id:               number
+  operator_name:             string
+  commission_rate:           string
+  week_start:                string
+  week_end:                  string
+  days:                      ApiLiqWeekDay[]
+  week_total:                string
+  week_services:             number
+  commission_amount:         string
+  is_liquidated:             boolean
+  liquidated_at?:            string
+  net_amount?:               string
+  payment_transfer_amount?:  string
+  payment_cash_amount?:      string
+  amount_pending?:           string
+}
+
+export interface ApiDebtPayment {
+  id:         number
+  debt_id:    number
+  amount:     string
+  notes?:     string
+  created_at: string
+}
+
+export interface ApiDebt {
+  id:          number
+  operator_id: number
+  direction:   'empresa_operario' | 'operario_empresa'
+  amount:      string
+  paid_amount: string
+  description?: string
+  paid:        boolean
+  created_at:  string
+  payments:    ApiDebtPayment[]
+}
+
+export interface DebtCreatePayload {
+  direction:   'empresa_operario' | 'operario_empresa'
+  amount:      number
+  description?: string
+}
+
+export interface LiquidatePayload {
+  abonos:              { debt_id: number; amount: number }[]
+  company_settlements: { debt_id: number; amount: number }[]
+  payment_transfer:    number
+  payment_cash:        number
 }
 
 export interface ApiHistorialItem {
@@ -141,6 +246,9 @@ export const api = {
     edit: (id: number, payload: PatioPatchPayload) =>
       apiFetch<ApiPatioEntry>(`/patio/${id}`, { method: 'PATCH', body: JSON.stringify(payload) }),
   },
+  ceramics: {
+    list: () => apiFetch<ApiCeramicTreatment[]>('/ceramics'),
+  },
   history: {
     list: (params?: { date_filter?: string; search?: string }) => {
       const qs = new URLSearchParams()
@@ -149,5 +257,17 @@ export const api = {
       const query = qs.toString() ? `?${qs}` : ''
       return apiFetch<ApiHistorialEntry[]>(`/history${query}`)
     },
+  },
+  liquidation: {
+    getWeek: (opId: number, weekStart: string) =>
+      apiFetch<ApiLiqWeekResponse>(`/liquidation/${opId}/week?week_start=${weekStart}`),
+    listDebts: (opId: number) =>
+      apiFetch<ApiDebt[]>(`/liquidation/${opId}/debts`),
+    createDebt: (opId: number, payload: DebtCreatePayload) =>
+      apiFetch<ApiDebt>(`/liquidation/${opId}/debts`, { method: 'POST', body: JSON.stringify(payload) }),
+    markDebtPaid: (debtId: number) =>
+      apiFetch<ApiDebt>(`/liquidation/debts/${debtId}/paid`, { method: 'PATCH' }),
+    liquidate: (opId: number, weekStart: string, payload: LiquidatePayload) =>
+      apiFetch<ApiLiqWeekResponse>(`/liquidation/${opId}/liquidate?week_start=${weekStart}`, { method: 'POST', body: JSON.stringify(payload) }),
   },
 }

@@ -17,6 +17,7 @@ class OperatorOut(OrmBase):
     id:              int
     name:            str
     phone:           Optional[str]
+    cedula:          Optional[str]
     commission_rate: Decimal
     active:          bool
 
@@ -157,10 +158,40 @@ class PatioEntryOut(OrmBase):
 
 
 class PatioPatch(BaseModel):
-    model:       Optional[str] = None
     color:       Optional[str] = None
     operator_id: Optional[int] = None
     notes:       Optional[str] = None
+    service_ids: Optional[list[int]] = None
+
+
+# ── Ceramics ─────────────────────────────────────────────────────────────────
+
+class CeramicVehicleOut(OrmBase):
+    plate: str
+    brand: Optional[str]
+    model: Optional[str]
+    color: Optional[str]
+    type:  str
+
+
+class CeramicOperatorOut(OrmBase):
+    id:   int
+    name: str
+
+
+class CeramicTreatmentOut(OrmBase):
+    id:               int
+    order_id:         Optional[int]
+    vehicle_id:       int
+    service_id:       Optional[int]
+    treatment_type:   str
+    operator_id:      Optional[int]
+    application_date: date
+    next_maintenance: Optional[date]
+    notes:            Optional[str]
+    created_at:       datetime
+    vehicle:          Optional[CeramicVehicleOut]
+    operator:         Optional[CeramicOperatorOut]
 
 
 # ── Historial ─────────────────────────────────────────────────────────────────
@@ -201,3 +232,87 @@ class HistorialEntryOut(OrmBase):
     vehicle:      Optional[HistorialVehicleOut]
     items:        List[HistorialItemOut]
     operator:     Optional[HistorialOperatorOut]
+
+
+# ── Liquidation ───────────────────────────────────────────────────────────────
+
+class LiqWeekOrderItem(BaseModel):
+    service_name: str
+    unit_price:   Decimal
+    quantity:     int
+    subtotal:     Decimal
+
+
+class LiqWeekOrder(BaseModel):
+    order_id:      int
+    order_number:  str
+    patio_status:  str
+    vehicle_plate: str
+    vehicle_brand: Optional[str]
+    vehicle_model: Optional[str]
+    items:         List[LiqWeekOrderItem]
+    total:         Decimal
+
+
+class LiqWeekDay(BaseModel):
+    date:         str
+    day_name:     str
+    orders:       List[LiqWeekOrder]
+    day_total:    Decimal
+    day_services: int
+
+
+class LiqWeekResponse(BaseModel):
+    operator_id:              int
+    operator_name:            str
+    commission_rate:          Decimal
+    week_start:               str
+    week_end:                 str
+    days:                     List[LiqWeekDay]
+    week_total:               Decimal
+    week_services:            int
+    commission_amount:        Decimal
+    is_liquidated:            bool
+    liquidated_at:            Optional[str]
+    net_amount:               Optional[Decimal]
+    payment_transfer_amount:  Optional[Decimal]
+    payment_cash_amount:      Optional[Decimal]
+    amount_pending:           Optional[Decimal]
+
+
+class DebtPaymentOut(OrmBase):
+    id:         int
+    debt_id:    int
+    amount:     Decimal
+    notes:      Optional[str]
+    created_at: datetime
+
+
+class DebtOut(OrmBase):
+    id:          int
+    operator_id: int
+    direction:   str
+    amount:      Decimal
+    paid_amount: Decimal
+    description: Optional[str]
+    paid:        bool
+    created_at:  datetime
+    payments:    List["DebtPaymentOut"] = []
+
+
+class DebtCreate(BaseModel):
+    direction:   str
+    amount:      Decimal
+    description: Optional[str] = None
+
+
+class AbonoItem(BaseModel):
+    debt_id: int
+    amount:  Decimal
+
+
+class LiquidatePayload(BaseModel):
+    abonos:               List[AbonoItem] = []
+    company_settlements:  List[AbonoItem] = []
+    payment_transfer:     Decimal = Decimal("0")
+    payment_cash:         Decimal = Decimal("0")

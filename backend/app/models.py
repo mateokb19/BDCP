@@ -1,7 +1,7 @@
 import enum
 from sqlalchemy import (
     Column, Integer, String, Boolean, Numeric, Date, DateTime,
-    ForeignKey, SmallInteger, Text, Enum as SAEnum, func,
+    ForeignKey, SmallInteger, Text, Enum as SAEnum, func, UniqueConstraint,
 )
 from sqlalchemy.orm import relationship
 from app.database import Base
@@ -15,9 +15,10 @@ class VehicleTypeEnum(str, enum.Enum):
     camion_xl       = "camion_xl"
 
 class ServiceCategoryEnum(str, enum.Enum):
-    exterior = "exterior"
-    interior = "interior"
-    ceramico = "ceramico"
+    exterior            = "exterior"
+    interior            = "interior"
+    ceramico            = "ceramico"
+    correccion_pintura  = "correccion_pintura"
 
 class OrderStatusEnum(str, enum.Enum):
     pendiente  = "pendiente"
@@ -93,6 +94,7 @@ class Operator(Base):
     id              = Column(Integer, primary_key=True)
     name            = Column(String(100), nullable=False)
     phone           = Column(String(20))
+    cedula          = Column(String(20))
     commission_rate = Column(Numeric(5, 2), nullable=False, default=0)
     active          = Column(Boolean, nullable=False, default=True)
     created_at      = Column(DateTime, server_default=func.now(), nullable=False)
@@ -171,6 +173,77 @@ class PatioEntry(Base):
 
     order   = relationship("ServiceOrder", back_populates="patio_entry")
     vehicle = relationship("Vehicle", back_populates="patio_entries")
+
+
+class CeramicTreatment(Base):
+    __tablename__ = "ceramic_treatments"
+
+    id               = Column(Integer, primary_key=True)
+    order_id         = Column(Integer, ForeignKey("service_orders.id", ondelete="SET NULL"))
+    vehicle_id       = Column(Integer, ForeignKey("vehicles.id"), nullable=False)
+    service_id       = Column(Integer, ForeignKey("services.id", ondelete="SET NULL"))
+    treatment_type   = Column(String(100), nullable=False)
+    operator_id      = Column(Integer, ForeignKey("operators.id", ondelete="SET NULL"))
+    application_date = Column(Date, nullable=False, server_default=func.current_date())
+    next_maintenance = Column(Date)
+    notes            = Column(Text)
+    created_at       = Column(DateTime, server_default=func.now(), nullable=False)
+
+    vehicle  = relationship("Vehicle")
+    operator = relationship("Operator")
+
+
+class DebtDirectionEnum(str, enum.Enum):
+    empresa_operario = "empresa_operario"
+    operario_empresa = "operario_empresa"
+
+
+class Debt(Base):
+    __tablename__ = "debts"
+
+    id          = Column(Integer, primary_key=True)
+    operator_id = Column(Integer, ForeignKey("operators.id", ondelete="CASCADE"), nullable=False, index=True)
+    direction   = Column(_enum(DebtDirectionEnum, "debt_direction"), nullable=False)
+    amount      = Column(Numeric(12, 2), nullable=False)
+    description = Column(String(200))
+    paid        = Column(Boolean, nullable=False, default=False)
+    paid_amount = Column(Numeric(12, 2), nullable=False, default=0)
+    created_at  = Column(DateTime, server_default=func.now(), nullable=False)
+
+    operator = relationship("Operator")
+    payments = relationship("DebtPayment", back_populates="debt", cascade="all, delete-orphan")
+
+
+class DebtPayment(Base):
+    __tablename__ = "debt_payments"
+
+    id             = Column(Integer, primary_key=True)
+    debt_id        = Column(Integer, ForeignKey("debts.id", ondelete="CASCADE"), nullable=False, index=True)
+    liquidation_id = Column(Integer, ForeignKey("week_liquidations.id", ondelete="SET NULL"), nullable=True)
+    amount         = Column(Numeric(12, 2), nullable=False)
+    notes          = Column(String(200))
+    created_at     = Column(DateTime, server_default=func.now(), nullable=False)
+
+    debt = relationship("Debt", back_populates="payments")
+
+
+class WeekLiquidation(Base):
+    __tablename__ = "week_liquidations"
+
+    id                = Column(Integer, primary_key=True)
+    operator_id       = Column(Integer, ForeignKey("operators.id", ondelete="CASCADE"), nullable=False, index=True)
+    week_start        = Column(Date, nullable=False)
+    total_amount      = Column(Numeric(12, 2), nullable=False, default=0)
+    commission_amount = Column(Numeric(12, 2), nullable=False, default=0)
+    net_amount        = Column(Numeric(12, 2), nullable=False, default=0)
+    payment_transfer  = Column(Numeric(12, 2), nullable=False, default=0)
+    payment_cash      = Column(Numeric(12, 2), nullable=False, default=0)
+    amount_pending    = Column(Numeric(12, 2), nullable=False, default=0)
+    liquidated_at     = Column(DateTime, server_default=func.now(), nullable=False)
+
+    operator = relationship("Operator")
+
+    __table_args__ = (UniqueConstraint("operator_id", "week_start", name="uq_week_liquidation"),)
 
 
 class Appointment(Base):

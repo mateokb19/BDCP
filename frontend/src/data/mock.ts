@@ -35,17 +35,40 @@ export const mockOperators: Operator[] = [
 ]
 
 // ---- SERVICES ----
+const D = '2026-01-01T00:00:00Z'
 export const mockServices: Service[] = [
-  { id: 1,  category: 'exterior', name: 'Lavado Básico',             price_automovil: 15,  price_camion_estandar: 20,  price_camion_xl: 25,  active: true, created_at: '2026-01-01T00:00:00Z', updated_at: '2026-01-01T00:00:00Z' },
-  { id: 2,  category: 'exterior', name: 'Lavado Premium',            price_automovil: 30,  price_camion_estandar: 40,  price_camion_xl: 50,  active: true, created_at: '2026-01-01T00:00:00Z', updated_at: '2026-01-01T00:00:00Z' },
-  { id: 3,  category: 'exterior', name: 'Pulido',                    price_automovil: 80,  price_camion_estandar: 100, price_camion_xl: 120, active: true, created_at: '2026-01-01T00:00:00Z', updated_at: '2026-01-01T00:00:00Z' },
-  { id: 4,  category: 'exterior', name: 'Encerado',                  price_automovil: 50,  price_camion_estandar: 65,  price_camion_xl: 80,  active: true, created_at: '2026-01-01T00:00:00Z', updated_at: '2026-01-01T00:00:00Z' },
-  { id: 5,  category: 'interior', name: 'Limpieza Interior Básica',  price_automovil: 25,  price_camion_estandar: 35,  price_camion_xl: 45,  active: true, created_at: '2026-01-01T00:00:00Z', updated_at: '2026-01-01T00:00:00Z' },
-  { id: 6,  category: 'interior', name: 'Limpieza Interior Profunda',price_automovil: 40,  price_camion_estandar: 55,  price_camion_xl: 70,  active: true, created_at: '2026-01-01T00:00:00Z', updated_at: '2026-01-01T00:00:00Z' },
-  { id: 7,  category: 'interior', name: 'Shampoo Tapicería',         price_automovil: 60,  price_camion_estandar: 80,  price_camion_xl: 100, active: true, created_at: '2026-01-01T00:00:00Z', updated_at: '2026-01-01T00:00:00Z' },
-  { id: 8,  category: 'ceramico', name: 'Tratamiento Cerámico Básico',  price_automovil: 200, price_camion_estandar: 250, price_camion_xl: 300, active: true, created_at: '2026-01-01T00:00:00Z', updated_at: '2026-01-01T00:00:00Z' },
-  { id: 9,  category: 'ceramico', name: 'Tratamiento Cerámico Premium', price_automovil: 300, price_camion_estandar: 380, price_camion_xl: 450, active: true, created_at: '2026-01-01T00:00:00Z', updated_at: '2026-01-01T00:00:00Z' },
-  { id: 10, category: 'ceramico', name: 'Tratamiento Cerámico Elite',   price_automovil: 500, price_camion_estandar: 600, price_camion_xl: 750, active: true, created_at: '2026-01-01T00:00:00Z', updated_at: '2026-01-01T00:00:00Z' },
+  // Exterior / Servicios Básicos
+  { id: 1,  category: 'exterior',           name: 'Premium Wash',                  price_automovil: 51000,   price_camion_estandar: 60000,   price_camion_xl: 66000,   active: true, created_at: D, updated_at: D },
+  { id: 2,  category: 'exterior',           name: 'Premium Wash Hidrofobic',        price_automovil: 85000,   price_camion_estandar: 95000,   price_camion_xl: 110000,  active: true, created_at: D, updated_at: D },
+  { id: 3,  category: 'exterior',           name: 'Detallado de Llantas',           price_automovil: 165000,  price_camion_estandar: 195000,  price_camion_xl: 195000,  active: true, created_at: D, updated_at: D },
+  { id: 4,  category: 'exterior',           name: 'Chasis + Premium Wash',          price_automovil: 94000,   price_camion_estandar: 105000,  price_camion_xl: 115000,  active: true, created_at: D, updated_at: D },
+  { id: 5,  category: 'exterior',           name: 'Motor Detailing + Vapor',        price_automovil: 220000,  price_camion_estandar: 245000,  price_camion_xl: 270000,  active: true, created_at: D, updated_at: D },
+  { id: 6,  category: 'exterior',           name: 'Motor + Premium Wash',           price_automovil: 130000,  price_camion_estandar: 150000,  price_camion_xl: 170000,  active: true, created_at: D, updated_at: D },
+  { id: 7,  category: 'exterior',           name: 'Premium Wash + Chasis + Motor',  price_automovil: 145000,  price_camion_estandar: 170000,  price_camion_xl: 190000,  active: true, created_at: D, updated_at: D },
+  { id: 8,  category: 'exterior',           name: 'Hidrophobic + Chasis',           price_automovil: 130000,  price_camion_estandar: 145000,  price_camion_xl: 160000,  active: true, created_at: D, updated_at: D },
+  { id: 9,  category: 'exterior',           name: 'Wax Service',                    price_automovil: 125000,  price_camion_estandar: 145000,  price_camion_xl: 160000,  active: true, created_at: D, updated_at: D },
+  { id: 10, category: 'exterior',           name: 'Wash and Protect',               price_automovil: 180000,  price_camion_estandar: 205000,  price_camion_xl: 225000,  active: true, created_at: D, updated_at: D },
+  { id: 11, category: 'exterior',           name: 'Descontamination Service',       price_automovil: 215000,  price_camion_estandar: 226000,  price_camion_xl: 300000,  active: true, created_at: D, updated_at: D },
+  // Interior
+  { id: 12, category: 'interior',           name: 'Estrene Otra Vez',               price_automovil: 395000,  price_camion_estandar: 460000,  price_camion_xl: 560000,  active: true, created_at: D, updated_at: D },
+  { id: 13, category: 'interior',           name: 'Carpet Renew',                   price_automovil: 300000,  price_camion_estandar: 320000,  price_camion_xl: 360000,  active: true, created_at: D, updated_at: D },
+  { id: 14, category: 'interior',           name: 'Combo, Asientos y Carteras',     price_automovil: 290000,  price_camion_estandar: 320000,  price_camion_xl: 390000,  active: true, created_at: D, updated_at: D },
+  { id: 15, category: 'interior',           name: 'Limpieza Asientos',              price_automovil: 175000,  price_camion_estandar: 185000,  price_camion_xl: 195000,  active: true, created_at: D, updated_at: D },
+  { id: 16, category: 'interior',           name: 'Limpieza de Techo',              price_automovil: 220000,  price_camion_estandar: 245000,  price_camion_xl: 270000,  active: true, created_at: D, updated_at: D },
+  { id: 17, category: 'interior',           name: 'Limpieza Interior Básica',       price_automovil: 170000,  price_camion_estandar: 200000,  price_camion_xl: 230000,  active: true, created_at: D, updated_at: D },
+  { id: 18, category: 'interior',           name: 'Limpieza Tapete',                price_automovil: 170000,  price_camion_estandar: 210000,  price_camion_xl: 260000,  active: true, created_at: D, updated_at: D },
+  { id: 19, category: 'interior',           name: 'Hidratación Cuero',              price_automovil: 85000,   price_camion_estandar: 85000,   price_camion_xl: 105000,  active: true, created_at: D, updated_at: D },
+  { id: 20, category: 'interior',           name: 'Interior Protection',            price_automovil: 870000,  price_camion_estandar: 1000000, price_camion_xl: 1150000, active: true, created_at: D, updated_at: D },
+  // Corrección de Pintura
+  { id: 21, category: 'correccion_pintura', name: 'Rejuvenecimiento de Pintura',    price_automovil: 335000,  price_camion_estandar: 390000,  price_camion_xl: 430000,  active: true, created_at: D, updated_at: D },
+  { id: 22, category: 'correccion_pintura', name: 'Exterior Detailing Service',     price_automovil: 490000,  price_camion_estandar: 600000,  price_camion_xl: 650000,  active: true, created_at: D, updated_at: D },
+  { id: 23, category: 'correccion_pintura', name: 'Restoration to Shine',           price_automovil: 680000,  price_camion_estandar: 810000,  price_camion_xl: 940000,  active: true, created_at: D, updated_at: D },
+  { id: 24, category: 'correccion_pintura', name: 'Signature',                      price_automovil: 800000,  price_camion_estandar: 920000,  price_camion_xl: 1150000, active: true, created_at: D, updated_at: D },
+  // Protección Cerámica
+  { id: 25, category: 'ceramico',           name: 'Superior Shine +9 EXCLUSIVE',    price_automovil: 3400000, price_camion_estandar: 3950000, price_camion_xl: 4500000, active: true, created_at: D, updated_at: D },
+  { id: 26, category: 'ceramico',           name: 'Superior Shine +9',              price_automovil: 2780000, price_camion_estandar: 2980000, price_camion_xl: 3380000, active: true, created_at: D, updated_at: D },
+  { id: 27, category: 'ceramico',           name: 'Superior Shine +5',              price_automovil: 2050000, price_camion_estandar: 2300000, price_camion_xl: 2500000, active: true, created_at: D, updated_at: D },
+  { id: 28, category: 'ceramico',           name: 'Superior Shine +2',              price_automovil: 980000,  price_camion_estandar: 1300000, price_camion_xl: 1450000, active: true, created_at: D, updated_at: D },
 ]
 
 // ---- SERVICE ORDERS ----
@@ -147,11 +170,11 @@ export const mockInventoryItems: InventoryItem[] = [
 
 // ---- CERAMIC TREATMENTS ----
 export const mockCeramics: CeramicTreatment[] = [
-  { id: 1, order_id: 4,  vehicle_id: 4, treatment_type: 'Básico',   operator_id: 3, application_date: '2025-12-01', warranty_months: 6,  warranty_expiry: '2026-06-01', notes: 'Primera aplicación', created_at: '2025-12-01T00:00:00Z' },
-  { id: 2, order_id: 3,  vehicle_id: 3, treatment_type: 'Premium',  operator_id: 1, application_date: '2025-10-15', warranty_months: 12, warranty_expiry: '2026-10-15', notes: 'Cliente frecuente, buen resultado', created_at: '2025-10-15T00:00:00Z' },
-  { id: 3, order_id: 2,  vehicle_id: 2, treatment_type: 'Básico',   operator_id: 2, application_date: '2025-08-20', warranty_months: 6,  warranty_expiry: '2026-02-20', notes: '', created_at: '2025-08-20T00:00:00Z' },
-  { id: 4, order_id: 6,  vehicle_id: 6, treatment_type: 'Elite',    operator_id: 1, application_date: '2026-03-17', warranty_months: 24, warranty_expiry: '2028-03-17', notes: 'Vehículo nuevo, cliente exigente', created_at: '2026-03-17T00:00:00Z' },
-  { id: 5, order_id: 1,  vehicle_id: 1, treatment_type: 'Premium',  operator_id: 1, application_date: '2026-03-01', warranty_months: 12, warranty_expiry: '2027-03-01', notes: '', created_at: '2026-03-01T00:00:00Z' },
+  { id: 1, order_id: 4,  vehicle_id: 4, treatment_type: 'Superior Shine +2',           operator_id: 3, application_date: '2025-12-01', warranty_months: 6, warranty_expiry: '2026-06-01', notes: '', created_at: '2025-12-01T00:00:00Z' },
+  { id: 2, order_id: 3,  vehicle_id: 3, treatment_type: 'Superior Shine +5',           operator_id: 1, application_date: '2025-10-15', warranty_months: 6, warranty_expiry: '2026-04-15', notes: '', created_at: '2025-10-15T00:00:00Z' },
+  { id: 3, order_id: 2,  vehicle_id: 2, treatment_type: 'Superior Shine +2',           operator_id: 2, application_date: '2025-08-20', warranty_months: 6, warranty_expiry: '2026-02-20', notes: '', created_at: '2025-08-20T00:00:00Z' },
+  { id: 4, order_id: 6,  vehicle_id: 6, treatment_type: 'Superior Shine +9 EXCLUSIVE', operator_id: 1, application_date: '2026-03-17', warranty_months: 6, warranty_expiry: '2026-09-17', notes: '', created_at: '2026-03-17T00:00:00Z' },
+  { id: 5, order_id: 1,  vehicle_id: 1, treatment_type: 'Superior Shine +9',           operator_id: 1, application_date: '2026-03-01', warranty_months: 6, warranty_expiry: '2026-09-01', notes: '', created_at: '2026-03-01T00:00:00Z' },
 ]
 
 // ---- LIQUIDATIONS ----

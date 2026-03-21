@@ -36,14 +36,16 @@ const vehicleOptions: { type: VehicleType; label: string; sub: string; icon: Rea
 ]
 
 const categoryColors: Record<string, string> = {
-  exterior: 'bg-yellow-500/10 border-yellow-500/20',
-  interior: 'bg-blue-500/10 border-blue-500/20',
-  ceramico: 'bg-purple-500/10 border-purple-500/20',
+  exterior:           'bg-yellow-500/10 border-yellow-500/20',
+  interior:           'bg-blue-500/10 border-blue-500/20',
+  ceramico:           'bg-purple-500/10 border-purple-500/20',
+  correccion_pintura: 'bg-orange-500/10 border-orange-500/20',
 }
 const categoryLabels: Record<string, string> = {
-  exterior: 'Exterior',
-  interior: 'Interior',
-  ceramico: 'Cerámico',
+  exterior:           'Exterior',
+  interior:           'Interior',
+  ceramico:           'Cerámico',
+  correccion_pintura: 'Corrección de Pintura',
 }
 
 const BRANDS = [
@@ -174,7 +176,7 @@ export default function IngresarServicio() {
 
   const total = form.selectedServices.reduce((sum, id) => {
     const s = services.find(s => s.id === id)
-    return sum + (s ? getPrice(s) : 0)
+    return sum + (s ? Number(getPrice(s)) : 0)
   }, 0)
 
   const selectedServiceObjs = form.selectedServices.map(id => services.find(s => s.id === id)!).filter(Boolean)
@@ -202,7 +204,7 @@ export default function IngresarServicio() {
       setStep(1); setPrevStep(1); setVehicleType(null)
       setForm({ plate: '', brand: '', model: '', color: '', clientName: '', clientPhone: '', operatorId: null, selectedServices: [], notes: '' })
       setBrandQuery('')
-      navigate('/patio')
+      navigate('/')
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Error al crear la orden')
     } finally {
@@ -290,7 +292,7 @@ export default function IngresarServicio() {
               </div>
 
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 lg:gap-5">
-                {/* Col 1 — Vehículo & Cliente */}
+                {/* Col 1 — Vehículo & Cliente (shown first on mobile, side on desktop) */}
                 <div className="space-y-3">
                   <GlassCard padding className="space-y-3">
                     <h3 className="text-sm font-semibold text-gray-300 uppercase tracking-wider">Vehículo</h3>
@@ -407,12 +409,13 @@ export default function IngresarServicio() {
 
                 {/* Col 2 — Services */}
                 <div className="space-y-3">
-                  {(['exterior', 'interior', 'ceramico'] as const).map(cat => (
+                  {(['exterior', 'interior', 'correccion_pintura', 'ceramico'] as const).map(cat => (
                     <div key={cat}>
-                      <div className={cn('rounded-xl border p-3 space-y-1', categoryColors[cat])}>
+                      <div className={cn('rounded-xl border p-3', categoryColors[cat])}>
                         <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">
                           {categoryLabels[cat]}
                         </h3>
+                        <div className="space-y-1 max-h-52 overflow-y-auto pr-1">
                         {services.filter(s => s.category === cat).map(service => {
                           const price   = getPrice(service)
                           const checked = form.selectedServices.includes(service.id)
@@ -426,6 +429,7 @@ export default function IngresarServicio() {
                             </motion.label>
                           )
                         })}
+                        </div>
                       </div>
                     </div>
                   ))}
@@ -433,7 +437,7 @@ export default function IngresarServicio() {
 
                 {/* Col 3 — Summary + actions */}
                 <div>
-                  <GlassCard padding className="flex flex-col h-full lg:min-h-[500px]">
+                  <GlassCard padding className="flex flex-col h-full lg:sticky lg:top-4">
                     <h3 className="text-sm font-semibold text-yellow-400 uppercase tracking-wider mb-4">Resumen</h3>
 
                     <div className="flex-1 space-y-2 overflow-y-auto">
@@ -446,7 +450,7 @@ export default function IngresarServicio() {
                               initial={{ opacity: 0, x: 10 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 10 }}
                               className="flex justify-between items-center py-2 border-b border-white/6">
                               <span className="text-sm text-gray-300">{s.name}</span>
-                              <span className="text-sm font-medium text-yellow-400">${getPrice(s)}</span>
+                              <span className="text-sm font-medium text-yellow-400">${Number(getPrice(s)).toLocaleString('es-CO')}</span>
                             </motion.div>
                           ))}
                         </AnimatePresence>
@@ -511,12 +515,12 @@ export default function IngresarServicio() {
                     {selectedServiceObjs.map(s => (
                       <div key={s.id} className="flex justify-between items-center">
                         <div className="flex items-center gap-2">
-                          <Badge variant={s.category === 'exterior' ? 'yellow' : s.category === 'interior' ? 'blue' : 'purple'}>
+                          <Badge variant={s.category === 'exterior' ? 'yellow' : s.category === 'interior' ? 'blue' : s.category === 'correccion_pintura' ? 'orange' : 'purple'}>
                             {categoryLabels[s.category]}
                           </Badge>
                           <span className="text-sm text-gray-200">{s.name}</span>
                         </div>
-                        <span className="text-sm font-medium text-yellow-400">${getPrice(s)}</span>
+                        <span className="text-sm font-medium text-yellow-400">${Number(getPrice(s)).toLocaleString('es-CO')}</span>
                       </div>
                     ))}
                   </div>

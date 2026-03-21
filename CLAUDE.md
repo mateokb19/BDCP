@@ -31,10 +31,13 @@ BDCP/
 │   │       ├── services.py     # GET /services
 │   │       ├── operators.py    # GET /operators
 │   │       ├── vehicles.py     # GET /vehicles/by-plate/{plate}
-│   │       ├── orders.py       # POST /orders (creates order + patio entry atomically)
-│   │       └── patio.py        # GET /patio, POST /patio/{id}/advance, PATCH /patio/{id}
+│   │       ├── orders.py       # POST /orders (creates order + patio entry + ceramic record atomically)
+│   │       ├── patio.py        # GET /patio, POST /patio/{id}/advance, PATCH /patio/{id}
+│   │       ├── ceramics.py     # GET /ceramics
+│   │       ├── history.py      # GET /history
+│   │       └── liquidation.py  # GET+POST /liquidation (weekly, debts, abonos)
 │   └── database/
-│       ├── schema.sql          # CREATE TABLE + enum types (reference only, not run at boot)
+│       ├── schema.sql          # CREATE TABLE reference (not run at boot)
 │       └── seed.sql            # reference seed (actual seeding done in main.py)
 └── frontend/
     ├── Dockerfile
@@ -72,13 +75,20 @@ All routes are prefixed `/api/v1/`.
 
 | Method | Path | Description |
 |--------|------|-------------|
-| GET | `/services` | List active services with prices |
-| GET | `/operators` | List active operators |
-| GET | `/vehicles/by-plate/{plate}` | Look up vehicle by plate (pre-fills form) |
-| POST | `/orders` | Create order → auto-creates patio entry in "esperando" |
-| GET | `/patio` | List all patio entries with nested vehicle + order + items |
-| POST | `/patio/{id}/advance` | Advance status: esperando→en_proceso→listo→entregado |
-| PATCH | `/patio/{id}` | Edit vehicle model/color and/or assign operator |
+| GET    | `/services` | List active services with prices |
+| GET    | `/operators` | List active operators (includes `cedula`) |
+| GET    | `/vehicles/by-plate/{plate}` | Look up vehicle by plate (pre-fills form) |
+| POST   | `/orders` | Create order → auto-creates patio entry + ceramic record if applicable |
+| GET    | `/patio` | List all patio entries with nested vehicle + order + items |
+| POST   | `/patio/{id}/advance` | Advance status: esperando→en_proceso→listo→entregado |
+| PATCH  | `/patio/{id}` | Edit color, assign operator, add/remove services; syncs operator to ceramic_treatments |
+| GET    | `/ceramics` | List all ceramic treatments with vehicle + operator |
+| GET    | `/history` | Order history with optional `date_filter` and `search` query params |
+| GET    | `/liquidation/{op_id}/week?week_start=YYYY-MM-DD` | Weekly liquidation data (7 days, qualifying orders) |
+| POST   | `/liquidation/{op_id}/liquidate?week_start=YYYY-MM-DD` | Confirm liquidation: process abonos, settlements, payment methods, auto-create pending debts |
+| GET    | `/liquidation/{op_id}/debts` | List all debts for an operator (with payment history) |
+| POST   | `/liquidation/{op_id}/debts` | Create a new debt |
+| PATCH  | `/liquidation/debts/{debt_id}/paid` | Mark debt as fully paid |
 
 ## Routes
 
@@ -88,10 +98,11 @@ All routes are prefixed `/api/v1/`.
 | `/calendario`      | CalendarioCitas   | ❌ mock | Monthly calendar + appointment management |
 | `/patio`           | EstadoPatio       | ✅ | Kanban fetched from `GET /patio`; advance/edit via API |
 | `/inventario`      | Inventario        | ❌ mock | Inventory management with stock levels |
-| `/ceramicos`       | Ceramicos         | ❌ mock | Ceramic treatment tracking + warranty expiry |
-| `/liquidacion`     | Liquidacion       | ❌ mock | Operator commission liquidation (password: `BDCP123`) |
+| `/ceramicos`       | Ceramicos         | ✅ | Ceramic treatment tracking; fetched from `GET /ceramics` |
+| `/liquidacion`     | Liquidacion       | ✅ | Operator commission liquidation (password: `BDCP123`) |
 | `/ingresos-egresos`| IngresosEgresos   | ❌ mock | Financial transactions + charts |
 | `/documentos`      | Documentos        | ❌ mock | Document management |
+| `/historial`       | Historial         | ✅ | Order history with search + date filter |
 
 ## Design system
 
@@ -105,31 +116,57 @@ All routes are prefixed `/api/v1/`.
 ## Domain enums (mirror DB)
 
 ```
-VehicleType:       automovil | camion_estandar | camion_xl
-ServiceCategory:   exterior | interior | ceramico
-OrderStatus:       pendiente | en_proceso | listo | entregado | cancelado
-PatioStatus:       esperando | en_proceso | listo | entregado
-AppointmentStatus: programada | confirmada | completada | cancelada | no_asistio
-LiquidationStatus: pendiente | pagada
-TransactionType:   ingreso | egreso
+VehicleType:        automovil | camion_estandar | camion_xl
+ServiceCategory:    exterior | interior | ceramico | correccion_pintura
+OrderStatus:        pendiente | en_proceso | listo | entregado | cancelado
+PatioStatus:        esperando | en_proceso | listo | entregado
+AppointmentStatus:  programada | confirmada | completada | cancelada | no_asistio
+TransactionType:    ingreso | egreso
+DebtDirection:      empresa_operario | operario_empresa
 ```
+
+## DB tables (beyond the basics)
+
+| Table | Purpose |
+|-------|---------|
+| `ceramic_treatments` | Auto-created when a ceramic service is ordered; operator synced via patio PATCH |
+| `debts` | Tracks money owed between company and operator; supports partial payments via `paid_amount` |
+| `debt_payments` | Individual installment records (abonos) linked to a debt and optionally to a week_liquidation |
+| `week_liquidations` | One record per operator per week when liquidated; stores net, transfer, cash, pending amounts |
 
 ## Service order flow
 
 1. **IngresarServicio**: Select vehicle type → fill form (plate required, max 6 alphanumeric; brand required; client name + phone required; operator optional) → confirm → `POST /api/v1/orders`
-2. Backend creates: client (find or create by phone), vehicle (find or create by plate), order, order items (price snapshot), patio entry (`esperando`) — all in one transaction.
-3. **EstadoPatio**: fetches `GET /api/v1/patio` on mount. Kanban cards advance via `POST /patio/{id}/advance`. Non-required fields (model, color, operator) editable via `PATCH /patio/{id}`.
+2. Backend creates atomically: client (find or create by phone), vehicle (find or create by plate), order, order items (price snapshot), patio entry (`esperando`). If any item is `ceramico` category, also creates a `CeramicTreatment` record with `next_maintenance = application_date + 6 months`.
+3. **EstadoPatio**: fetches `GET /api/v1/patio` on mount. Kanban cards advance via `POST /patio/{id}/advance`. Color, operator, and services editable via `PATCH /patio/{id}`. Operator change syncs to `ceramic_treatments` for that order.
 4. Plate format: uppercase alphanumeric only, max 6 chars — stripped on input with `/[^A-Z0-9]/g`.
+
+## Liquidation flow
+
+1. Password gate (`BDCP123`) on every visit.
+2. Operator grid: colored initials, no amounts shown.
+3. Operator detail: week carousel (Sun–Sat), daily accordion with total + commission per day.
+4. Only orders with patio status `en_proceso | listo | entregado` and an assigned operator count.
+5. **Liquidar semana** opens a modal with:
+   - Abonos: input per unpaid `operario_empresa` debt — deducted from payout and recorded as `DebtPayment`
+   - Settlements: toggle per unpaid `empresa_operario` debt to include in payout
+   - Payment methods: Transferencia + Efectivo fields; if sum < net → auto-creates `empresa_operario` debt for the pending amount
+   - On confirm: creates `WeekLiquidation` record, links `DebtPayment` records to it
+6. Post-liquidation shows payment breakdown (neto, transferencia, efectivo, pendiente).
+7. **Descargar** button present but not yet implemented.
 
 ## Key decisions
 
 - **API client at `src/api/index.ts`**: single `apiFetch` wrapper; all typed methods grouped by resource. `API_BASE` defaults to `http://localhost:8000/api/v1`, overridable via `VITE_API_URL` env var.
 - **Prices as strings from API**: FastAPI/Pydantic v2 serializes `Decimal` as string. Always wrap with `Number()` before arithmetic — e.g. `Number(service.price_automovil)`.
-- **AppContext** provides only `services`, `operators`, `loading`, and `createOrder()`. No local patio/order/vehicle state — each page fetches its own data.
-- **Radix `Select` component** (`src/app/components/ui/Select.tsx`) used for all operator dropdowns — dark-styled, avoids OS native select appearance.
-- **`sessionStorage` gate** for Liquidacion: clears on tab close, password = `BDCP123`.
+- **`toLocaleString('es-CO')`**: used on all price displays for Colombian peso formatting.
+- **AppContext** provides only `services`, `operators`, `loading`, and `createOrder()`. No global patio/ceramic/liquidation state — each page fetches its own data.
+- **Password gate** for Liquidacion uses `useState` (not sessionStorage) — resets on page refresh.
+- **`native_enum=False`** on all SQLAlchemy Enums → stored as VARCHAR. Column widths expanded to VARCHAR(30) for `category` columns after adding `correccion_pintura`.
+- **`_seed_if_empty()`** reseeds services if `count != 28` (restart-to-update pattern). Operators seeded only if table is empty.
+- **Ceramic treatments**: auto-created in `POST /orders` for every `ceramico` service; `operator_id` synced on `PATCH /patio/{id}` if operator changes.
+- **Week starts on Sunday** (`weekStartsOn: 0` in date-fns). `week_start` param is always the Sunday ISO date.
 - **Backend API prefix**: `/api/v1/` — all routers mounted under this prefix in `main.py`.
-- **DB seeding**: done in `main.py._seed_if_empty()` on startup (checks operator count). No migration tool needed for current scope.
 
 ## Common commands
 

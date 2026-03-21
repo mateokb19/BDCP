@@ -1,9 +1,18 @@
+import calendar
 from decimal import Decimal
 from datetime import date
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from app.database import get_db
 from app import models, schemas
+
+
+def _add_months(d: date, months: int) -> date:
+    month = d.month - 1 + months
+    year  = d.year + month // 12
+    month = month % 12 + 1
+    day   = min(d.day, calendar.monthrange(year, month)[1])
+    return date(year, month, day)
 
 router = APIRouter(prefix="/orders", tags=["orders"])
 
@@ -104,6 +113,20 @@ def create_order(payload: schemas.OrderCreate, db: Session = Depends(get_db)):
         status=models.PatioStatusEnum.esperando,
     )
     db.add(patio)
+
+    # 7. Create ceramic treatment records for every ceramic service
+    today = date.today()
+    for svc in services:
+        if svc.category == "ceramico":
+            db.add(models.CeramicTreatment(
+                order_id=order.id,
+                vehicle_id=vehicle.id,
+                service_id=svc.id,
+                treatment_type=svc.name,
+                operator_id=payload.operator_id,
+                application_date=today,
+                next_maintenance=_add_months(today, 6),
+            ))
 
     db.commit()
     db.refresh(order)

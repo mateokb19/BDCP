@@ -1,6 +1,6 @@
 // ---- Enums as string literals (mirror DB enum types) ----
 export type VehicleType       = 'automovil' | 'camion_estandar' | 'camion_xl'
-export type ServiceCategory   = 'exterior' | 'interior' | 'ceramico'
+export type ServiceCategory   = 'exterior' | 'interior' | 'ceramico' | 'correccion_pintura'
 export type OrderStatus       = 'pendiente' | 'en_proceso' | 'listo' | 'entregado' | 'cancelado'
 export type PatioStatus       = 'esperando' | 'en_proceso' | 'listo' | 'entregado'
 export type AppointmentStatus = 'programada' | 'confirmada' | 'completada' | 'cancelada' | 'no_asistio'
@@ -36,6 +36,7 @@ export interface Operator {
   id: number
   name: string
   phone?: string
+  cedula?: string
   commission_rate: number
   active: boolean
   created_at?: string

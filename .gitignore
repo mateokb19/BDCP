@@ -26,6 +26,9 @@ dist/
 # Ignore any override files with secrets
 docker-compose.override.yml
 
+# ── Claude Code ──────────────────────────────────────────────────────────────
+.claude/
+
 # ── IDE / OS ─────────────────────────────────────────────────────────────────
 .vscode/
 .idea/
