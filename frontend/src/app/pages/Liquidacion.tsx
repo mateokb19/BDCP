@@ -503,63 +503,111 @@ export default function LiquidacionPage() {
   }
 
   function printReport(r: ApiReportResponse) {
-    const fmt     = (n: string | number) => Number(n).toLocaleString('es-CO')
+    const fmt     = (n: string | number) => `$${Number(n).toLocaleString('es-CO')}`
     const fmtDate = (s: string) => { const [y, m, d] = s.split('-'); return `${d}/${m}/${y}` }
     const today   = new Date().toLocaleDateString('es-CO', { day: '2-digit', month: 'long', year: 'numeric' })
+    const rate    = Number(r.commission_rate)
 
-    // ── Detalle de servicios ─────────────────────────────────────────────────
-    const orderRows = r.orders.map(o => {
-      const itemRows = o.items.map(i =>
-        `<tr>
-          <td style="padding:6px 10px;color:#555;font-size:13px;">${escapeHtml(i.service_name)}</td>
-          <td style="padding:6px 10px;text-align:center;font-size:13px;">${i.quantity}</td>
-          <td style="padding:6px 10px;text-align:right;font-size:13px;">$${fmt(i.unit_price)}</td>
-          <td style="padding:6px 10px;text-align:right;font-size:13px;">$${fmt(i.subtotal)}</td>
-        </tr>`
-      ).join('')
-      const vehicle = [o.vehicle_brand, o.vehicle_model].filter(Boolean).join(' ') || '—'
-      return `
-        <tr style="background:#f5f5f5;">
-          <td colspan="4" style="padding:8px 10px;font-weight:600;font-size:13px;">
-            ${escapeHtml(o.order_number)} &nbsp;·&nbsp; ${escapeHtml(o.vehicle_plate)} &nbsp;·&nbsp; ${escapeHtml(vehicle)}
-            <span style="font-weight:400;color:#888;margin-left:8px;">${escapeHtml(o.date)}</span>
-          </td>
-        </tr>
-        ${itemRows}
-        <tr style="border-top:1px solid #eee;">
-          <td colspan="3" style="padding:6px 10px;text-align:right;font-size:13px;color:#888;">Subtotal orden</td>
-          <td style="padding:6px 10px;text-align:right;font-weight:600;font-size:13px;">$${fmt(o.total)}</td>
-        </tr>`
-    }).join('<tr><td colspan="4" style="height:8px;"></td></tr>')
+    // Group orders by their week (match against week_statuses)
+    const weekSections = r.week_statuses
+      .filter(w => Number(w.week_gross) > 0 || w.is_liquidated)
+      .map(w => {
+        const weekOrders = r.orders.filter(o => o.date >= w.week_start && o.date <= w.week_end)
 
-    // ── Estado de liquidacion por semana ─────────────────────────────────────
-    const visibleWeeks = r.week_statuses.filter(w => Number(w.week_gross) > 0 || w.is_liquidated)
-    const weekRows = visibleWeeks.map(w => {
-      const badge = w.is_liquidated
-        ? `<span style="background:#dcfce7;color:#166534;font-size:11px;font-weight:700;padding:2px 8px;border-radius:999px;">&#10003; LIQUIDADA</span>`
-        : `<span style="background:#fef9c3;color:#854d0e;font-size:11px;font-weight:700;padding:2px 8px;border-radius:999px;">&#9888; PENDIENTE</span>`
-      const breakdown = w.is_liquidated
-        ? `<div style="font-size:11px;color:#555;margin-top:4px;">
-            Transferencia $${fmt(w.payment_transfer ?? 0)} &nbsp;·&nbsp;
-            Efectivo $${fmt(w.payment_cash ?? 0)}
-            ${Number(w.amount_pending ?? 0) > 0 ? `&nbsp;·&nbsp; <span style="color:#dc2626;font-weight:600;">Pendiente $${fmt(w.amount_pending!)}</span>` : ''}
+        // Build service rows: all items from all orders, showing order context
+        const serviceRows = weekOrders.flatMap(o => {
+          const vehicle = [o.vehicle_brand, o.vehicle_model].filter(Boolean).join(' ') || '—'
+          const orderHeader = `<tr style="background:#f0f0f0;">
+            <td colspan="5" style="padding:6px 10px;font-size:12px;font-weight:600;color:#444;">
+              ${escapeHtml(o.order_number)} &nbsp;·&nbsp; ${escapeHtml(o.vehicle_plate)} &nbsp;·&nbsp; ${escapeHtml(vehicle)}
+              <span style="font-weight:400;color:#999;margin-left:6px;">${escapeHtml(o.date)}</span>
+            </td>
+          </tr>`
+          const items = o.items.map(i =>
+            `<tr>
+              <td style="padding:5px 10px 5px 20px;font-size:13px;color:#333;">${escapeHtml(i.service_name)}</td>
+              <td style="padding:5px 10px;text-align:center;font-size:12px;color:#666;">${i.quantity}</td>
+              <td style="padding:5px 10px;text-align:right;font-size:12px;color:#666;">${fmt(i.unit_price)}</td>
+              <td style="padding:5px 10px;text-align:right;font-size:13px;font-weight:500;">${fmt(i.subtotal)}</td>
+            </tr>`
+          ).join('')
+          const orderTotal = `<tr style="border-top:1px dashed #ddd;">
+            <td colspan="3" style="padding:4px 10px;text-align:right;font-size:12px;color:#888;">Subtotal orden</td>
+            <td style="padding:4px 10px;text-align:right;font-size:13px;font-weight:600;">${fmt(o.total)}</td>
+          </tr>`
+          return orderHeader + items + orderTotal
+        }).join('<tr><td colspan="4" style="height:6px;border:none;background:#fff;"></td></tr>')
+
+        // Payment status
+        const badge = w.is_liquidated
+          ? `<span style="background:#dcfce7;color:#166534;font-size:11px;font-weight:700;padding:3px 10px;border-radius:999px;letter-spacing:0.3px;">&#10003; LIQUIDADA</span>`
+          : `<span style="background:#fef9c3;color:#854d0e;font-size:11px;font-weight:700;padding:3px 10px;border-radius:999px;letter-spacing:0.3px;">&#9888; PENDIENTE</span>`
+
+        const paymentDetail = w.is_liquidated
+          ? `<table style="width:auto;margin-left:auto;margin-top:8px;">
+              <tr>
+                <td style="padding:3px 12px 3px 0;font-size:12px;color:#555;">Transferencia</td>
+                <td style="padding:3px 0;font-size:12px;font-weight:600;text-align:right;">${fmt(w.payment_transfer ?? 0)}</td>
+              </tr>
+              <tr>
+                <td style="padding:3px 12px 3px 0;font-size:12px;color:#555;">Efectivo</td>
+                <td style="padding:3px 0;font-size:12px;font-weight:600;text-align:right;">${fmt(w.payment_cash ?? 0)}</td>
+              </tr>
+              ${Number(w.amount_pending ?? 0) > 0 ? `<tr>
+                <td style="padding:3px 12px 3px 0;font-size:12px;color:#dc2626;font-weight:600;">Pendiente</td>
+                <td style="padding:3px 0;font-size:12px;font-weight:700;color:#dc2626;text-align:right;">${fmt(w.amount_pending!)}</td>
+              </tr>` : ''}
+            </table>`
+          : `<p style="font-size:12px;color:#92400e;margin-top:6px;">Comision pendiente de liquidar</p>`
+
+        // Week summary rows (totals that build up)
+        const summaryRows = `
+          <tr style="background:#f9f9f9;border-top:2px solid #e5e5e5;">
+            <td colspan="2" style="padding:7px 10px;font-size:13px;color:#555;">
+              <strong>Total bruto semana</strong>
+            </td>
+            <td colspan="2" style="padding:7px 10px;text-align:right;font-size:14px;font-weight:700;">${fmt(w.week_gross)}</td>
+          </tr>
+          <tr style="background:#f9f9f9;">
+            <td colspan="2" style="padding:4px 10px;font-size:13px;color:#555;">
+              Comision del operario (${rate}%)
+            </td>
+            <td colspan="2" style="padding:4px 10px;text-align:right;font-size:14px;font-weight:700;color:#d97706;">${fmt(w.week_commission)}</td>
+          </tr>`
+
+        return `
+          <div style="margin-bottom:32px;border:1px solid #e5e5e5;border-radius:8px;overflow:hidden;">
+            <div style="background:#1a1a1a;color:#fff;padding:10px 14px;display:flex;justify-content:space-between;align-items:center;">
+              <span style="font-weight:700;font-size:13px;">${fmtDate(w.week_start)} &nbsp;–&nbsp; ${fmtDate(w.week_end)}</span>
+              ${badge}
+            </div>
+            ${weekOrders.length === 0
+              ? '<p style="padding:12px 14px;color:#aaa;font-size:13px;">Sin servicios</p>'
+              : `<table style="width:100%;border-collapse:collapse;">
+                  <thead>
+                    <tr style="background:#333;color:#fff;">
+                      <th style="padding:7px 10px;text-align:left;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.4px;">Servicio</th>
+                      <th style="padding:7px 10px;text-align:center;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.4px;width:50px;">Cant.</th>
+                      <th style="padding:7px 10px;text-align:right;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.4px;">Precio unit.</th>
+                      <th style="padding:7px 10px;text-align:right;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.4px;">Subtotal</th>
+                    </tr>
+                  </thead>
+                  <tbody>${serviceRows}${summaryRows}</tbody>
+                </table>`}
+            <div style="padding:10px 14px;border-top:1px solid #eee;display:flex;justify-content:space-between;align-items:flex-start;">
+              <div style="font-size:13px;font-weight:600;color:#333;">Estado de pago</div>
+              <div style="text-align:right;">${paymentDetail}</div>
+            </div>
           </div>`
-        : `<div style="font-size:11px;color:#888;margin-top:3px;">No liquidada – comision pendiente de pago</div>`
-      return `<tr>
-        <td style="padding:8px 10px;font-size:13px;">${fmtDate(w.week_start)} – ${fmtDate(w.week_end)}</td>
-        <td style="padding:8px 10px;text-align:right;font-size:13px;">$${fmt(w.week_gross)}</td>
-        <td style="padding:8px 10px;text-align:right;font-size:13px;">$${fmt(w.week_commission)}</td>
-        <td style="padding:8px 10px;">${badge}${breakdown}</td>
-      </tr>`
-    }).join('')
+      }).join('')
 
     // ── Deudas pendientes empresa → operario ─────────────────────────────────
     const debtRows = r.pending_debts.map(d =>
       `<tr>
         <td style="padding:6px 10px;font-size:13px;">${escapeHtml(d.description || '—')}</td>
-        <td style="padding:6px 10px;text-align:right;font-size:13px;">$${fmt(d.amount)}</td>
-        <td style="padding:6px 10px;text-align:right;font-size:13px;color:#888;">$${fmt(d.paid_amount)}</td>
-        <td style="padding:6px 10px;text-align:right;font-size:13px;font-weight:600;color:#dc2626;">$${fmt(d.remaining)}</td>
+        <td style="padding:6px 10px;text-align:right;font-size:13px;">${fmt(d.amount)}</td>
+        <td style="padding:6px 10px;text-align:right;font-size:13px;color:#888;">${fmt(d.paid_amount)}</td>
+        <td style="padding:6px 10px;text-align:right;font-size:13px;font-weight:600;color:#dc2626;">${fmt(d.remaining)}</td>
       </tr>`
     ).join('')
 
@@ -570,28 +618,27 @@ export default function LiquidacionPage() {
 <title>Liquidacion - ${escapeHtml(r.operator_name)}</title>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { font-family: 'Segoe UI', Arial, sans-serif; color: #222; background: #fff; padding: 32px; }
+  body { font-family: 'Segoe UI', Arial, sans-serif; color: #222; background: #fff; padding: 32px; max-width: 860px; margin: 0 auto; }
   h1 { font-size: 22px; font-weight: 700; }
-  .header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 28px; }
-  .logo { font-size: 18px; font-weight: 800; color: #d97706; letter-spacing: -0.5px; }
+  .header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 28px; padding-bottom: 20px; border-bottom: 2px solid #222; }
+  .logo { font-size: 20px; font-weight: 800; color: #d97706; letter-spacing: -0.5px; }
   .meta { font-size: 12px; color: #888; margin-top: 4px; }
-  .section { margin-bottom: 24px; }
-  .section-title { font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: #888; margin-bottom: 8px; border-bottom: 1px solid #eee; padding-bottom: 6px; }
-  table { width: 100%; border-collapse: collapse; }
-  th { background: #222; color: #fff; padding: 8px 10px; text-align: left; font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.4px; }
-  th:last-child, td:last-child { text-align: right; }
-  th:nth-child(2), td:nth-child(2) { text-align: center; }
-  tr:nth-child(even) td { background: #fafafa; }
-  .totals { display: flex; justify-content: flex-end; margin-top: 20px; }
-  .totals table { width: 320px; }
-  .totals td { padding: 6px 10px; font-size: 14px; }
-  .totals tr.highlight td { font-weight: 700; font-size: 15px; border-top: 2px solid #d97706; color: #d97706; padding-top: 10px; }
-  .alert { background: #fef2f2; border: 1px solid #fecaca; border-radius: 8px; padding: 12px 16px; margin-top: 20px; font-size: 13px; color: #dc2626; }
+  .op-card { display: flex; justify-content: space-between; align-items: center; background: #f9f9f9; border: 1px solid #e5e5e5; border-radius: 8px; padding: 14px 18px; margin-bottom: 28px; }
+  .section-title { font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: #888; margin-bottom: 12px; }
+  .totals-box { display: flex; justify-content: flex-end; margin-top: 4px; margin-bottom: 28px; }
+  .totals-box table { width: 320px; border-collapse: collapse; }
+  .totals-box td { padding: 6px 12px; font-size: 14px; }
+  .totals-box tr.grand td { font-weight: 700; font-size: 16px; border-top: 2px solid #d97706; color: #d97706; padding-top: 10px; }
+  .alert { background: #fef2f2; border: 1px solid #fecaca; border-radius: 8px; padding: 12px 16px; margin-top: 16px; font-size: 13px; color: #dc2626; }
+  .debts-table { width: 100%; border-collapse: collapse; }
+  .debts-table th { background: #222; color: #fff; padding: 8px 10px; font-size: 12px; font-weight: 600; text-transform: uppercase; }
+  .debts-table td { padding: 6px 10px; font-size: 13px; border-bottom: 1px solid #f0f0f0; }
   .footer { margin-top: 32px; font-size: 11px; color: #aaa; text-align: center; border-top: 1px solid #eee; padding-top: 16px; }
-  @media print { body { padding: 20px; } }
+  @media print { body { padding: 16px; } }
 </style>
 </head>
 <body onload="window.print()">
+
 <div class="header">
   <div>
     <div class="logo">BDCPolo</div>
@@ -599,85 +646,54 @@ export default function LiquidacionPage() {
   </div>
   <div style="text-align:right;">
     <h1>Liquidacion de Operario</h1>
-    <div class="meta">${escapeHtml(r.period_label)} &nbsp;·&nbsp; ${escapeHtml(r.date_start)} al ${escapeHtml(r.date_end)}</div>
-    <div class="meta">Generado el ${today}</div>
+    <div class="meta">${escapeHtml(r.period_label)}</div>
+    <div class="meta">${escapeHtml(r.date_start)} al ${escapeHtml(r.date_end)} &nbsp;·&nbsp; Generado el ${today}</div>
   </div>
 </div>
 
-<div class="section">
-  <div class="section-title">Operario</div>
-  <table>
-    <tr>
-      <td style="padding:6px 10px;font-size:14px;font-weight:600;">${escapeHtml(r.operator_name)}</td>
-      <td style="padding:6px 10px;font-size:14px;">Comision ${Number(r.commission_rate)}%</td>
-      <td style="padding:6px 10px;font-size:14px;text-align:right;">${r.total_services} servicio${r.total_services !== 1 ? 's' : ''}</td>
-    </tr>
-  </table>
+<div class="op-card">
+  <div>
+    <div style="font-size:16px;font-weight:700;">${escapeHtml(r.operator_name)}</div>
+    <div style="font-size:13px;color:#666;margin-top:3px;">Comision: ${rate}% &nbsp;·&nbsp; ${r.total_services} servicio${r.total_services !== 1 ? 's' : ''} en el periodo</div>
+  </div>
+  <div style="text-align:right;">
+    <div style="font-size:12px;color:#888;">Total bruto</div>
+    <div style="font-size:18px;font-weight:700;">${fmt(r.gross_total)}</div>
+    <div style="font-size:12px;color:#d97706;font-weight:600;">Comision: ${fmt(r.commission_amount)}</div>
+  </div>
 </div>
 
-<div class="section">
-  <div class="section-title">Estado de liquidacion por semana</div>
-  ${visibleWeeks.length === 0
-    ? '<p style="color:#aaa;font-size:13px;padding:8px 0;">Sin semanas con actividad en este periodo.</p>'
-    : `<table>
-        <thead>
-          <tr>
-            <th>Semana</th>
-            <th style="text-align:right;">Total bruto</th>
-            <th style="text-align:right;">Comision</th>
-            <th>Estado de pago</th>
-          </tr>
-        </thead>
-        <tbody>${weekRows}</tbody>
-      </table>`}
-</div>
+<div class="section-title">Detalle por semana</div>
+${weekSections || '<p style="color:#aaa;font-size:13px;margin-bottom:24px;">Sin actividad en este periodo.</p>'}
 
-<div class="section">
-  <div class="section-title">Detalle de servicios</div>
-  ${r.orders.length === 0
-    ? '<p style="color:#aaa;font-size:13px;padding:12px 0;">Sin servicios en este periodo.</p>'
-    : `<table>
-        <thead>
-          <tr>
-            <th>Servicio</th>
-            <th style="text-align:center;">Cant.</th>
-            <th style="text-align:right;">Precio unit.</th>
-            <th style="text-align:right;">Subtotal</th>
-          </tr>
-        </thead>
-        <tbody>${orderRows}</tbody>
-      </table>`}
-</div>
-
-<div class="totals">
+<div class="totals-box">
   <table>
     <tr>
       <td style="color:#888;">Total bruto del periodo</td>
-      <td style="text-align:right;">$${fmt(r.gross_total)}</td>
+      <td style="text-align:right;font-weight:600;">${fmt(r.gross_total)}</td>
     </tr>
     <tr>
-      <td style="color:#888;">Comision total (${Number(r.commission_rate)}%)</td>
-      <td style="text-align:right;">$${fmt(r.commission_amount)}</td>
+      <td style="color:#888;">Comision total (${rate}%)</td>
+      <td style="text-align:right;font-weight:600;color:#d97706;">${fmt(r.commission_amount)}</td>
     </tr>
-    <tr class="highlight">
-      <td>Total a favor del operario</td>
-      <td style="text-align:right;">$${fmt(r.commission_amount)}</td>
-    </tr>
-    ${Number(r.total_pending_owed) > 0 ? `
-    <tr>
-      <td style="color:#dc2626;font-weight:600;padding-top:8px;">Deudas empresa pendientes</td>
-      <td style="text-align:right;color:#dc2626;font-weight:600;padding-top:8px;">+ $${fmt(r.total_pending_owed)}</td>
+    ${Number(r.total_pending_owed) > 0 ? `<tr>
+      <td style="color:#dc2626;font-weight:600;">+ Deudas empresa pendientes</td>
+      <td style="text-align:right;color:#dc2626;font-weight:600;">${fmt(r.total_pending_owed)}</td>
     </tr>` : ''}
+    <tr class="grand">
+      <td>Total a favor del operario</td>
+      <td style="text-align:right;">${fmt(Number(r.commission_amount) + Number(r.total_pending_owed))}</td>
+    </tr>
   </table>
 </div>
 
 ${r.pending_debts.length > 0 ? `
-<div class="section" style="margin-top:28px;">
-  <div class="section-title">Deudas de la empresa pendientes de pago al operario</div>
-  <table>
+<div style="margin-bottom:28px;">
+  <div class="section-title">Deudas de la empresa pendientes al operario</div>
+  <table class="debts-table">
     <thead>
       <tr>
-        <th>Descripcion</th>
+        <th style="text-align:left;">Descripcion</th>
         <th style="text-align:right;">Total deuda</th>
         <th style="text-align:right;">Ya pagado</th>
         <th style="text-align:right;">Pendiente</th>
@@ -687,13 +703,11 @@ ${r.pending_debts.length > 0 ? `
     <tfoot>
       <tr style="border-top:2px solid #222;">
         <td colspan="3" style="padding:8px 10px;text-align:right;font-weight:700;font-size:13px;">Total pendiente</td>
-        <td style="padding:8px 10px;text-align:right;font-weight:700;font-size:14px;color:#dc2626;">$${fmt(r.total_pending_owed)}</td>
+        <td style="padding:8px 10px;text-align:right;font-weight:700;font-size:14px;color:#dc2626;">${fmt(r.total_pending_owed)}</td>
       </tr>
     </tfoot>
   </table>
-  <div class="alert">
-    La empresa le debe al operario un total de <strong>$${fmt(r.total_pending_owed)}</strong> en deudas pendientes.
-  </div>
+  <div class="alert">La empresa le debe al operario <strong>${fmt(r.total_pending_owed)}</strong> en deudas pendientes.</div>
 </div>` : ''}
 
 <div class="footer">Bogota Detailing Center · BDCPolo · Comprobante interno de liquidacion</div>

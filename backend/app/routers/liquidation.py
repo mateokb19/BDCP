@@ -277,8 +277,8 @@ def get_report(
             de = ref.replace(day=last_day)
             period_label = f"{MONTH_NAMES[ref.month]} {ref.year}"
     else:
-        # Monday of the week containing ref
-        ds = ref - timedelta(days=ref.weekday())
+        # Sunday of the week containing ref  (isoweekday: Mon=1…Sun=7; Sun%7=0)
+        ds = ref - timedelta(days=ref.isoweekday() % 7)
         de = min(ds + timedelta(days=6), real_today)
         period_label = f"Semana del {ds.strftime('%d/%m')} al {de.strftime('%d/%m/%Y')}"
 
