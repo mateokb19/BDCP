@@ -132,6 +132,10 @@ export default function IngresarServicio() {
   // Price editing
   const [editingPriceId, setEditingPriceId] = useState<number | null>(null)
 
+  // Hour picker dropdown
+  const [showHourPicker, setShowHourPicker] = useState(false)
+  const HOURS = Array.from({ length: 13 }, (_, i) => i + 6)
+
   function goTo(next: Step) {
     setPrevStep(step)
     setStep(next)
@@ -626,15 +630,61 @@ export default function IngresarServicio() {
                     <div>
                       <label className="text-sm text-gray-400 block mb-1.5">Fecha</label>
                       <input type="date" value={form.deliveryDate}
+                        min={TODAY}
                         onChange={e => setForm(f => ({ ...f, deliveryDate: e.target.value }))}
                         className="w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-gray-100 focus:border-yellow-500/50 focus:outline-none focus:ring-2 focus:ring-yellow-500/20 [color-scheme:dark]" />
                     </div>
-                    <div>
+                    <div className="relative">
                       <label className="text-sm text-gray-400 block mb-1.5">Hora</label>
-                      <input type="time" value={form.deliveryTime}
-                        onChange={e => setForm(f => ({ ...f, deliveryTime: e.target.value }))}
+                      <button
+                        type="button"
                         disabled={!form.deliveryDate}
-                        className="w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-gray-100 focus:border-yellow-500/50 focus:outline-none focus:ring-2 focus:ring-yellow-500/20 [color-scheme:dark] disabled:opacity-40" />
+                        onClick={() => setShowHourPicker(v => !v)}
+                        className={cn(
+                          'w-full rounded-xl border px-3 py-2 text-sm text-left flex items-center justify-between transition-colors',
+                          'bg-white/5 border-white/10 text-gray-100',
+                          showHourPicker && 'border-yellow-500/50 ring-2 ring-yellow-500/20',
+                          !form.deliveryDate && 'opacity-40 cursor-not-allowed',
+                        )}
+                      >
+                        <span className={form.deliveryTime ? 'text-gray-100' : 'text-gray-500'}>
+                          {form.deliveryTime ? `${Number(form.deliveryTime.split(':')[0])}:00` : '— Hora —'}
+                        </span>
+                        <ChevronRight size={14} className={cn('text-gray-500 transition-transform', showHourPicker && 'rotate-90')} />
+                      </button>
+                      <AnimatePresence>
+                        {showHourPicker && form.deliveryDate && (
+                          <motion.ul
+                            initial={{ opacity: 0, y: -6, scaleY: 0.95 }}
+                            animate={{ opacity: 1, y: 0, scaleY: 1 }}
+                            exit={{ opacity: 0, y: -6, scaleY: 0.95 }}
+                            transition={{ duration: 0.15 }}
+                            style={{ transformOrigin: 'top' }}
+                            className="absolute z-50 mt-1 w-full rounded-xl border border-white/10 bg-gray-900 shadow-xl shadow-black/40 overflow-hidden max-h-52 overflow-y-auto"
+                          >
+                            {HOURS.map(h => {
+                              const val = `${String(h).padStart(2, '0')}:00`
+                              const selected = form.deliveryTime === val
+                              return (
+                                <li key={h}>
+                                  <button
+                                    type="button"
+                                    onClick={() => { setForm(f => ({ ...f, deliveryTime: val })); setShowHourPicker(false) }}
+                                    className={cn(
+                                      'w-full text-left px-4 py-2 text-sm transition-colors',
+                                      selected
+                                        ? 'bg-yellow-500/15 text-yellow-400 font-medium'
+                                        : 'text-gray-300 hover:bg-white/5 hover:text-white'
+                                    )}
+                                  >
+                                    {h}:00
+                                  </button>
+                                </li>
+                              )
+                            })}
+                          </motion.ul>
+                        )}
+                      </AnimatePresence>
                     </div>
                   </div>
                 </div>

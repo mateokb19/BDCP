@@ -81,7 +81,8 @@ All routes are prefixed `/api/v1/`.
 | POST   | `/orders` | Create order → auto-creates patio entry + ceramic record if applicable |
 | GET    | `/patio` | List all patio entries with nested vehicle + order + items |
 | POST   | `/patio/{id}/advance` | Advance status: esperando→en_proceso→listo→entregado |
-| PATCH  | `/patio/{id}` | Edit color, assign operator, add/remove services; syncs operator to ceramic_treatments |
+| PATCH  | `/patio/{id}` | Assign operator, add/remove services (`service_ids: []` allowed — sets total to 0); syncs operator to ceramic_treatments |
+| DELETE | `/patio/{id}` | Cancel entry (esperando or en_proceso only): deletes items, marks order cancelado, removes patio entry |
 | GET    | `/appointments?month=YYYY-MM` | List appointments for a month |
 | POST   | `/appointments` | Create appointment |
 | PATCH  | `/appointments/{id}` | Edit appointment (date, time, vehicle, client, status) |
@@ -162,9 +163,18 @@ ALTER TABLE patio ADD COLUMN IF NOT EXISTS scheduled_delivery_at TIMESTAMP;
      - If abono > 0: shows Total / Abono / Restante breakdown.
    - Confirm → `POST /api/v1/orders` with `item_overrides` (custom and warranty prices), `scheduled_delivery_at`, `downpayment`, `is_warranty`.
 2. Backend creates atomically: client (find or create by phone), vehicle (find or create by plate), order, order items (price snapshot via `item_overrides`), patio entry (`esperando`). If any item is `ceramico` category, also creates a `CeramicTreatment` record with `next_maintenance = application_date + 6 months`.
-3. **EstadoPatio**: fetches `GET /api/v1/patio` on mount. Kanban cards advance via `POST /patio/{id}/advance`. Color, operator, and services editable via `PATCH /patio/{id}`. Operator change syncs to `ceramic_treatments` for that order.
+3. **EstadoPatio**: fetches `GET /api/v1/patio` on mount. Kanban cards advance via `POST /patio/{id}/advance`. Services editable via `PATCH /patio/{id}`. Operator assigned via modal on first advance.
+   - **Cards**: collapsed by default showing vehicle icon, brand/model, plate/color, operator, delivery date/time, elapsed time, and advance button. Clicking the card expands it to show client name/phone, service badges, financial breakdown (total / abono / resta), and "Editar orden" link.
    - Advancing from `esperando` → `en_proceso` **requires** an operator: if none assigned, a picker modal appears first; selects operator via `PATCH`, then advances.
-   - Cards display: delivery date/time (Calendar icon), "Garantía" badge if `is_warranty`, and Total / Abono / Restante if `downpayment > 0`.
+   - **Editar orden** modal:
+     - Available for `esperando` and `en_proceso` statuses. Read-only for `listo` and `entregado`.
+     - Shows current services as a list with X buttons to remove each one.
+     - Shows category accordion below to add new services (only services not already in the order).
+     - If all services are removed and "Guardar" is pressed → confirmation step: *"¿Está seguro?"* with "No, volver" / "Sí, cancelar".
+     - Confirming cancellation calls `DELETE /patio/{id}`: deletes order items, marks order as `cancelado`, removes patio entry. Vehicle disappears from kanban immediately.
+     - No operator selector in edit modal — operator is only assigned via the advance-to-en_proceso flow.
+   - **GET /patio** filters: returns all non-delivered entries + entries delivered today.
+   - Delivery date picker: `min` set to today — past dates not selectable. Hour picker is a custom styled dropdown showing full hours only (6:00–18:00).
 4. Plate format: uppercase alphanumeric only, max 6 chars — stripped on input with `/[^A-Z0-9]/g`.
 5. Operator **not** selected during order entry — assigned at patio stage (required to start work).
 
@@ -232,6 +242,10 @@ Key implementation details:
 - **Operator assignment flow**: operator is NOT selected during order entry. It is required when advancing a patio card from `esperando` → `en_proceso`. If no operator is assigned at that point, an operator-picker modal intercepts the advance: calls `PATCH /patio/{id}` to set operator, then `POST /patio/{id}/advance`.
 - **Warranty orders** (`is_warranty: true`): individual services can be marked as warranty in step 3. Warranty services are sent with `unit_price: 0` via `item_overrides`. Non-warranty services in the same order keep their normal/custom price. Total reflects only non-warranty services.
 - **`getEffectivePrice` vs `getStandardPrice`** (IngresarServicio): `getEffectivePrice` checks `warrantyServiceIds` first (returns 0), then `customPrices`, then falls back to standard price. Used for totals and step 3 display. `getStandardPrice` always returns the catalog price; used for discount calculation.
+- **`apiFetch` handles 204**: returns `undefined` without calling `res.json()` when status is 204 or `content-length: 0` — required for the DELETE /patio endpoint.
+- **Patio card UX**: collapsed/expanded toggle per card (local `expanded` state inside `PatioCard`). Collapsed = minimal info; expanded = client, services, financials, edit button.
+- **Service editing scope**: `PATCH /patio/{id}` with `service_ids` is accepted for `esperando` and `en_proceso`. For `listo`/`entregado` the frontend sends no `service_ids` field. `service_ids: []` (empty) is valid — sets total/subtotal to 0; use `DELETE /patio/{id}` to fully remove from kanban.
+- **Cancellation flow**: removing all services + confirming in the edit modal calls `DELETE /patio/{id}` (not PATCH). The backend checks status is `esperando` or `en_proceso` before allowing deletion.
 
 ## Common commands
 

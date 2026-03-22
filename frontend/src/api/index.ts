@@ -11,6 +11,9 @@ async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
     const data = await res.json().catch(() => ({}))
     throw new Error(data.detail ?? `HTTP ${res.status}`)
   }
+  if (res.status === 204 || res.headers.get('content-length') === '0') {
+    return undefined as T
+  }
   return res.json() as Promise<T>
 }
 
@@ -351,6 +354,8 @@ export const api = {
       apiFetch<ApiPatioEntry>(`/patio/${id}/advance`, { method: 'POST' }),
     edit: (id: number, payload: PatioPatchPayload) =>
       apiFetch<ApiPatioEntry>(`/patio/${id}`, { method: 'PATCH', body: JSON.stringify(payload) }),
+    cancel: (id: number) =>
+      apiFetch<void>(`/patio/${id}`, { method: 'DELETE' }),
   },
   ceramics: {
     list: () => apiFetch<ApiCeramicTreatment[]>('/ceramics'),
