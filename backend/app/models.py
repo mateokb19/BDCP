@@ -272,3 +272,15 @@ class Appointment(Base):
     order_id     = Column(Integer, ForeignKey("service_orders.id", ondelete="SET NULL"))
     created_at   = Column(DateTime, server_default=func.now(), nullable=False)
     updated_at   = Column(DateTime, server_default=func.now(), onupdate=func.now(), nullable=False)
+
+
+class Expense(Base):
+    __tablename__ = "expenses"
+
+    id          = Column(Integer, primary_key=True)
+    date        = Column(Date, nullable=False, server_default=func.current_date())
+    amount      = Column(Numeric(12, 2), nullable=False)
+    category    = Column(String(100))
+    description = Column(String(300))
+    notes       = Column(Text)
+    created_at  = Column(DateTime, server_default=func.now(), nullable=False)

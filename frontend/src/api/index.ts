@@ -361,6 +361,24 @@ export interface ApiIngresosResponse {
   daily_totals:        ApiIngresosDayTotal[]
 }
 
+export interface ApiExpense {
+  id:          number
+  date:        string
+  amount:      string
+  category?:   string
+  description?: string
+  notes?:      string
+  created_at:  string
+}
+
+export interface ExpenseCreatePayload {
+  date:         string
+  amount:       number
+  category?:    string
+  description?: string
+  notes?:       string
+}
+
 // ── API methods ────────────────────────────────────────────────────────────────
 
 export const api = {
@@ -434,5 +452,18 @@ export const api = {
       if (refDate) qs.set('ref_date', refDate)
       return apiFetch<ApiIngresosResponse>(`/ingresos?${qs}`)
     },
+  },
+  egresos: {
+    list: (params?: { date_start?: string; date_end?: string }) => {
+      const qs = new URLSearchParams()
+      if (params?.date_start) qs.set('date_start', params.date_start)
+      if (params?.date_end)   qs.set('date_end',   params.date_end)
+      const query = qs.toString() ? `?${qs}` : ''
+      return apiFetch<ApiExpense[]>(`/egresos${query}`)
+    },
+    create: (payload: ExpenseCreatePayload) =>
+      apiFetch<ApiExpense>('/egresos', { method: 'POST', body: JSON.stringify(payload) }),
+    delete: (id: number) =>
+      apiFetch<void>(`/egresos/${id}`, { method: 'DELETE' }),
   },
 }

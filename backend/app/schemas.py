@@ -469,3 +469,23 @@ class IngresosResponse(BaseModel):
     payment_nequi:       Decimal
     payment_bancolombia: Decimal
     daily_totals:        List[IngresosDayTotal]
+
+
+# ── Expenses (Egresos) ──────────────────────────────────────────────────────────
+
+class ExpenseOut(OrmBase):
+    id:          int
+    date:        date
+    amount:      Decimal
+    category:    Optional[str]
+    description: Optional[str]
+    notes:       Optional[str]
+    created_at:  datetime
+
+
+class ExpenseCreate(BaseModel):
+    date:        date
+    amount:      Decimal
+    category:    Optional[str]  = None
+    description: Optional[str]  = None
+    notes:       Optional[str]  = None

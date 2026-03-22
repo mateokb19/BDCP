@@ -5,7 +5,7 @@ from sqlalchemy import text
 
 from app.database import engine, SessionLocal
 from app import models
-from app.routers import services, operators, vehicles, orders, patio, history, ceramics, liquidation, appointments, ingresos
+from app.routers import services, operators, vehicles, orders, patio, history, ceramics, liquidation, appointments, ingresos, egresos
 
 # Create tables (no-op if already exist)
 models.Base.metadata.create_all(bind=engine)
@@ -130,6 +130,7 @@ app.include_router(ceramics.router,      prefix=API)
 app.include_router(liquidation.router,   prefix=API)
 app.include_router(appointments.router,  prefix=API)
 app.include_router(ingresos.router,      prefix=API)
+app.include_router(egresos.router,       prefix=API)
 
 
 @app.get("/", include_in_schema=False)

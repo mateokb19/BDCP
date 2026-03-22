@@ -1,19 +1,20 @@
 import { useState, useEffect, useMemo } from 'react'
-import { motion } from 'framer-motion'
+import { motion, AnimatePresence } from 'framer-motion'
 import { format, parseISO, startOfWeek, isWithinInterval } from 'date-fns'
 import { es } from 'date-fns/locale'
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend,
   PieChart, Pie, Cell,
 } from 'recharts'
-import { TrendingUp, TrendingDown, Minus, Banknote, CreditCard } from 'lucide-react'
+import { TrendingUp, TrendingDown, Minus, Banknote, CreditCard, Plus, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { PageHeader } from '@/app/components/ui/PageHeader'
 import { GlassCard } from '@/app/components/ui/GlassCard'
+import { Button } from '@/app/components/ui/Button'
 import { cn } from '@/app/components/ui/cn'
-import { mockTransactions } from '@/data/mock'
-import { api, type ApiIngresosResponse } from '@/api'
-import type { TransactionType } from '@/types'
+import { api, type ApiIngresosResponse, type ApiExpense } from '@/api'
+
+// ── Constants ────────────────────────────────────────────────────────────────
 
 const TOOLTIP_STYLE = {
   contentStyle: { background: '#111827', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 12, fontSize: 12 },
@@ -36,6 +37,13 @@ const PAY_METHODS = [
   { key: 'payment_bancolombia' as const, label: 'Bancolombia', color: '#ef4444', icon: <CreditCard size={13} /> },
 ]
 
+const EXPENSE_CATEGORIES = [
+  'Insumos', 'Servicios públicos', 'Arriendo', 'Equipos y herramientas',
+  'Marketing', 'Salarios', 'Transporte', 'Otros',
+]
+
+// ── Sub-components ────────────────────────────────────────────────────────────
+
 function KpiCard({ label, value, sub, trend }: { label: string; value: string; sub?: string; trend?: 'up' | 'down' | 'neutral' }) {
   const Icon = trend === 'up' ? TrendingUp : trend === 'down' ? TrendingDown : Minus
   const color = trend === 'up' ? 'text-green-400' : trend === 'down' ? 'text-red-400' : 'text-gray-400'
@@ -51,85 +59,130 @@ function KpiCard({ label, value, sub, trend }: { label: string; value: string; s
   )
 }
 
-export default function IngresosEgresos() {
-  const [typeFilter, setTypeFilter] = useState<TransactionType | 'all'>('all')
-  const [catFilter,  setCatFilter]  = useState('all')
-  const [dateStart,  setDateStart]  = useState('2026-02-01')
-  const [dateEnd,    setDateEnd]    = useState('2026-03-18')
+// ── Main page ─────────────────────────────────────────────────────────────────
 
-  // Real payment method distribution
+export default function IngresosEgresos() {
+  // Income (real data)
   const [ingresosPeriod, setIngresosPeriod] = useState<IngresosPeriod>('month')
   const [ingresosData,   setIngresosData]   = useState<ApiIngresosResponse | null>(null)
 
+  // Expenses (real data)
+  const [expenses,     setExpenses]     = useState<ApiExpense[]>([])
+  const [dateStart,    setDateStart]    = useState(() => {
+    const d = new Date(); d.setDate(1); return d.toISOString().slice(0, 10)
+  })
+  const [dateEnd, setDateEnd] = useState(() => new Date().toISOString().slice(0, 10))
+
+  // New expense modal
+  const [showModal,   setShowModal]   = useState(false)
+  const [saving,      setSaving]      = useState(false)
+  const [newExpense,  setNewExpense]  = useState({
+    date: new Date().toISOString().slice(0, 10),
+    amount: '',
+    category: '',
+    description: '',
+  })
+
+  // Load income
   useEffect(() => {
     api.ingresos.get(ingresosPeriod)
       .then(setIngresosData)
       .catch(err => toast.error(err.message ?? 'Error al cargar ingresos'))
   }, [ingresosPeriod])
 
-  const allTransactions = mockTransactions
+  // Load expenses
+  useEffect(() => {
+    api.egresos.list({ date_start: dateStart, date_end: dateEnd })
+      .then(setExpenses)
+      .catch(err => toast.error(err.message ?? 'Error al cargar egresos'))
+  }, [dateStart, dateEnd])
 
-  // Filtered for table
-  const filtered = useMemo(() => allTransactions.filter(t => {
-    const d  = parseISO(t.date)
-    const ok = isWithinInterval(d, { start: parseISO(dateStart), end: parseISO(dateEnd) })
-    return ok
-      && (typeFilter === 'all' || t.type === typeFilter)
-      && (catFilter  === 'all' || t.category === catFilter)
-  }).sort((a, b) => b.date.localeCompare(a.date)), [typeFilter, catFilter, dateStart, dateEnd])
+  async function saveExpense() {
+    if (!newExpense.amount || Number(newExpense.amount) <= 0) {
+      toast.error('El monto debe ser mayor a 0')
+      return
+    }
+    setSaving(true)
+    try {
+      const created = await api.egresos.create({
+        date:        newExpense.date,
+        amount:      Number(newExpense.amount),
+        category:    newExpense.category || undefined,
+        description: newExpense.description || undefined,
+      })
+      setExpenses(prev => [created, ...prev].sort((a, b) => b.date.localeCompare(a.date) || b.id - a.id))
+      toast.success('Egreso registrado')
+      setShowModal(false)
+      setNewExpense({ date: new Date().toISOString().slice(0, 10), amount: '', category: '', description: '' })
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Error al guardar')
+    } finally {
+      setSaving(false)
+    }
+  }
 
-  // KPIs
-  const totalIn  = filtered.filter(t => t.type === 'ingreso').reduce((s, t) => s + t.amount, 0)
-  const totalOut = filtered.filter(t => t.type === 'egreso').reduce((s, t) => s + t.amount, 0)
-  const balance  = totalIn - totalOut
+  async function deleteExpense(id: number) {
+    try {
+      await api.egresos.delete(id)
+      setExpenses(prev => prev.filter(e => e.id !== id))
+      toast.success('Egreso eliminado')
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Error al eliminar')
+    }
+  }
 
-  // BarChart: group by week
-  const weeklyData = useMemo(() => {
-    const weeks: Record<string, { week: string; ingresos: number; egresos: number }> = {}
-    filtered.forEach(t => {
-      const ws  = startOfWeek(parseISO(t.date), { weekStartsOn: 1 })
-      const key = format(ws, 'dd MMM', { locale: es })
-      if (!weeks[key]) weeks[key] = { week: key, ingresos: 0, egresos: 0 }
-      if (t.type === 'ingreso') weeks[key].ingresos += t.amount
-      else                      weeks[key].egresos  += t.amount
-    })
-    return Object.values(weeks)
-  }, [filtered])
+  // Derived values
+  const ingresosTotal = Number(ingresosData?.total ?? 0)
+  const egresosTotal  = expenses.reduce((s, e) => s + Number(e.amount), 0)
+  const balance       = ingresosTotal - egresosTotal
 
-  // PieChart: egresos by category
-  const pieData = useMemo(() => {
+  // Bar chart: egresos by category
+  const categoryData = useMemo(() => {
     const cats: Record<string, number> = {}
-    filtered.filter(t => t.type === 'egreso').forEach(t => {
-      const cat = t.category ?? 'Otros'
-      cats[cat] = (cats[cat] ?? 0) + t.amount
+    expenses.forEach(e => {
+      const cat = e.category ?? 'Otros'
+      cats[cat] = (cats[cat] ?? 0) + Number(e.amount)
     })
     return Object.entries(cats).map(([name, value]) => ({ name, value }))
-  }, [filtered])
+  }, [expenses])
 
-  const categories = [...new Set(allTransactions.map(t => t.category).filter(Boolean))] as string[]
+  // Weekly bar chart (expenses)
+  const weeklyEgresos = useMemo(() => {
+    const weeks: Record<string, { week: string; egresos: number }> = {}
+    expenses.forEach(e => {
+      const ws  = startOfWeek(parseISO(e.date), { weekStartsOn: 1 })
+      const key = format(ws, 'dd MMM', { locale: es })
+      if (!weeks[key]) weeks[key] = { week: key, egresos: 0 }
+      weeks[key].egresos += Number(e.amount)
+    })
+    return Object.values(weeks)
+  }, [expenses])
 
-  const ingresosTotal = Number(ingresosData?.total ?? 0)
+  const inputCls = "w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2.5 text-sm text-gray-100 focus:border-yellow-500/50 focus:outline-none focus:ring-2 focus:ring-yellow-500/20 placeholder:text-gray-600"
 
   return (
     <div className="max-w-6xl mx-auto">
       <PageHeader title="Ingresos / Egresos" subtitle="Seguimiento financiero del negocio" />
 
-      {/* ── Real payment method distribution ───────────────────── */}
+      {/* ── Income by payment method ─────────────────────────── */}
       <div className="mb-6 rounded-2xl border border-white/8 bg-white/[0.02] p-4 space-y-3">
         <div className="flex items-center justify-between flex-wrap gap-2">
-          <h3 className="text-sm font-medium text-gray-300">Ingresos por método de pago</h3>
+          <div>
+            <h3 className="text-sm font-medium text-gray-300">Ingresos por método de pago</h3>
+            <p className="text-xs text-gray-600 mt-0.5">
+              Total: <span className="text-yellow-400 font-semibold">${ingresosTotal.toLocaleString('es-CO')}</span>
+              {ingresosData && <span className="ml-2">· {ingresosData.order_count} {ingresosData.order_count === 1 ? 'orden' : 'órdenes'}</span>}
+            </p>
+          </div>
           <div className="flex gap-1.5">
             {(Object.keys(PERIOD_LABELS) as IngresosPeriod[]).map(p => (
-              <button
-                key={p}
-                onClick={() => setIngresosPeriod(p)}
+              <button key={p} onClick={() => setIngresosPeriod(p)}
                 className={cn(
                   'rounded-lg px-3 py-1 text-xs font-medium transition-colors',
                   ingresosPeriod === p
                     ? 'bg-yellow-500/15 text-yellow-400 border border-yellow-500/30'
                     : 'bg-white/[0.04] text-gray-500 border border-white/8 hover:bg-white/[0.07]'
-                )}
-              >
+                )}>
                 {PERIOD_LABELS[p]}
               </button>
             ))}
@@ -146,73 +199,74 @@ export default function IngresosEgresos() {
                   <span style={{ color: m.color }}>{m.icon}</span>
                   <span className="text-xs text-gray-500">{m.label}</span>
                 </div>
-                <p className="text-base font-bold text-white">
-                  ${val.toLocaleString('es-CO')}
-                </p>
+                <p className="text-base font-bold text-white">${val.toLocaleString('es-CO')}</p>
                 <div className="w-full h-1 rounded-full bg-white/8 overflow-hidden">
-                  <motion.div
-                    className="h-full rounded-full"
-                    style={{ background: m.color }}
-                    initial={{ width: 0 }}
-                    animate={{ width: `${pct}%` }}
-                    transition={{ duration: 0.5, ease: 'easeOut' }}
-                  />
+                  <motion.div className="h-full rounded-full" style={{ background: m.color }}
+                    initial={{ width: 0 }} animate={{ width: `${pct}%` }}
+                    transition={{ duration: 0.5, ease: 'easeOut' }} />
                 </div>
-                <p className="text-[11px] text-gray-700">{pct}% · {ingresosData?.order_count ?? 0} órdenes</p>
+                <p className="text-[11px] text-gray-700">{pct}% del total</p>
               </div>
             )
           })}
         </div>
       </div>
 
-      {/* KPIs */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
-        <KpiCard label="Ingresos" value={`$${totalIn.toLocaleString()}`} trend="up" sub={`${filtered.filter(t => t.type === 'ingreso').length} transacciones`} />
-        <KpiCard label="Egresos"  value={`$${totalOut.toLocaleString()}`} trend="down" sub={`${filtered.filter(t => t.type === 'egreso').length} transacciones`} />
-        <KpiCard label="Balance Neto" value={`$${Math.abs(balance).toLocaleString()}`} trend={balance >= 0 ? 'up' : 'down'}
-          sub={balance >= 0 ? 'Superávit' : 'Déficit'} />
-        <KpiCard label="Transacciones" value={String(filtered.length)} trend="neutral" sub="en el período" />
+      {/* ── KPIs ─────────────────────────────────────────────── */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 mb-6">
+        <KpiCard label="Ingresos" value={`$${ingresosTotal.toLocaleString('es-CO')}`} trend="up"
+          sub={`${PERIOD_LABELS[ingresosPeriod].toLowerCase()} · ${ingresosData?.order_count ?? 0} órdenes`} />
+        <KpiCard label="Egresos" value={`$${egresosTotal.toLocaleString('es-CO')}`} trend="down"
+          sub={`${expenses.length} ${expenses.length === 1 ? 'egreso' : 'egresos'} registrados`} />
+        <KpiCard
+          label="Balance"
+          value={`$${Math.abs(balance).toLocaleString('es-CO')}`}
+          trend={balance >= 0 ? 'up' : 'down'}
+          sub={balance >= 0 ? 'Superávit' : 'Déficit'}
+        />
       </div>
 
-      {/* Charts */}
+      {/* ── Charts ───────────────────────────────────────────── */}
       <div className="grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-4 mb-6">
         <GlassCard padding>
-          <h3 className="text-sm font-medium text-gray-400 mb-4">Ingresos vs Egresos por semana</h3>
-          <ResponsiveContainer width="100%" height={200}>
-            <BarChart data={weeklyData} barGap={4}>
-              <XAxis dataKey="week" tick={{ fill: '#6b7280', fontSize: 11 }} axisLine={false} tickLine={false} />
-              <YAxis tick={{ fill: '#6b7280', fontSize: 11 }} axisLine={false} tickLine={false} />
-              <Tooltip {...TOOLTIP_STYLE} formatter={(v) => [`$${v}`, '']} />
-              <Legend wrapperStyle={{ fontSize: 12, color: '#9ca3af' }} />
-              <Bar dataKey="ingresos" fill="#eab308" radius={[4, 4, 0, 0]} />
-              <Bar dataKey="egresos"  fill="#ef4444" radius={[4, 4, 0, 0]} />
-            </BarChart>
-          </ResponsiveContainer>
+          <h3 className="text-sm font-medium text-gray-400 mb-4">Egresos por semana</h3>
+          {weeklyEgresos.length > 0 ? (
+            <ResponsiveContainer width="100%" height={200}>
+              <BarChart data={weeklyEgresos} barGap={4}>
+                <XAxis dataKey="week" tick={{ fill: '#6b7280', fontSize: 11 }} axisLine={false} tickLine={false} />
+                <YAxis tick={{ fill: '#6b7280', fontSize: 11 }} axisLine={false} tickLine={false} />
+                <Tooltip {...TOOLTIP_STYLE} formatter={(v) => [`$${Number(v).toLocaleString('es-CO')}`, '']} />
+                <Bar dataKey="egresos" fill="#ef4444" radius={[4, 4, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          ) : (
+            <div className="h-[200px] flex items-center justify-center">
+              <p className="text-sm text-gray-700">Sin egresos en el período</p>
+            </div>
+          )}
         </GlassCard>
 
         <GlassCard padding>
           <h3 className="text-sm font-medium text-gray-400 mb-4">Egresos por categoría</h3>
-          {pieData.length > 0 ? (
+          {categoryData.length > 0 ? (
             <>
               <ResponsiveContainer width="100%" height={160}>
                 <PieChart>
-                  <Pie data={pieData} cx="50%" cy="50%" innerRadius={45} outerRadius={70}
+                  <Pie data={categoryData} cx="50%" cy="50%" innerRadius={45} outerRadius={70}
                     dataKey="value" paddingAngle={3}>
-                    {pieData.map((_, i) => (
-                      <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />
-                    ))}
+                    {categoryData.map((_, i) => <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />)}
                   </Pie>
-                  <Tooltip {...TOOLTIP_STYLE} formatter={(v) => [`$${v}`, '']} />
+                  <Tooltip {...TOOLTIP_STYLE} formatter={(v) => [`$${Number(v).toLocaleString('es-CO')}`, '']} />
                 </PieChart>
               </ResponsiveContainer>
               <div className="space-y-1.5 mt-2">
-                {pieData.map((d, i) => (
+                {categoryData.map((d, i) => (
                   <div key={d.name} className="flex items-center justify-between text-xs">
                     <div className="flex items-center gap-2">
                       <div className="w-2 h-2 rounded-full" style={{ background: PIE_COLORS[i % PIE_COLORS.length] }} />
                       <span className="text-gray-400">{d.name}</span>
                     </div>
-                    <span className="text-gray-300">${d.value}</span>
+                    <span className="text-gray-300">${Number(d.value).toLocaleString('es-CO')}</span>
                   </div>
                 ))}
               </div>
@@ -221,69 +275,116 @@ export default function IngresosEgresos() {
         </GlassCard>
       </div>
 
-      {/* Filters */}
-      <div className="flex flex-wrap gap-3 mb-4">
-        <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2 w-full sm:w-auto">
+      {/* ── Expenses table ───────────────────────────────────── */}
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2">
           <input type="date" value={dateStart} onChange={e => setDateStart(e.target.value)}
             className="w-full sm:w-auto rounded-xl border border-white/10 bg-white/5 px-3 py-1.5 text-sm text-gray-300 focus:border-yellow-500/50 focus:outline-none" />
           <span className="hidden sm:inline text-gray-600">–</span>
           <input type="date" value={dateEnd} onChange={e => setDateEnd(e.target.value)}
             className="w-full sm:w-auto rounded-xl border border-white/10 bg-white/5 px-3 py-1.5 text-sm text-gray-300 focus:border-yellow-500/50 focus:outline-none" />
         </div>
-        <div className="flex gap-2">
-          {(['all', 'ingreso', 'egreso'] as const).map(t => (
-            <button key={t} onClick={() => setTypeFilter(t)}
-              className={cn('rounded-xl px-3 py-1.5 text-sm transition-colors',
-                typeFilter === t ? 'bg-yellow-500/15 text-yellow-400' : 'bg-white/5 text-gray-400 hover:bg-white/8')}>
-              {t === 'all' ? 'Todos' : t === 'ingreso' ? '↑ Ingresos' : '↓ Egresos'}
-            </button>
-          ))}
-        </div>
-        <select value={catFilter} onChange={e => setCatFilter(e.target.value)}
-          className="rounded-xl border border-white/10 bg-white/5 px-3 py-1.5 text-sm text-gray-300 focus:border-yellow-500/50 focus:outline-none">
-          <option value="all">Todas las categorías</option>
-          {categories.map(c => <option key={c} value={c}>{c}</option>)}
-        </select>
+        <Button variant="primary" size="sm" onClick={() => setShowModal(true)}>
+          <Plus size={14} /> Nuevo Egreso
+        </Button>
       </div>
 
-      {/* Table */}
       <div className="rounded-2xl border border-white/8 bg-white/[0.02] overflow-hidden overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-white/8">
-              <th className="text-left px-2 sm:px-5 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider">Fecha</th>
-              <th className="px-2 sm:px-4 py-3 w-6" />
-              <th className="hidden sm:table-cell text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider">Categoría</th>
-              <th className="text-left px-2 sm:px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider">Descripción</th>
-              <th className="hidden sm:table-cell text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider">Orden</th>
-              <th className="text-right px-2 sm:px-5 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider">Monto</th>
+              <th className="text-left px-5 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider">Fecha</th>
+              <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider">Categoría</th>
+              <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider">Descripción</th>
+              <th className="text-right px-5 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider">Monto</th>
+              <th className="px-4 py-3 w-10" />
             </tr>
           </thead>
           <motion.tbody variants={stagger} initial="hidden" animate="show">
-            {filtered.map(t => (
-              <motion.tr key={t.id} variants={rowAnim} className="border-b border-white/5 hover:bg-white/[0.02] transition-colors">
-                <td className="px-2 sm:px-5 py-3 text-gray-400 text-xs whitespace-nowrap">
-                  {format(parseISO(t.date), "d MMM yy", { locale: es })}
+            {expenses.map(e => (
+              <motion.tr key={e.id} variants={rowAnim} className="border-b border-white/5 hover:bg-white/[0.02] transition-colors group">
+                <td className="px-5 py-3 text-gray-400 text-xs whitespace-nowrap">
+                  {format(parseISO(e.date), "d MMM yyyy", { locale: es })}
                 </td>
-                <td className="px-2 sm:px-4 py-3">
-                  <div className={cn('w-2.5 h-2.5 rounded-full mx-auto', t.type === 'ingreso' ? 'bg-green-400' : 'bg-red-400')} />
+                <td className="px-4 py-3 text-gray-400 text-xs">{e.category ?? '—'}</td>
+                <td className="px-4 py-3 text-gray-300 text-xs sm:text-sm truncate max-w-[200px]">{e.description ?? '—'}</td>
+                <td className="px-5 py-3 text-right font-semibold text-red-400 text-sm whitespace-nowrap">
+                  −${Number(e.amount).toLocaleString('es-CO')}
                 </td>
-                <td className="hidden sm:table-cell px-4 py-3 text-gray-400 text-xs">{t.category ?? '—'}</td>
-                <td className="px-2 sm:px-4 py-3 text-gray-300 truncate max-w-[120px] sm:max-w-[260px] text-xs sm:text-sm">{t.description ?? '—'}</td>
-                <td className="hidden sm:table-cell px-4 py-3 text-gray-500 text-xs font-mono">
-                  {t.order_id ? `#${t.order_id}` : '—'}
-                </td>
-                <td className={cn('px-2 sm:px-5 py-3 text-right font-semibold text-xs sm:text-sm whitespace-nowrap', t.type === 'ingreso' ? 'text-green-400' : 'text-red-400')}>
-                  {t.type === 'ingreso' ? '+' : '-'}${t.amount}
+                <td className="px-4 py-3">
+                  <button onClick={() => deleteExpense(e.id)}
+                    className="p-1.5 rounded-lg text-gray-700 hover:text-red-400 hover:bg-red-500/10 transition-colors opacity-0 group-hover:opacity-100">
+                    <Trash2 size={13} />
+                  </button>
                 </td>
               </motion.tr>
             ))}
           </motion.tbody>
         </table>
-        {filtered.length === 0 && (
-          <p className="text-center text-gray-600 py-10 text-sm">Sin transacciones en el período seleccionado</p>
+        {expenses.length === 0 && (
+          <p className="text-center text-gray-600 py-10 text-sm">Sin egresos en el período seleccionado</p>
         )}
       </div>
+
+      {/* ── New expense modal ─────────────────────────────────── */}
+      <AnimatePresence>
+        {showModal && (
+          <motion.div
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
+            onClick={e => { if (e.target === e.currentTarget) setShowModal(false) }}
+          >
+            <motion.div
+              initial={{ opacity: 0, scale: 0.94, y: 12 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.94, y: 12 }}
+              transition={{ type: 'spring', stiffness: 300, damping: 28 }}
+              className="w-full max-w-md rounded-2xl border border-white/10 bg-gray-900 shadow-2xl p-6 space-y-4"
+            >
+              <h3 className="text-base font-semibold text-white">Nuevo Egreso</h3>
+
+              <div className="space-y-3">
+                <div>
+                  <label className="text-xs text-gray-500 block mb-1.5">Fecha *</label>
+                  <input type="date" value={newExpense.date}
+                    onChange={e => setNewExpense(f => ({ ...f, date: e.target.value }))}
+                    className={inputCls} />
+                </div>
+                <div>
+                  <label className="text-xs text-gray-500 block mb-1.5">Monto *</label>
+                  <input type="number" min="0" placeholder="0" value={newExpense.amount}
+                    onChange={e => setNewExpense(f => ({ ...f, amount: e.target.value }))}
+                    className={inputCls} />
+                </div>
+                <div>
+                  <label className="text-xs text-gray-500 block mb-1.5">Categoría</label>
+                  <select value={newExpense.category}
+                    onChange={e => setNewExpense(f => ({ ...f, category: e.target.value }))}
+                    className={inputCls + ' bg-gray-800'}>
+                    <option value="">Sin categoría</option>
+                    {EXPENSE_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="text-xs text-gray-500 block mb-1.5">Descripción</label>
+                  <input type="text" placeholder="¿En qué se gastó?" value={newExpense.description}
+                    onChange={e => setNewExpense(f => ({ ...f, description: e.target.value }))}
+                    className={inputCls} />
+                </div>
+              </div>
+
+              <div className="flex gap-3 pt-1">
+                <Button variant="secondary" size="md" className="flex-1" onClick={() => setShowModal(false)}>
+                  Cancelar
+                </Button>
+                <Button variant="primary" size="md" className="flex-1" onClick={saveExpense} disabled={saving}>
+                  {saving ? 'Guardando...' : 'Guardar Egreso'}
+                </Button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   )
 }
