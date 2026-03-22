@@ -427,7 +427,7 @@ export default function IngresosEgresos() {
                     <option value="Efectivo"      className="bg-gray-800">Efectivo</option>
                     <option value="Nequi"         className="bg-gray-800">Nequi</option>
                     <option value="Bancolombia"   className="bg-gray-800">Bancolombia</option>
-                    <option value="Datáfono"      className="bg-gray-800">Datáfono Banco Caja Social</option>
+                    <option value="Datáfono"      className="bg-gray-800">Banco Caja Social</option>
                     <option value="Transferencia" className="bg-gray-800">Transferencia</option>
                   </select>
                 </div>
