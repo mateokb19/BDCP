@@ -24,7 +24,13 @@
       "Bash(docker --version)",
       "Bash(docker compose:*)",
       "Bash(powershell.exe -NonInteractive -Command \"docker --version; docker compose version\")",
-      "WebFetch(domain:bogotadetailingcenter.com)"
+      "WebFetch(domain:bogotadetailingcenter.com)",
+      "Bash(curl -s \"http://localhost:8000/api/v1/liquidation/1/week?week_start=2026-03-15\")",
+      "Bash(curl -s \"http://localhost:8000/api/v1/liquidation/1/debts\")",
+      "Bash(curl -s -X POST \"http://localhost:8000/api/v1/liquidation/1/liquidate?week_start=2026-03-15\")",
+      "Bash(python -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\(d.get\\(''''is_liquidated''''\\), d.get\\(''''net_amount''''\\)\\)\")",
+      "Bash(curl -s \"http://localhost:8000/api/v1/liquidation/1/week?week_start=2026-03-16\")",
+      "Bash(docker exec:*)"
     ]
   }
 }

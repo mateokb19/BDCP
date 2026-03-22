@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { motion, AnimatePresence, LayoutGroup } from 'framer-motion'
-import { Clock, ArrowRight, Wrench, Pencil, X, ChevronDown, Calendar, Phone, User, ChevronUp } from 'lucide-react'
+import { Clock, ArrowRight, Wrench, Pencil, X, ChevronDown, Calendar, Phone, User, ChevronUp, Banknote, CreditCard } from 'lucide-react'
 import { toast } from 'sonner'
 import { PageHeader } from '@/app/components/ui/PageHeader'
 import { Badge } from '@/app/components/ui/Badge'
@@ -195,6 +195,23 @@ function PatioCard({ entry, opName, onAdvance, onEdit }: PatioCardProps) {
                       <span className="text-yellow-400">${total.toLocaleString('es-CO')}</span>
                     </div>
                   )}
+                  {/* Payment breakdown (shown after delivery) */}
+                  {entry.status === 'entregado' && (Number(entry.order.payment_cash) > 0 || Number(entry.order.payment_transfer) > 0) && (
+                    <div className="border-t border-white/6 pt-1 mt-1 space-y-0.5">
+                      {Number(entry.order.payment_cash) > 0 && (
+                        <div className="flex items-center justify-between text-xs">
+                          <span className="flex items-center gap-1 text-gray-500"><Banknote size={10} /> Efectivo</span>
+                          <span className="text-gray-300">${Number(entry.order.payment_cash).toLocaleString('es-CO')}</span>
+                        </div>
+                      )}
+                      {Number(entry.order.payment_transfer) > 0 && (
+                        <div className="flex items-center justify-between text-xs">
+                          <span className="flex items-center gap-1 text-gray-500"><CreditCard size={10} /> Transferencia</span>
+                          <span className="text-gray-300">${Number(entry.order.payment_transfer).toLocaleString('es-CO')}</span>
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -253,6 +270,14 @@ export default function EstadoPatio() {
   const [pickedOpId, setPickedOpId]               = useState('')
   const [picking, setPicking]                     = useState(false)
 
+  // Payment modal state (delivery)
+  const [paymentEntry, setPaymentEntry]       = useState<ApiPatioEntry | null>(null)
+  const [payCash, setPayCash]                 = useState('')
+  const [payDatafono, setPayDatafono]         = useState('')
+  const [payNequi, setPayNequi]               = useState('')
+  const [payBancolombia, setPayBancolombia]   = useState('')
+  const [delivering, setDelivering]           = useState(false)
+
   useEffect(() => {
     api.patio.list()
       .then(setEntries)
@@ -306,6 +331,12 @@ export default function EstadoPatio() {
       setPickedOpId('')
       return
     }
+    // Intercept delivery to collect payment info
+    if (entry.status === 'listo') {
+      setPaymentEntry(entry)
+      setPayCash(''); setPayDatafono(''); setPayNequi(''); setPayBancolombia('')
+      return
+    }
     try {
       const updated = await api.patio.advance(entry.id)
       setEntries(prev => prev.map(e => e.id === updated.id ? updated : e))
@@ -313,6 +344,26 @@ export default function EstadoPatio() {
       toast.success(`${updated.vehicle?.plate ?? 'Vehículo'} → ${label}`)
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Error al avanzar estado')
+    }
+  }
+
+  async function confirmDelivery() {
+    if (!paymentEntry) return
+    setDelivering(true)
+    try {
+      const updated = await api.patio.advance(paymentEntry.id, {
+        payment_cash:        Number(payCash)        || 0,
+        payment_datafono:    Number(payDatafono)    || 0,
+        payment_nequi:       Number(payNequi)       || 0,
+        payment_bancolombia: Number(payBancolombia) || 0,
+      })
+      setEntries(prev => prev.map(e => e.id === updated.id ? updated : e))
+      toast.success(`${updated.vehicle?.plate ?? 'Vehículo'} entregado`)
+      setPaymentEntry(null)
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Error al entregar')
+    } finally {
+      setDelivering(false)
     }
   }
 
@@ -637,6 +688,130 @@ export default function EstadoPatio() {
                       </motion.div>
                     )}
                   </AnimatePresence>
+                </div>
+              </motion.div>
+            </motion.div>
+          )
+        })()}
+      </AnimatePresence>
+
+      {/* Payment modal — shown when delivering (listo → entregado) */}
+      <AnimatePresence>
+        {paymentEntry && (() => {
+          const total    = Number(paymentEntry.order?.total ?? 0)
+          const abono    = Number(paymentEntry.order?.downpayment ?? 0)
+          const restante = Math.max(0, total - abono)
+          const covered  = (Number(payCash) || 0) + (Number(payDatafono) || 0) + (Number(payNequi) || 0) + (Number(payBancolombia) || 0)
+          const diff     = restante - covered
+
+          const inputCls = "w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-gray-100 focus:border-yellow-500/50 focus:outline-none focus:ring-2 focus:ring-yellow-500/20 placeholder:text-gray-600"
+
+          const METHODS = [
+            {
+              key: 'cash', label: 'Efectivo',
+              sub: null,
+              value: payCash, set: setPayCash,
+            },
+            {
+              key: 'datafono', label: 'Datáfono Banco Caja Social',
+              sub: null,
+              value: payDatafono, set: setPayDatafono,
+            },
+            {
+              key: 'nequi', label: 'Nequi',
+              sub: '3118777229 · NEQUIJUL11739',
+              value: payNequi, set: setPayNequi,
+            },
+            {
+              key: 'bancolombia', label: 'Bancolombia Ahorros',
+              sub: '60123354942 · @SaraP9810',
+              value: payBancolombia, set: setPayBancolombia,
+            },
+          ]
+
+          return (
+            <motion.div
+              initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+              className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
+              onClick={e => { if (e.target === e.currentTarget) setPaymentEntry(null) }}
+            >
+              <motion.div
+                initial={{ opacity: 0, scale: 0.94, y: 12 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                exit={{ opacity: 0, scale: 0.94, y: 12 }}
+                transition={{ type: 'spring', stiffness: 300, damping: 28 }}
+                className="w-full max-w-sm rounded-2xl border border-white/10 bg-gray-900 shadow-2xl p-6 space-y-5 max-h-[90vh] overflow-y-auto"
+              >
+                <div>
+                  <h3 className="text-base font-semibold text-white">Método de Pago</h3>
+                  <p className="text-sm text-gray-500 mt-1">
+                    {paymentEntry.vehicle?.brand} {paymentEntry.vehicle?.model} ·{' '}
+                    <span className="text-gray-300">{paymentEntry.vehicle?.plate}</span>
+                  </p>
+                </div>
+
+                {/* Amount summary */}
+                <div className="rounded-xl bg-white/[0.04] border border-white/8 px-4 py-3 space-y-1">
+                  {abono > 0 && (
+                    <>
+                      <div className="flex justify-between text-xs text-gray-500">
+                        <span>Total servicio</span>
+                        <span>${total.toLocaleString('es-CO')}</span>
+                      </div>
+                      <div className="flex justify-between text-xs text-gray-500">
+                        <span>Abono previo</span>
+                        <span className="text-green-400">−${abono.toLocaleString('es-CO')}</span>
+                      </div>
+                      <div className="border-t border-white/8 pt-1 mt-1" />
+                    </>
+                  )}
+                  <div className="flex justify-between text-sm font-bold">
+                    <span className="text-gray-300">A cobrar</span>
+                    <span className="text-yellow-400">${restante.toLocaleString('es-CO')}</span>
+                  </div>
+                </div>
+
+                {/* Payment method inputs */}
+                <div className="space-y-3">
+                  <p className="text-xs text-gray-500 uppercase tracking-wider">Distribución del pago</p>
+                  {METHODS.map(m => (
+                    <div key={m.key}>
+                      <label className="text-sm font-medium text-gray-300 block mb-1">{m.label}</label>
+                      {m.sub && (
+                        <p className="text-[11px] text-gray-600 mb-1.5">{m.sub}</p>
+                      )}
+                      <input
+                        type="number" min="0" placeholder="0"
+                        value={m.value}
+                        onChange={e => m.set(e.target.value)}
+                        className={inputCls}
+                      />
+                    </div>
+                  ))}
+                </div>
+
+                {/* Running balance */}
+                <div className={cn(
+                  'text-xs text-center rounded-xl px-3 py-2.5 font-medium',
+                  covered === 0   ? 'text-gray-600 bg-white/[0.03] border border-white/8' :
+                  diff > 0        ? 'text-orange-400 bg-orange-500/10 border border-orange-500/20' :
+                  diff < 0        ? 'text-blue-400 bg-blue-500/10 border border-blue-500/20' :
+                                    'text-green-400 bg-green-500/10 border border-green-500/20'
+                )}>
+                  {covered === 0 && 'Ingresa los montos de pago'}
+                  {covered > 0 && diff > 0  && `Faltan $${diff.toLocaleString('es-CO')} por cubrir`}
+                  {covered > 0 && diff < 0  && `Cambio al cliente: $${Math.abs(diff).toLocaleString('es-CO')}`}
+                  {covered > 0 && diff === 0 && '✓ Pago completo'}
+                </div>
+
+                <div className="flex gap-3">
+                  <Button variant="secondary" size="md" className="flex-1" onClick={() => setPaymentEntry(null)}>
+                    Cancelar
+                  </Button>
+                  <Button variant="primary" size="md" className="flex-1"
+                    onClick={confirmDelivery} disabled={delivering}>
+                    {delivering ? 'Entregando...' : 'Confirmar Entrega'}
+                  </Button>
                 </div>
               </motion.div>
             </motion.div>

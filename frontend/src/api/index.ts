@@ -9,7 +9,12 @@ async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   })
   if (!res.ok) {
     const data = await res.json().catch(() => ({}))
-    throw new Error(data.detail ?? `HTTP ${res.status}`)
+    const detail = Array.isArray(data.detail)
+      ? data.detail.map((e: any) => e.msg ?? JSON.stringify(e)).join(', ')
+      : typeof data.detail === 'string'
+        ? data.detail
+        : `HTTP ${res.status}`
+    throw new Error(detail)
   }
   if (res.status === 204 || res.headers.get('content-length') === '0') {
     return undefined as T
@@ -52,6 +57,10 @@ export interface ApiOrder {
   paid: boolean
   downpayment: string
   is_warranty: boolean
+  payment_cash: string
+  payment_datafono: string
+  payment_nequi: string
+  payment_bancolombia: string
   items: ApiOrderItem[]
 }
 
@@ -350,8 +359,8 @@ export const api = {
   },
   patio: {
     list: () => apiFetch<ApiPatioEntry[]>('/patio'),
-    advance: (id: number) =>
-      apiFetch<ApiPatioEntry>(`/patio/${id}/advance`, { method: 'POST' }),
+    advance: (id: number, payment?: { payment_cash: number; payment_datafono: number; payment_nequi: number; payment_bancolombia: number }) =>
+      apiFetch<ApiPatioEntry>(`/patio/${id}/advance`, { method: 'POST', body: JSON.stringify(payment ?? {}) }),
     edit: (id: number, payload: PatioPatchPayload) =>
       apiFetch<ApiPatioEntry>(`/patio/${id}`, { method: 'PATCH', body: JSON.stringify(payload) }),
     cancel: (id: number) =>

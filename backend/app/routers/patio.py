@@ -60,8 +60,9 @@ def list_patio(
 
 
 @router.post("/{id}/advance", response_model=schemas.PatioEntryOut)
-def advance_status(id: int, db: Session = Depends(get_db)):
-    """Advance patio entry to the next status."""
+def advance_status(id: int, payload: schemas.AdvancePayload = schemas.AdvancePayload(), db: Session = Depends(get_db)):
+    """Advance patio entry to the next status. When advancing to 'entregado',
+    optionally include payment_cash and payment_transfer amounts."""
     entry = _get_entry_or_404(id, db)
     next_status = NEXT_STATUS.get(entry.status)
     if next_status is None:
@@ -76,8 +77,13 @@ def advance_status(id: int, db: Session = Depends(get_db)):
         entry.completed_at = now
         entry.order.status = models.OrderStatusEnum.listo
     elif next_status == models.PatioStatusEnum.entregado:
-        entry.delivered_at = now
-        entry.order.status = models.OrderStatusEnum.entregado
+        entry.delivered_at           = now
+        entry.order.status           = models.OrderStatusEnum.entregado
+        entry.order.payment_cash        = payload.payment_cash
+        entry.order.payment_datafono    = payload.payment_datafono
+        entry.order.payment_nequi       = payload.payment_nequi
+        entry.order.payment_bancolombia = payload.payment_bancolombia
+        entry.order.paid                = True
 
     db.commit()
     db.refresh(entry)

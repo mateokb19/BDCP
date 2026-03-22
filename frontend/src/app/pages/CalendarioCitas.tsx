@@ -2,11 +2,12 @@ import { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   format, startOfMonth, endOfMonth,
-  isSameDay, isSameMonth, addMonths, subMonths, parseISO, startOfWeek, endOfWeek, eachDayOfInterval,
+  isSameDay, isSameMonth, addMonths, subMonths, parseISO, startOfWeek, endOfWeek, eachDayOfInterval, isBefore, startOfDay,
 } from 'date-fns'
 import { es } from 'date-fns/locale'
-import { ChevronLeft, ChevronRight, Plus, Clock, Phone, MessageSquare, CalendarDays as EmptyCalIcon, Pencil, Trash2 } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Plus, Clock, Phone, MessageSquare, CalendarDays as EmptyCalIcon, Pencil, Trash2, LogIn } from 'lucide-react'
 import { toast } from 'sonner'
+import { useNavigate } from 'react-router'
 import { PageHeader } from '@/app/components/ui/PageHeader'
 import { Button } from '@/app/components/ui/Button'
 import { Modal } from '@/app/components/ui/Modal'
@@ -87,6 +88,7 @@ const cardAnim = {
 const selectCls = 'w-full rounded-xl border border-white/10 bg-gray-900 px-3 py-2 text-sm text-gray-100 focus:border-yellow-500/50 focus:outline-none focus:ring-2 focus:ring-yellow-500/20 appearance-none disabled:opacity-40'
 
 export default function CalendarioCitas() {
+  const navigate = useNavigate()
   const today = new Date()
   const [currentMonth, setCurrentMonth] = useState(() => new Date(today.getFullYear(), today.getMonth(), 1))
   const [selectedDate, setSelectedDate] = useState(today)
@@ -113,9 +115,9 @@ export default function CalendarioCitas() {
       .finally(() => setLoading(false))
   }, [currentMonth])
 
-  const dayAppointments = appointments.filter(a =>
-    isSameDay(parseISO(a.date), selectedDate)
-  )
+  const dayAppointments = appointments
+    .filter(a => isSameDay(parseISO(a.date), selectedDate))
+    .sort((a, b) => (a.time ?? '99:99').localeCompare(b.time ?? '99:99'))
 
   const getDotsForDay = (day: Date) =>
     appointments.filter(a => isSameDay(parseISO(a.date), day))
@@ -161,7 +163,10 @@ export default function CalendarioCitas() {
     try {
       if (editAppt) {
         const updated = await api.appointments.patch(editAppt.id, { ...payload, status: form.status })
-        setAppointments(prev => prev.map(a => a.id === editAppt.id ? updated : a))
+        setAppointments(prev =>
+          prev.map(a => a.id === editAppt.id ? updated : a)
+            .sort((a, b) => a.date.localeCompare(b.date) || (a.time ?? '99:99').localeCompare(b.time ?? '99:99'))
+        )
         toast.success('Cita actualizada')
       } else {
         const created = await api.appointments.create(payload)
@@ -230,29 +235,35 @@ export default function CalendarioCitas() {
               const isSelected = isSameDay(day, selectedDate)
               const isToday    = isSameDay(day, today)
               const inMonth    = isSameMonth(day, currentMonth)
+              const isPast     = isBefore(startOfDay(day), startOfDay(today)) && !isToday
               const dots       = getDotsForDay(day)
               return (
                 <motion.button
                   key={day.toISOString()}
-                  whileHover={{ scale: 1.1 }}
+                  whileHover={{ scale: isPast ? 1 : 1.08 }}
                   whileTap={{ scale: 0.95 }}
                   onClick={() => setSelectedDate(day)}
                   className={cn(
-                    'relative flex flex-col items-center justify-center rounded-xl py-1.5 px-1 text-sm transition-colors',
+                    'relative flex flex-col items-center justify-center rounded-xl py-2 px-1 text-sm transition-colors',
                     isSelected
-                      ? 'bg-yellow-500 text-gray-950 font-semibold shadow-lg shadow-yellow-500/30'
+                      ? 'bg-yellow-500 text-gray-950 font-bold shadow-lg shadow-yellow-500/25'
                       : isToday
-                        ? 'text-yellow-400 font-medium ring-1 ring-yellow-500/40'
-                        : inMonth
-                          ? 'text-gray-300 hover:bg-white/8'
-                          : 'text-gray-700 hover:bg-white/5'
+                        ? 'text-yellow-400 font-semibold ring-1 ring-yellow-500/50 bg-yellow-500/5'
+                        : isPast
+                          ? inMonth ? 'text-gray-700 cursor-default' : 'text-gray-800 cursor-default'
+                          : inMonth
+                            ? 'text-gray-300 hover:bg-white/8 hover:text-white'
+                            : 'text-gray-600 hover:bg-white/5'
                   )}
                 >
                   <span className="leading-none">{format(day, 'd')}</span>
                   {dots.length > 0 && (
                     <div className="flex gap-0.5 mt-1">
                       {dots.slice(0, 3).map((_, i) => (
-                        <span key={i} className={cn('w-1 h-1 rounded-full', isSelected ? 'bg-gray-900/60' : 'bg-yellow-500')} />
+                        <span key={i} className={cn(
+                          'w-1 h-1 rounded-full',
+                          isSelected ? 'bg-gray-900/70' : isPast ? 'bg-gray-600' : 'bg-yellow-500'
+                        )} />
                       ))}
                     </div>
                   )}
@@ -310,6 +321,22 @@ export default function CalendarioCitas() {
                                   {statusInfo.label}
                                 </span>
                               )}
+                              {(appt.status === 'programada' || appt.status === 'confirmada') && (
+                                <button
+                                  onClick={() => navigate('/', { state: { fromAppointment: {
+                                    vehicleType: appt.vehicle_type,
+                                    plate:       appt.plate,
+                                    brand:       appt.brand,
+                                    model:       appt.model,
+                                    clientName:  appt.client_name,
+                                    clientPhone: appt.client_phone,
+                                  }}})}
+                                  className="p-1.5 rounded-lg text-gray-500 hover:text-green-400 hover:bg-green-500/10 transition-colors"
+                                  title="Ingresar vehículo"
+                                >
+                                  <LogIn size={14} />
+                                </button>
+                              )}
                               <button
                                 onClick={() => openEdit(appt)}
                                 className="p-1.5 rounded-lg text-gray-500 hover:text-yellow-400 hover:bg-yellow-500/10 transition-colors"
@@ -366,14 +393,23 @@ export default function CalendarioCitas() {
             <div className="flex flex-col gap-1.5">
               <label className="text-sm font-medium text-gray-300">Fecha *</label>
               <input type="date" value={form.date}
+                min={editAppt ? undefined : format(today, 'yyyy-MM-dd')}
                 onChange={e => setForm(p => ({ ...p, date: e.target.value }))}
-                className={selectCls} />
+                className={cn(selectCls, '[color-scheme:dark]')} />
             </div>
             <div className="flex flex-col gap-1.5">
               <label className="text-sm font-medium text-gray-300">Hora</label>
-              <input type="time" value={form.time}
+              <select
+                value={form.time}
                 onChange={e => setForm(p => ({ ...p, time: e.target.value }))}
-                className={selectCls} />
+                className={selectCls}
+              >
+                <option value="">— Hora —</option>
+                {Array.from({ length: 13 }, (_, i) => i + 6).map(h => {
+                  const val = `${String(h).padStart(2, '0')}:00`
+                  return <option key={h} value={val}>{h}:00</option>
+                })}
+              </select>
             </div>
           </div>
 
@@ -393,12 +429,6 @@ export default function CalendarioCitas() {
 
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div className="flex flex-col gap-1.5">
-              <label className="text-sm font-medium text-gray-300">Placa</label>
-              <input value={form.plate} placeholder="ABC123"
-                onChange={e => setForm(p => ({ ...p, plate: e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6) }))}
-                className={selectCls} />
-            </div>
-            <div className="flex flex-col gap-1.5">
               <label className="text-sm font-medium text-gray-300">Marca</label>
               <select value={form.brand}
                 onChange={e => setForm(p => ({ ...p, brand: e.target.value, model: '' }))}
@@ -416,6 +446,12 @@ export default function CalendarioCitas() {
                 <option value="">— Seleccionar —</option>
                 {availableModels.map(m => <option key={m} value={m}>{m}</option>)}
               </select>
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <label className="text-sm font-medium text-gray-300">Placa</label>
+              <input value={form.plate} placeholder="ABC123"
+                onChange={e => setForm(p => ({ ...p, plate: e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6) }))}
+                className={selectCls} />
             </div>
           </div>
 

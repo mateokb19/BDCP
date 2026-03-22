@@ -1,7 +1,7 @@
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Car, Truck, Check, ChevronRight, Search, User, Phone, Palette, Hash, Calendar, Pencil, AlertTriangle, ShieldCheck } from 'lucide-react'
-import { useNavigate } from 'react-router'
+import { useNavigate, useLocation } from 'react-router'
 import { toast } from 'sonner'
 import { Button } from '@/app/components/ui/Button'
 import { Input } from '@/app/components/ui/Input'
@@ -103,6 +103,7 @@ function getServicePrice(service: Service, type: VehicleType): number {
 
 export default function IngresarServicio() {
   const navigate = useNavigate()
+  const location = useLocation()
   const { services, createOrder } = useAppContext()
 
   const [step, setStep]               = useState<Step>(1)
@@ -117,6 +118,27 @@ export default function IngresarServicio() {
     deliveryDate: '', deliveryTime: '',
     customPrices: {}, warrantyServiceIds: [], downpayment: '', isWarranty: false,
   })
+
+  // Pre-fill from appointment (navigated from CalendarioCitas)
+  useEffect(() => {
+    const appt = (location.state as any)?.fromAppointment
+    if (!appt) return
+    const vt: VehicleType = appt.vehicleType ?? 'automovil'
+    setVehicleType(vt)
+    setForm(f => ({
+      ...f,
+      plate:       appt.plate       ?? '',
+      brand:       appt.brand       ?? '',
+      model:       appt.model       ?? '',
+      clientName:  appt.clientName  ?? '',
+      clientPhone: appt.clientPhone ?? '',
+    }))
+    if (appt.brand) setBrandQuery(appt.brand)
+    setPrevStep(1)
+    setStep(2)
+    // Clear state so a refresh doesn't re-apply it
+    window.history.replaceState({}, '')
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Brand autocomplete
   const [brandQuery, setBrandQuery]     = useState('')

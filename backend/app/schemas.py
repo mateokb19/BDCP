@@ -150,10 +150,14 @@ class OrderOut(OrmBase):
     status:       str
     subtotal:     Decimal
     total:        Decimal
-    paid:         bool
-    downpayment:  Decimal
-    is_warranty:  bool
-    items:        list[OrderItemOut]
+    paid:                bool
+    downpayment:         Decimal
+    is_warranty:         bool
+    payment_cash:        Decimal
+    payment_datafono:    Decimal
+    payment_nequi:       Decimal
+    payment_bancolombia: Decimal
+    items:               list[OrderItemOut]
 
 
 # ── Patio ────────────────────────────────────────────────────────────────────────
@@ -173,6 +177,13 @@ class PatioEntryOut(OrmBase):
     # Nested
     vehicle:  Optional[VehicleOut]
     order:    Optional[OrderOut]
+
+
+class AdvancePayload(BaseModel):
+    payment_cash:        Decimal = Decimal("0")
+    payment_datafono:    Decimal = Decimal("0")
+    payment_nequi:       Decimal = Decimal("0")
+    payment_bancolombia: Decimal = Decimal("0")
 
 
 class PatioPatch(BaseModel):
@@ -284,7 +295,7 @@ class AppointmentCreate(BaseModel):
 
 
 class AppointmentPatch(BaseModel):
-    date:         Optional[date] = None
+    date:         Optional[str]  = None   # "YYYY-MM-DD" string; router converts to date
     time:         Optional[str]  = None
     vehicle_type: Optional[str]  = None
     brand:        Optional[str]  = None
