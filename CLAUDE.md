@@ -35,7 +35,10 @@ BDCP/
 │   │       ├── patio.py        # GET /patio, POST /patio/{id}/advance, PATCH /patio/{id}
 │   │       ├── ceramics.py     # GET /ceramics
 │   │       ├── history.py      # GET /history
-│   │       └── liquidation.py  # GET+POST /liquidation (weekly, debts, abonos)
+│   │       ├── liquidation.py  # GET+POST /liquidation (weekly, debts, abonos)
+│   │       ├── ingresos.py     # GET /ingresos
+│   │       ├── egresos.py      # GET+POST+DELETE /egresos
+│   │       └── clients.py      # GET /clients, PATCH /clients/{id}
 │   └── database/
 │       ├── schema.sql          # CREATE TABLE reference (not run at boot)
 │       └── seed.sql            # reference seed (actual seeding done in main.py)
@@ -47,12 +50,12 @@ BDCP/
     │   ├── types/index.ts      # TypeScript interfaces mirroring DB schema
     │   ├── data/mock.ts        # mock data (used only by pages not yet wired to API)
     │   ├── app/
-    │   │   ├── routes.tsx      # createBrowserRouter, 8 pages
+    │   │   ├── routes.tsx      # createBrowserRouter, 10 pages
     │   │   ├── context/AppContext.tsx  # fetches services+operators from API; createOrder()
     │   │   ├── components/
     │   │   │   ├── Layout.tsx          # responsive: desktop collapsible sidebar + mobile hamburger overlay
     │   │   │   └── ui/                 # cn, Badge, Button, Input, GlassCard, Modal, Select, Tabs, etc.
-    │   │   └── pages/          # 8 pages (see Routes)
+    │   │   └── pages/          # 10 pages (see Routes)
     │   └── styles/
     │       ├── index.css       # @import tailwind.css + theme.css
     │       ├── tailwind.css    # @import "tailwindcss"
@@ -90,10 +93,17 @@ All routes are prefixed `/api/v1/`.
 | GET    | `/ceramics` | List all ceramic treatments with vehicle + operator |
 | GET    | `/history` | Order history with optional `date_filter` and `search` query params |
 | GET    | `/liquidation/{op_id}/week?week_start=YYYY-MM-DD` | Weekly liquidation data (7 days, qualifying orders) |
-| POST   | `/liquidation/{op_id}/liquidate?week_start=YYYY-MM-DD` | Confirm liquidation: process abonos, settlements, payment methods, auto-create pending debts |
+| POST   | `/liquidation/{op_id}/liquidate?week_start=YYYY-MM-DD` | Confirm liquidation: process abonos, settlements, payment methods, auto-create pending debts + expense records |
 | GET    | `/liquidation/{op_id}/debts` | List all debts for an operator (with payment history) |
 | POST   | `/liquidation/{op_id}/debts` | Create a new debt |
 | PATCH  | `/liquidation/debts/{debt_id}/paid` | Mark debt as fully paid |
+| GET    | `/liquidation/{op_id}/report?period=week\|month&ref_date=YYYY-MM-DD` | Generate PDF-ready report |
+| GET    | `/ingresos?period=day\|week\|month\|year&ref_date=YYYY-MM-DD` | Income totals by payment method + daily breakdown |
+| GET    | `/egresos?date_start=&date_end=` | List expenses |
+| POST   | `/egresos` | Create expense |
+| DELETE | `/egresos/{id}` | Delete expense |
+| GET    | `/clients?search=` | List all clients with vehicles, order count, total spent, last service |
+| PATCH  | `/clients/{id}` | Update client name, phone, email, notes |
 
 ## Routes
 
@@ -105,9 +115,10 @@ All routes are prefixed `/api/v1/`.
 | `/inventario`      | Inventario        | ❌ mock | Inventory management with stock levels |
 | `/ceramicos`       | Ceramicos         | ✅ | Ceramic treatment tracking; fetched from `GET /ceramics` |
 | `/liquidacion`     | Liquidacion       | ✅ | Operator commission liquidation (password: `BDCP123`) |
-| `/ingresos-egresos`| IngresosEgresos   | ❌ mock | Financial transactions + charts |
+| `/ingresos-egresos`| IngresosEgresos   | ✅ | Income by payment method + manual expense CRUD + charts |
 | `/documentos`      | Documentos        | ❌ mock | Document management |
 | `/historial`       | Historial         | ✅ | Order history with search + date filter |
+| `/clientes`        | Clientes          | ✅ | Client database with search, vehicle list, edit, stats |
 
 ## Design system
 
@@ -138,6 +149,7 @@ DebtDirection:      empresa_operario | operario_empresa
 | `debts` | Tracks money owed between company and operator; supports partial payments via `paid_amount` |
 | `debt_payments` | Individual installment records (abonos) linked to a debt and optionally to a week_liquidation |
 | `week_liquidations` | One record per operator per week when liquidated; stores net, transfer, cash, pending amounts |
+| `expenses` | Manual expense records; also auto-created by liquidation for operator payouts |
 
 ### Extra columns added via ALTER TABLE (not in original schema.sql)
 
@@ -150,6 +162,7 @@ ALTER TABLE service_orders ADD COLUMN IF NOT EXISTS payment_cash NUMERIC(12,2) N
 ALTER TABLE service_orders ADD COLUMN IF NOT EXISTS payment_datafono NUMERIC(12,2) NOT NULL DEFAULT 0;
 ALTER TABLE service_orders ADD COLUMN IF NOT EXISTS payment_nequi NUMERIC(12,2) NOT NULL DEFAULT 0;
 ALTER TABLE service_orders ADD COLUMN IF NOT EXISTS payment_bancolombia NUMERIC(12,2) NOT NULL DEFAULT 0;
+ALTER TABLE expenses ADD COLUMN IF NOT EXISTS payment_method VARCHAR(50);
 ```
 
 ## Service order flow
@@ -168,7 +181,7 @@ ALTER TABLE service_orders ADD COLUMN IF NOT EXISTS payment_bancolombia NUMERIC(
    - Confirm → `POST /api/v1/orders` with `item_overrides` (custom and warranty prices), `scheduled_delivery_at`, `downpayment`, `is_warranty`.
 2. Backend creates atomically: client (find or create by phone), vehicle (find or create by plate), order, order items (price snapshot via `item_overrides`), patio entry (`esperando`). If any item is `ceramico` category, also creates a `CeramicTreatment` record with `next_maintenance = application_date + 6 months`.
 3. **EstadoPatio**: fetches `GET /api/v1/patio` on mount. Kanban cards advance via `POST /patio/{id}/advance`. Services editable via `PATCH /patio/{id}`. Operator assigned via modal on first advance.
-   - **Cards**: collapsed by default showing vehicle icon, brand/model, plate/color, operator, delivery date/time, elapsed time, and advance button. Clicking the card expands it to show client name/phone, service badges, financial breakdown (total / abono / resta), payment breakdown (if entregado), and "Editar orden" link.
+   - **Cards**: collapsed by default showing vehicle icon, brand/model, plate/color, operator, delivery date/time, elapsed time, and advance button. Clicking the card expands it to show client name/phone, service badges, financial breakdown (total / abono / resta), payment breakdown (if entregado), facturación electrónica panel (if requested), and "Editar orden" link.
    - Advancing from `esperando` → `en_proceso` **requires** an operator: if none assigned, a picker modal appears first; selects operator via `PATCH`, then advances.
    - **Editar orden** modal:
      - Available for `esperando` and `en_proceso` statuses. Read-only for `listo` and `entregado`.
@@ -179,7 +192,11 @@ ALTER TABLE service_orders ADD COLUMN IF NOT EXISTS payment_bancolombia NUMERIC(
      - No operator selector in edit modal — operator is only assigned via the advance-to-en_proceso flow.
    - **GET /patio** filters: returns all non-delivered entries + entries delivered today.
    - Delivery date picker: `min` set to today — past dates not selectable. Hour picker is a `<select>` dropdown showing full hours only (6:00–18:00).
-   - **Advancing listo → entregado**: intercepts with a payment modal. Modal shows amount to collect (total − abono), 4 payment method inputs with a running balance indicator. Methods: Efectivo, Datáfono Banco Caja Social, Nequi (3118777229 / llave NEQUIJUL11739), Bancolombia Ahorros (60123354942 / llave @SaraP9810). On confirm: saves all 4 amounts to order + marks `paid=True`.
+   - **Advancing listo → entregado**: intercepts with a payment modal:
+     - **Method selection**: checkboxes for Efectivo, Banco Caja Social, Nequi (3118777229 / llave NEQUIJUL11739), Bancolombia Ahorros (60123354942 / llave @SaraP9810). One method checked → amount = full restante automatically. Multiple methods checked → inline amount input per method + balance indicator.
+     - **Facturación electrónica**: optional checkbox at the bottom. When checked, expands a form for Tipo (Persona Natural / Empresa), Tipo de identificación (CC/CE/PP/TI or NIT/CE), Número de identificación + Dv (NIT only), Nombre and Teléfono (pre-filled from order client), Correo electrónico.
+     - On confirm: saves 4 payment amounts to order + marks `paid=True`. If factura checkbox was active and an ID was entered, saves factura data to `localStorage` keyed by order ID under `bdcpolo_facturas`.
+   - **Facturación electrónica indicator**: delivered cards with saved factura data show a blue "FE" pill badge in the collapsed header. Expanded view shows a blue-tinted panel with Tipo, ID type+number+Dv, and email.
 4. Plate format: uppercase alphanumeric only, max 6 chars — stripped on input with `/[^A-Z0-9]/g`.
 5. Operator **not** selected during order entry — assigned at patio stage (required to start work).
 
@@ -193,7 +210,7 @@ ALTER TABLE service_orders ADD COLUMN IF NOT EXISTS payment_bancolombia NUMERIC(
    - Abonos: input per unpaid `operario_empresa` debt — deducted from payout and recorded as `DebtPayment`
    - Settlements: toggle per unpaid `empresa_operario` debt to include in payout
    - Payment methods: Transferencia + Efectivo fields; if sum < net → auto-creates `empresa_operario` debt for the pending amount
-   - On confirm: creates `WeekLiquidation` record, links `DebtPayment` records to it
+   - On confirm: creates `WeekLiquidation` record, links `DebtPayment` records to it; **also auto-creates `Expense` records** (category: "Salarios") for each payment method used — `payment_method` set to "Efectivo" or "Transferencia"
 6. Post-liquidation shows payment breakdown (neto, transferencia, efectivo, pendiente).
 7. **Descargar** button opens a period picker modal:
    - "Esta semana" → calls `GET /api/v1/liquidation/{op_id}/report?period=week&ref_date=<weekStart>`
@@ -230,6 +247,21 @@ Key implementation details:
   - Defined in `backend/app/routers/liquidation.py` → `def get_report(...)`
   - Response schema: `ReportResponse` in `backend/app/schemas.py`
 
+## Ingresos / Egresos
+
+- **`GET /ingresos`**: aggregates delivered `ServiceOrder` totals by 4 payment method columns. Returns `daily_totals` (no date gaps) for chart rendering + period totals.
+- **`GET/POST/DELETE /egresos`**: full CRUD for manual expense records. `payment_method` field stores where money came from (Efectivo, Nequi, Bancolombia, Datáfono, Transferencia). "Banco Caja Social" is shown as label in the UI but stored as `"Datáfono"` in the DB for backward compatibility.
+- **Liquidation auto-expense**: confirming a weekly liquidation auto-creates `Expense` records (category "Salarios") for the amounts paid by each method.
+- **Chart granularity**: matches the active period tab — day shows a single bar, week/month show daily bars, year shows monthly bars. Both ingresos and egresos rendered side by side (yellow / red).
+- **Period sync**: changing the period tab recomputes `date_start`/`date_end` via `getPeriodDates()` and re-fetches both ingresos and egresos simultaneously.
+
+## Clientes section
+
+- **`GET /clients?search=`**: returns all clients ordered by name. Each record includes nested vehicles list + computed stats (`order_count`, `total_spent`, `last_service`) aggregated from all non-cancelled orders across all client vehicles.
+- **`PATCH /clients/{id}`**: updates name, phone, email, notes.
+- **Page `/clientes`**: KPI cards (total clients, vehicles, services), searchable list with debounced API calls, animated right drawer per client showing vehicles (with type icon), stats, and inline edit mode.
+- Clients are created implicitly by `POST /orders` (find-or-create by phone number). The `/clientes` page is read/edit only — no explicit client creation.
+
 ## Key decisions
 
 - **API client at `src/api/index.ts`**: single `apiFetch` wrapper; all typed methods grouped by resource. `API_BASE` defaults to `http://localhost:8000/api/v1`, overridable via `VITE_API_URL` env var.
@@ -251,10 +283,12 @@ Key implementation details:
 - **Patio card UX**: collapsed/expanded toggle per card (local `expanded` state inside `PatioCard`). Collapsed = minimal info; expanded = client, services, financials, edit button.
 - **Service editing scope**: `PATCH /patio/{id}` with `service_ids` is accepted for `esperando` and `en_proceso`. For `listo`/`entregado` the frontend sends no `service_ids` field. `service_ids: []` (empty) is valid — sets total/subtotal to 0; use `DELETE /patio/{id}` to fully remove from kanban.
 - **Cancellation flow**: removing all services + confirming in the edit modal calls `DELETE /patio/{id}` (not PATCH). The backend checks status is `esperando` or `en_proceso` before allowing deletion.
-- **Payment methods on delivery**: 4 accepted methods stored as separate columns on `service_orders`: `payment_cash`, `payment_datafono`, `payment_nequi`, `payment_bancolombia`. All `Numeric(12,2) DEFAULT 0`. The advance modal for `listo→entregado` shows sub-account info (number + llave) for Nequi and Bancolombia.
+- **Payment methods on delivery**: 4 accepted methods stored as separate columns on `service_orders`: `payment_cash`, `payment_datafono`, `payment_nequi`, `payment_bancolombia`. All `Numeric(12,2) DEFAULT 0`. "Banco Caja Social" in the UI maps to `payment_datafono` in the DB. Sub-account info shown for Nequi and Bancolombia.
+- **Facturación electrónica**: captured at delivery time only. Stored in `localStorage` under key `bdcpolo_facturas` as `Record<orderId, FacturaRecord>`. Not sent to the backend. `FacturaRecord` = `{ tipo, id_type, id_number, dv, name, phone, email }`. Shown as a blue "FE" badge on delivered cards and a detail panel when expanded.
 - **CalendarioCitas UX**: past days in month grid are dimmed (`text-gray-700`). New appointment date picker has `min=today`; edit mode has no minimum (allows changing to any date). Time picker is a `<select>` with full hours 6:00–18:00. Appointments within a day are sorted by time ascending. Field order in form: Marca → Modelo → Placa.
 - **"Ingresar Vehículo" from calendar**: appointments in `programada` or `confirmada` status show a green LogIn icon button. Clicking navigates to `/` with `location.state.fromAppointment` containing vehicle/client data. IngresarServicio reads this on mount via `useEffect`, pre-fills the form, and jumps to step 2. State cleared via `window.history.replaceState({}, '')` to prevent re-apply on refresh.
 - **`AppointmentPatch.date` as `Optional[str]`**: Pydantic v2 name collision — field named `date` with type `Optional[date]` resolves incorrectly. Fixed by using `Optional[str]` and parsing manually in the router with `_date.fromisoformat(data['date'])`. The `date` stdlib import is aliased as `_date` in `appointments.py` to avoid the same collision.
+- **Clients are find-or-create by phone**: `POST /orders` looks up an existing client by phone; if found, updates the name; if not found, creates a new one. The `/clientes` page surfaces these records.
 
 ## Common commands
 
