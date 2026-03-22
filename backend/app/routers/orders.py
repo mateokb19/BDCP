@@ -6,6 +6,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 from app.database import get_db
 from app import models, schemas
+from app.tz import today_bogota
 
 
 def _add_months(d: date, months: int) -> date:
@@ -102,9 +103,10 @@ def create_order(payload: schemas.OrderCreate, db: Session = Depends(get_db)):
         ))
         total += price
 
-    # 5. Create service order
+    # 5. Create service order (date set explicitly in Bogota timezone)
     order = models.ServiceOrder(
         order_number=_next_order_number(db),
+        date=today_bogota(),
         vehicle_id=vehicle.id,
         operator_id=payload.operator_id,
         status=models.OrderStatusEnum.pendiente,

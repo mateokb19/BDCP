@@ -1,9 +1,10 @@
-from datetime import date, datetime, timezone
+from datetime import date, datetime
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import or_, func
 from sqlalchemy.orm import Session, joinedload
 from app.database import get_db
 from app import models, schemas
+from app.tz import now_bogota, today_bogota
 
 router = APIRouter(prefix="/patio", tags=["patio"])
 
@@ -48,7 +49,7 @@ def list_patio(
         q = q.filter(models.PatioEntry.status == status_enum)
     else:
         # Show all non-delivered entries + only today's delivered entries
-        today = date.today()
+        today = today_bogota()
         q = q.filter(
             or_(
                 models.PatioEntry.status != models.PatioStatusEnum.entregado,
@@ -66,7 +67,7 @@ def advance_status(id: int, db: Session = Depends(get_db)):
     if next_status is None:
         raise HTTPException(status_code=400, detail="El vehículo ya fue entregado")
 
-    now = datetime.now(timezone.utc)
+    now = now_bogota()
     entry.status = next_status
     if next_status == models.PatioStatusEnum.en_proceso:
         entry.started_at   = now
