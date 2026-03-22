@@ -278,6 +278,16 @@ export default function EstadoPatio() {
   const [paymentEntry, setPaymentEntry] = useState<ApiPatioEntry | null>(null)
   const [payMethods,   setPayMethods]   = useState<Record<string, string>>({ cash: '' })
   const [delivering,   setDelivering]   = useState(false)
+  const [factura,      setFactura]      = useState(false)
+  const [facturaData,  setFacturaData]  = useState({
+    tipo:      'persona_natural' as 'persona_natural' | 'empresa',
+    id_type:   'CC',
+    id_number: '',
+    dv:        '',
+    name:      '',
+    phone:     '',
+    email:     '',
+  })
 
   function togglePayMethod(key: string) {
     setPayMethods(prev => {
@@ -350,6 +360,16 @@ export default function EstadoPatio() {
       const restante = Math.max(0, Number(entry.order?.total ?? 0) - Number(entry.order?.downpayment ?? 0))
       setPaymentEntry(entry)
       setPayMethods({ cash: '' })
+      setFactura(false)
+      setFacturaData({
+        tipo:      'persona_natural',
+        id_type:   'CC',
+        id_number: '',
+        dv:        '',
+        name:      entry.vehicle?.client?.name  ?? '',
+        phone:     entry.vehicle?.client?.phone ?? '',
+        email:     '',
+      })
       return
     }
     try {
@@ -848,6 +868,156 @@ export default function EstadoPatio() {
                     {diff >  0 && `Pendiente: $${diff.toLocaleString('es-CO')}`}
                   </div>
                 )}
+
+                {/* Facturación electrónica */}
+                <div className="border-t border-white/8 pt-4 space-y-3">
+                  <button
+                    type="button"
+                    onClick={() => setFactura(f => !f)}
+                    className="flex items-center gap-3 w-full text-left"
+                  >
+                    <div className={cn(
+                      'w-4 h-4 rounded border-2 shrink-0 flex items-center justify-center transition-colors',
+                      factura ? 'border-blue-500 bg-blue-500' : 'border-gray-600 bg-transparent'
+                    )}>
+                      {factura && (
+                        <svg viewBox="0 0 10 8" className="w-2.5 h-2 text-white" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M1 4l2.5 2.5L9 1" />
+                        </svg>
+                      )}
+                    </div>
+                    <span className={cn('text-sm font-medium', factura ? 'text-blue-300' : 'text-gray-400')}>
+                      Requiere facturación electrónica
+                    </span>
+                  </button>
+
+                  <AnimatePresence initial={false}>
+                    {factura && (
+                      <motion.div
+                        key="factura-form"
+                        initial={{ opacity: 0, height: 0 }}
+                        animate={{ opacity: 1, height: 'auto' }}
+                        exit={{ opacity: 0, height: 0 }}
+                        transition={{ duration: 0.22 }}
+                        className="overflow-hidden"
+                      >
+                        <div className="space-y-3 pt-1">
+                          {/* Tipo */}
+                          <div>
+                            <label className="text-xs text-gray-500 block mb-1.5">Tipo</label>
+                            <div className="grid grid-cols-2 gap-2">
+                              {(['persona_natural', 'empresa'] as const).map(t => (
+                                <button
+                                  key={t}
+                                  type="button"
+                                  onClick={() => setFacturaData(f => ({
+                                    ...f,
+                                    tipo:    t,
+                                    id_type: t === 'empresa' ? 'NIT' : 'CC',
+                                    dv:      '',
+                                  }))}
+                                  className={cn(
+                                    'rounded-xl border px-3 py-2 text-sm font-medium transition-colors',
+                                    facturaData.tipo === t
+                                      ? 'border-blue-500/60 bg-blue-500/10 text-blue-300'
+                                      : 'border-white/8 bg-white/[0.03] text-gray-400 hover:bg-white/[0.06]'
+                                  )}
+                                >
+                                  {t === 'persona_natural' ? 'Persona Natural' : 'Empresa'}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+
+                          {/* Tipo de identificación */}
+                          <div>
+                            <label className="text-xs text-gray-500 block mb-1.5">Tipo de identificación</label>
+                            <select
+                              value={facturaData.id_type}
+                              onChange={e => setFacturaData(f => ({ ...f, id_type: e.target.value, dv: '' }))}
+                              className="w-full rounded-xl border border-white/10 bg-gray-800 px-3 py-2.5 text-sm text-gray-100 focus:border-blue-500/50 focus:outline-none appearance-none"
+                            >
+                              {facturaData.tipo === 'empresa' ? (
+                                <>
+                                  <option value="NIT" className="bg-gray-800">NIT</option>
+                                  <option value="CE"  className="bg-gray-800">Cédula de Extranjería</option>
+                                </>
+                              ) : (
+                                <>
+                                  <option value="CC" className="bg-gray-800">Cédula de Ciudadanía</option>
+                                  <option value="CE" className="bg-gray-800">Cédula de Extranjería</option>
+                                  <option value="PP" className="bg-gray-800">Pasaporte</option>
+                                  <option value="TI" className="bg-gray-800">Tarjeta de Identidad</option>
+                                </>
+                              )}
+                            </select>
+                          </div>
+
+                          {/* Número de identificación + DV */}
+                          <div className={cn('grid gap-2', facturaData.id_type === 'NIT' ? 'grid-cols-[1fr_4rem]' : 'grid-cols-1')}>
+                            <div>
+                              <label className="text-xs text-gray-500 block mb-1.5">Identificación</label>
+                              <input
+                                type="text"
+                                value={facturaData.id_number}
+                                onChange={e => setFacturaData(f => ({ ...f, id_number: e.target.value }))}
+                                placeholder="Número de identificación"
+                                className={inputCls}
+                              />
+                            </div>
+                            {facturaData.id_type === 'NIT' && (
+                              <div>
+                                <label className="text-xs text-gray-500 block mb-1.5">Dv</label>
+                                <input
+                                  type="text"
+                                  maxLength={1}
+                                  value={facturaData.dv}
+                                  onChange={e => setFacturaData(f => ({ ...f, dv: e.target.value.replace(/\D/, '') }))}
+                                  placeholder="0"
+                                  className={inputCls}
+                                />
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Nombre + Teléfono (pre-filled) */}
+                          <div className="grid grid-cols-2 gap-2">
+                            <div>
+                              <label className="text-xs text-gray-500 block mb-1.5">Nombre</label>
+                              <input
+                                type="text"
+                                value={facturaData.name}
+                                onChange={e => setFacturaData(f => ({ ...f, name: e.target.value }))}
+                                className={inputCls}
+                              />
+                            </div>
+                            <div>
+                              <label className="text-xs text-gray-500 block mb-1.5">Teléfono</label>
+                              <input
+                                type="text"
+                                value={facturaData.phone}
+                                onChange={e => setFacturaData(f => ({ ...f, phone: e.target.value }))}
+                                className={inputCls}
+                              />
+                            </div>
+                          </div>
+
+                          {/* Correo electrónico */}
+                          <div>
+                            <label className="text-xs text-gray-500 block mb-1.5">Correo electrónico</label>
+                            <input
+                              type="email"
+                              value={facturaData.email}
+                              onChange={e => setFacturaData(f => ({ ...f, email: e.target.value }))}
+                              placeholder="cliente@ejemplo.com"
+                              className={inputCls}
+                            />
+                          </div>
+                        </div>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </div>
 
                 <div className="flex gap-3 pt-1">
                   <Button variant="secondary" size="md" className="flex-1" onClick={() => setPaymentEntry(null)}>
