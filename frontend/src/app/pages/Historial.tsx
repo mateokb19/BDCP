@@ -12,7 +12,7 @@ import { EmptyState } from '@/app/components/ui/EmptyState'
 import { cn } from '@/app/components/ui/cn'
 import { api, type ApiHistorialEntry } from '@/api'
 
-const TODAY = new Date().toISOString().split('T')[0]
+const TODAY = format(new Date(), 'yyyy-MM-dd')
 
 const categoryColors: Record<string, string> = {
   exterior: 'yellow',

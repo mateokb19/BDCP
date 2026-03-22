@@ -138,12 +138,35 @@ DebtDirection:      empresa_operario | operario_empresa
 | `debt_payments` | Individual installment records (abonos) linked to a debt and optionally to a week_liquidation |
 | `week_liquidations` | One record per operator per week when liquidated; stores net, transfer, cash, pending amounts |
 
+### Extra columns added via ALTER TABLE (not in original schema.sql)
+
+```sql
+-- Run once if DB was created before these were added:
+ALTER TABLE service_orders ADD COLUMN IF NOT EXISTS downpayment NUMERIC(12,2) NOT NULL DEFAULT 0;
+ALTER TABLE service_orders ADD COLUMN IF NOT EXISTS is_warranty BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE patio ADD COLUMN IF NOT EXISTS scheduled_delivery_at TIMESTAMP;
+```
+
 ## Service order flow
 
-1. **IngresarServicio**: Select vehicle type → fill form (plate required, max 6 alphanumeric; brand required; client name + phone required; operator optional) → confirm → `POST /api/v1/orders`
-2. Backend creates atomically: client (find or create by phone), vehicle (find or create by plate), order, order items (price snapshot), patio entry (`esperando`). If any item is `ceramico` category, also creates a `CeramicTreatment` record with `next_maintenance = application_date + 6 months`.
+1. **IngresarServicio** — 3-step wizard:
+   - **Step 1**: Select vehicle type (Automóvil / Camioneta Estándar / Camioneta XL).
+   - **Step 2**: Fill form. Plate lookup (`onBlur`) calls `GET /vehicles/by-plate/{plate}`:
+     - **Type match**: autofills brand, model, color, client name, and phone.
+     - **Type mismatch**: autofills client info only; shows warning toast; disables service selection and "Revisar Orden" button until user selects the correct vehicle type.
+     - Plate cleared → all autofilled fields cleared immediately.
+   - Optional fields: delivery date/time, abono (partial payment), "Entrada por garantía" toggle.
+   - **Step 3 (Revisar Orden)**: Read-only summary with:
+     - Per-service price editing (pencil icon); discount shown as `−$X (Y%)`.
+     - When "Garantía" is ON: ShieldCheck icon per service to toggle warranty coverage individually — warranty services display `$0` with strikethrough of original price; non-warranty services keep normal/custom price.
+     - If abono > 0: shows Total / Abono / Restante breakdown.
+   - Confirm → `POST /api/v1/orders` with `item_overrides` (custom and warranty prices), `scheduled_delivery_at`, `downpayment`, `is_warranty`.
+2. Backend creates atomically: client (find or create by phone), vehicle (find or create by plate), order, order items (price snapshot via `item_overrides`), patio entry (`esperando`). If any item is `ceramico` category, also creates a `CeramicTreatment` record with `next_maintenance = application_date + 6 months`.
 3. **EstadoPatio**: fetches `GET /api/v1/patio` on mount. Kanban cards advance via `POST /patio/{id}/advance`. Color, operator, and services editable via `PATCH /patio/{id}`. Operator change syncs to `ceramic_treatments` for that order.
+   - Advancing from `esperando` → `en_proceso` **requires** an operator: if none assigned, a picker modal appears first; selects operator via `PATCH`, then advances.
+   - Cards display: delivery date/time (Calendar icon), "Garantía" badge if `is_warranty`, and Total / Abono / Restante if `downpayment > 0`.
 4. Plate format: uppercase alphanumeric only, max 6 chars — stripped on input with `/[^A-Z0-9]/g`.
+5. Operator **not** selected during order entry — assigned at patio stage (required to start work).
 
 ## Liquidation flow
 
@@ -204,6 +227,11 @@ Key implementation details:
 - **Ceramic treatments**: auto-created in `POST /orders` for every `ceramico` service; `operator_id` synced on `PATCH /patio/{id}` if operator changes.
 - **Week starts on Sunday** (`weekStartsOn: 0` in date-fns). `week_start` param is always the Sunday ISO date.
 - **Backend API prefix**: `/api/v1/` — all routers mounted under this prefix in `main.py`.
+- **`item_overrides`** in `POST /orders`: array of `{ service_id, unit_price }` that override the standard price snapshot. Used for custom discounts (any price) and warranty services (`unit_price: 0`). Backend builds `override_map` and computes discount as `sum(std - override)`.
+- **Plate uniqueness**: a plate is always tied to one vehicle type and one client. On plate lookup type mismatch, the frontend blocks service selection and the "Revisar Orden" button; client info is still returned and autofilled regardless of type match.
+- **Operator assignment flow**: operator is NOT selected during order entry. It is required when advancing a patio card from `esperando` → `en_proceso`. If no operator is assigned at that point, an operator-picker modal intercepts the advance: calls `PATCH /patio/{id}` to set operator, then `POST /patio/{id}/advance`.
+- **Warranty orders** (`is_warranty: true`): individual services can be marked as warranty in step 3. Warranty services are sent with `unit_price: 0` via `item_overrides`. Non-warranty services in the same order keep their normal/custom price. Total reflects only non-warranty services.
+- **`getEffectivePrice` vs `getStandardPrice`** (IngresarServicio): `getEffectivePrice` checks `warrantyServiceIds` first (returns 0), then `customPrices`, then falls back to standard price. Used for totals and step 3 display. `getStandardPrice` always returns the catalog price; used for discount calculation.
 
 ## Common commands
 

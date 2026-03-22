@@ -9,6 +9,7 @@ from sqlalchemy.exc import IntegrityError
 
 from app import models, schemas
 from app.database import get_db
+from app.tz import today_bogota
 
 router = APIRouter(prefix="/liquidation", tags=["liquidation"])
 
@@ -280,7 +281,7 @@ def get_report(
     if not operator:
         raise HTTPException(404, "Operario no encontrado")
 
-    real_today = date.today()
+    real_today = today_bogota()
     ref = date.fromisoformat(ref_date) if ref_date else real_today
 
     MONTH_NAMES = [

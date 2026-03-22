@@ -8,6 +8,8 @@ services:
       POSTGRES_DB:       bdcpolo
       POSTGRES_USER:     postgres
       POSTGRES_PASSWORD: bdcpolo123
+      TZ:                America/Bogota
+      PGTZ:              America/Bogota
     volumes:
       - postgres_data:/var/lib/postgresql/data
     ports:
@@ -28,6 +30,7 @@ services:
       - "8000:8000"
     environment:
       DATABASE_URL: postgresql://postgres:bdcpolo123@db:5432/bdcpolo
+      TZ:           America/Bogota
     depends_on:
       db:
         condition: service_healthy

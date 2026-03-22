@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session, joinedload
 
 from app.database import get_db
 from app import models, schemas
+from app.tz import today_bogota
 
 router = APIRouter(prefix="/history", tags=["history"])
 
@@ -23,7 +24,7 @@ def list_history(
     - search: filters by plate, client name, or order number
     """
     try:
-        target_date = date.fromisoformat(date_filter) if date_filter else date.today()
+        target_date = date.fromisoformat(date_filter) if date_filter else today_bogota()
     except ValueError:
         target_date = date.today()
 

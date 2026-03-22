@@ -37,6 +37,11 @@ class ServiceOut(OrmBase):
 
 # ── Vehicle ──────────────────────────────────────────────────────────────────────
 
+class VehicleClientOut(OrmBase):
+    name:  str
+    phone: Optional[str]
+
+
 class VehicleOut(OrmBase):
     id:        int
     type:      str
@@ -45,6 +50,7 @@ class VehicleOut(OrmBase):
     plate:     str
     color:     Optional[str]
     client_id: Optional[int]
+    client:    Optional[VehicleClientOut] = None
 
 
 class VehiclePatch(BaseModel):
@@ -56,6 +62,11 @@ class VehiclePatch(BaseModel):
 
 class OrderItemIn(BaseModel):
     service_id: int
+
+
+class ItemOverride(BaseModel):
+    service_id: int
+    unit_price: Decimal
 
 
 class OrderCreate(BaseModel):
@@ -72,6 +83,10 @@ class OrderCreate(BaseModel):
     operator_id:  Optional[int] = None
     service_ids:  list[int]
     notes:        Optional[str] = None
+    item_overrides:         list[ItemOverride]  = []
+    scheduled_delivery_at:  Optional[datetime]  = None
+    downpayment:            Optional[Decimal]   = None
+    is_warranty:            bool                = False
 
     @field_validator("plate")
     @classmethod
@@ -136,6 +151,8 @@ class OrderOut(OrmBase):
     subtotal:     Decimal
     total:        Decimal
     paid:         bool
+    downpayment:  Decimal
+    is_warranty:  bool
     items:        list[OrderItemOut]
 
 
@@ -152,6 +169,7 @@ class PatioEntryOut(OrmBase):
     completed_at: Optional[datetime]
     delivered_at: Optional[datetime]
     notes:        Optional[str]
+    scheduled_delivery_at: Optional[datetime]
     # Nested
     vehicle:  Optional[VehicleOut]
     order:    Optional[OrderOut]
