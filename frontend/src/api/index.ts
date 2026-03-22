@@ -340,6 +340,27 @@ export interface ApiReportResponse {
   total_pending_owed: string
 }
 
+export interface ApiIngresosDayTotal {
+  date:                string
+  total:               string
+  payment_cash:        string
+  payment_datafono:    string
+  payment_nequi:       string
+  payment_bancolombia: string
+}
+
+export interface ApiIngresosResponse {
+  date_start:          string
+  date_end:            string
+  total:               string
+  order_count:         number
+  payment_cash:        string
+  payment_datafono:    string
+  payment_nequi:       string
+  payment_bancolombia: string
+  daily_totals:        ApiIngresosDayTotal[]
+}
+
 // ── API methods ────────────────────────────────────────────────────────────────
 
 export const api = {
@@ -405,6 +426,13 @@ export const api = {
       const qs = new URLSearchParams({ period })
       if (refDate) qs.set('ref_date', refDate)
       return apiFetch<ApiReportResponse>(`/liquidation/${opId}/report?${qs}`)
+    },
+  },
+  ingresos: {
+    get: (period: 'day' | 'week' | 'month' | 'year', refDate?: string) => {
+      const qs = new URLSearchParams({ period })
+      if (refDate) qs.set('ref_date', refDate)
+      return apiFetch<ApiIngresosResponse>(`/ingresos?${qs}`)
     },
   },
 }

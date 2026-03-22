@@ -447,3 +447,25 @@ class ReportResponse(BaseModel):
     week_statuses:       List[ReportWeekStatus]
     pending_debts:       List[ReportPendingDebt]
     total_pending_owed:  Decimal
+
+
+# ── Ingresos ────────────────────────────────────────────────────────────────────
+
+class IngresosDayTotal(BaseModel):
+    date:                str
+    total:               Decimal
+    payment_cash:        Decimal
+    payment_datafono:    Decimal
+    payment_nequi:       Decimal
+    payment_bancolombia: Decimal
+
+class IngresosResponse(BaseModel):
+    date_start:          str
+    date_end:            str
+    total:               Decimal
+    order_count:         int
+    payment_cash:        Decimal
+    payment_datafono:    Decimal
+    payment_nequi:       Decimal
+    payment_bancolombia: Decimal
+    daily_totals:        List[IngresosDayTotal]

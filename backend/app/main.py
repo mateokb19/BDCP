@@ -5,7 +5,7 @@ from sqlalchemy import text
 
 from app.database import engine, SessionLocal
 from app import models
-from app.routers import services, operators, vehicles, orders, patio, history, ceramics, liquidation, appointments
+from app.routers import services, operators, vehicles, orders, patio, history, ceramics, liquidation, appointments, ingresos
 
 # Create tables (no-op if already exist)
 models.Base.metadata.create_all(bind=engine)
@@ -24,6 +24,18 @@ with engine.connect() as _conn:
     ))
     _conn.execute(text(
         "ALTER TABLE patio ADD COLUMN IF NOT EXISTS scheduled_delivery_at TIMESTAMP"
+    ))
+    _conn.execute(text(
+        "ALTER TABLE service_orders ADD COLUMN IF NOT EXISTS payment_cash NUMERIC(12,2) NOT NULL DEFAULT 0"
+    ))
+    _conn.execute(text(
+        "ALTER TABLE service_orders ADD COLUMN IF NOT EXISTS payment_datafono NUMERIC(12,2) NOT NULL DEFAULT 0"
+    ))
+    _conn.execute(text(
+        "ALTER TABLE service_orders ADD COLUMN IF NOT EXISTS payment_nequi NUMERIC(12,2) NOT NULL DEFAULT 0"
+    ))
+    _conn.execute(text(
+        "ALTER TABLE service_orders ADD COLUMN IF NOT EXISTS payment_bancolombia NUMERIC(12,2) NOT NULL DEFAULT 0"
     ))
     _conn.commit()
 
@@ -117,6 +129,7 @@ app.include_router(history.router,   prefix=API)
 app.include_router(ceramics.router,      prefix=API)
 app.include_router(liquidation.router,   prefix=API)
 app.include_router(appointments.router,  prefix=API)
+app.include_router(ingresos.router,      prefix=API)
 
 
 @app.get("/", include_in_schema=False)
