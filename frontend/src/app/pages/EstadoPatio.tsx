@@ -196,22 +196,26 @@ function PatioCard({ entry, opName, onAdvance, onEdit }: PatioCardProps) {
                     </div>
                   )}
                   {/* Payment breakdown (shown after delivery) */}
-                  {entry.status === 'entregado' && (Number(entry.order.payment_cash) > 0 || Number(entry.order.payment_transfer) > 0) && (
-                    <div className="border-t border-white/6 pt-1 mt-1 space-y-0.5">
-                      {Number(entry.order.payment_cash) > 0 && (
-                        <div className="flex items-center justify-between text-xs">
-                          <span className="flex items-center gap-1 text-gray-500"><Banknote size={10} /> Efectivo</span>
-                          <span className="text-gray-300">${Number(entry.order.payment_cash).toLocaleString('es-CO')}</span>
-                        </div>
-                      )}
-                      {Number(entry.order.payment_transfer) > 0 && (
-                        <div className="flex items-center justify-between text-xs">
-                          <span className="flex items-center gap-1 text-gray-500"><CreditCard size={10} /> Transferencia</span>
-                          <span className="text-gray-300">${Number(entry.order.payment_transfer).toLocaleString('es-CO')}</span>
-                        </div>
-                      )}
-                    </div>
-                  )}
+                  {entry.status === 'entregado' && (() => {
+                    const pm = [
+                      { key: 'payment_cash',        label: 'Efectivo',    icon: <Banknote size={10} /> },
+                      { key: 'payment_datafono',    label: 'Datáfono',    icon: <CreditCard size={10} /> },
+                      { key: 'payment_nequi',       label: 'Nequi',       icon: <CreditCard size={10} /> },
+                      { key: 'payment_bancolombia', label: 'Bancolombia', icon: <CreditCard size={10} /> },
+                    ] as const
+                    const paid = pm.filter(p => Number((entry.order as any)[p.key]) > 0)
+                    if (paid.length === 0) return null
+                    return (
+                      <div className="border-t border-white/6 pt-1 mt-1 space-y-0.5">
+                        {paid.map(p => (
+                          <div key={p.key} className="flex items-center justify-between text-xs">
+                            <span className="flex items-center gap-1 text-gray-500">{p.icon} {p.label}</span>
+                            <span className="text-gray-300">${Number((entry.order as any)[p.key]).toLocaleString('es-CO')}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )
+                  })()}
                 </div>
               )}
 
@@ -271,12 +275,13 @@ export default function EstadoPatio() {
   const [picking, setPicking]                     = useState(false)
 
   // Payment modal state (delivery)
-  const [paymentEntry, setPaymentEntry]       = useState<ApiPatioEntry | null>(null)
-  const [payCash, setPayCash]                 = useState('')
-  const [payDatafono, setPayDatafono]         = useState('')
-  const [payNequi, setPayNequi]               = useState('')
-  const [payBancolombia, setPayBancolombia]   = useState('')
-  const [delivering, setDelivering]           = useState(false)
+  const [paymentEntry, setPaymentEntry] = useState<ApiPatioEntry | null>(null)
+  const [payMethod1,   setPayMethod1]   = useState<string>('cash')
+  const [payAmount1,   setPayAmount1]   = useState<string>('')
+  const [splitPayment, setSplitPayment] = useState(false)
+  const [payMethod2,   setPayMethod2]   = useState<string>('')
+  const [payAmount2,   setPayAmount2]   = useState<string>('')
+  const [delivering,   setDelivering]   = useState(false)
 
   useEffect(() => {
     api.patio.list()
@@ -333,8 +338,13 @@ export default function EstadoPatio() {
     }
     // Intercept delivery to collect payment info
     if (entry.status === 'listo') {
+      const restante = Math.max(0, Number(entry.order?.total ?? 0) - Number(entry.order?.downpayment ?? 0))
       setPaymentEntry(entry)
-      setPayCash(''); setPayDatafono(''); setPayNequi(''); setPayBancolombia('')
+      setPayMethod1('cash')
+      setPayAmount1(restante > 0 ? String(restante) : '')
+      setSplitPayment(false)
+      setPayMethod2('')
+      setPayAmount2('')
       return
     }
     try {
@@ -349,14 +359,24 @@ export default function EstadoPatio() {
 
   async function confirmDelivery() {
     if (!paymentEntry) return
+    const restante = Math.max(0, Number(paymentEntry.order?.total ?? 0) - Number(paymentEntry.order?.downpayment ?? 0))
+    const keyToField: Record<string, 'payment_cash' | 'payment_datafono' | 'payment_nequi' | 'payment_bancolombia'> = {
+      cash:        'payment_cash',
+      datafono:    'payment_datafono',
+      nequi:       'payment_nequi',
+      bancolombia: 'payment_bancolombia',
+    }
+    const payment = { payment_cash: 0, payment_datafono: 0, payment_nequi: 0, payment_bancolombia: 0 }
+    if (splitPayment && payMethod2 && payMethod2 !== payMethod1) {
+      const amt2 = Number(payAmount2) || 0
+      payment[keyToField[payMethod2]] = amt2
+      payment[keyToField[payMethod1]] = Math.max(0, restante - amt2)
+    } else {
+      payment[keyToField[payMethod1]] = Number(payAmount1) || restante
+    }
     setDelivering(true)
     try {
-      const updated = await api.patio.advance(paymentEntry.id, {
-        payment_cash:        Number(payCash)        || 0,
-        payment_datafono:    Number(payDatafono)    || 0,
-        payment_nequi:       Number(payNequi)       || 0,
-        payment_bancolombia: Number(payBancolombia) || 0,
-      })
+      const updated = await api.patio.advance(paymentEntry.id, payment)
       setEntries(prev => prev.map(e => e.id === updated.id ? updated : e))
       toast.success(`${updated.vehicle?.plate ?? 'Vehículo'} entregado`)
       setPaymentEntry(null)
@@ -701,33 +721,22 @@ export default function EstadoPatio() {
           const total    = Number(paymentEntry.order?.total ?? 0)
           const abono    = Number(paymentEntry.order?.downpayment ?? 0)
           const restante = Math.max(0, total - abono)
-          const covered  = (Number(payCash) || 0) + (Number(payDatafono) || 0) + (Number(payNequi) || 0) + (Number(payBancolombia) || 0)
-          const diff     = restante - covered
-
-          const inputCls = "w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-gray-100 focus:border-yellow-500/50 focus:outline-none focus:ring-2 focus:ring-yellow-500/20 placeholder:text-gray-600"
 
           const METHODS = [
-            {
-              key: 'cash', label: 'Efectivo',
-              sub: null,
-              value: payCash, set: setPayCash,
-            },
-            {
-              key: 'datafono', label: 'Datáfono Banco Caja Social',
-              sub: null,
-              value: payDatafono, set: setPayDatafono,
-            },
-            {
-              key: 'nequi', label: 'Nequi',
-              sub: '3118777229 · NEQUIJUL11739',
-              value: payNequi, set: setPayNequi,
-            },
-            {
-              key: 'bancolombia', label: 'Bancolombia Ahorros',
-              sub: '60123354942 · @SaraP9810',
-              value: payBancolombia, set: setPayBancolombia,
-            },
+            { key: 'cash',        label: 'Efectivo',                 sub: null },
+            { key: 'datafono',    label: 'Datáfono Banco Caja Social', sub: null },
+            { key: 'nequi',       label: 'Nequi',                    sub: '3118777229 · NEQUIJUL11739' },
+            { key: 'bancolombia', label: 'Bancolombia Ahorros',      sub: '60123354942 · @SaraP9810' },
           ]
+
+          const inputCls = "w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2.5 text-sm text-gray-100 focus:border-yellow-500/50 focus:outline-none focus:ring-2 focus:ring-yellow-500/20"
+
+          const amt2     = splitPayment ? (Number(payAmount2) || 0) : 0
+          const amt1     = splitPayment ? Math.max(0, restante - amt2) : (Number(payAmount1) || restante)
+          const covered  = splitPayment ? amt1 + amt2 : amt1
+          const diff     = restante - covered
+
+          const method2Options = METHODS.filter(m => m.key !== payMethod1)
 
           return (
             <motion.div
@@ -771,45 +780,170 @@ export default function EstadoPatio() {
                   </div>
                 </div>
 
-                {/* Payment method inputs */}
-                <div className="space-y-3">
-                  <p className="text-xs text-gray-500 uppercase tracking-wider">Distribución del pago</p>
-                  {METHODS.map(m => (
-                    <div key={m.key}>
-                      <label className="text-sm font-medium text-gray-300 block mb-1">{m.label}</label>
-                      {m.sub && (
-                        <p className="text-[11px] text-gray-600 mb-1.5">{m.sub}</p>
+                {/* Method selector */}
+                <div className="space-y-2">
+                  <p className="text-xs text-gray-500 uppercase tracking-wider">
+                    {splitPayment ? 'Método principal' : 'Método de pago'}
+                  </p>
+                  <div className="space-y-1.5">
+                    {METHODS.map(m => (
+                      <button
+                        key={m.key}
+                        type="button"
+                        onClick={() => {
+                          setPayMethod1(m.key)
+                          if (payMethod2 === m.key) setPayMethod2('')
+                        }}
+                        className={cn(
+                          'w-full flex items-center gap-3 rounded-xl border px-3 py-2.5 text-left transition-colors',
+                          payMethod1 === m.key
+                            ? 'border-yellow-500/60 bg-yellow-500/10'
+                            : 'border-white/8 bg-white/[0.03] hover:bg-white/[0.06]'
+                        )}
+                      >
+                        <div className={cn(
+                          'w-4 h-4 rounded-full border-2 shrink-0 flex items-center justify-center',
+                          payMethod1 === m.key ? 'border-yellow-500' : 'border-gray-600'
+                        )}>
+                          {payMethod1 === m.key && <div className="w-1.5 h-1.5 rounded-full bg-yellow-500" />}
+                        </div>
+                        <div className="min-w-0">
+                          <p className={cn('text-sm font-medium', payMethod1 === m.key ? 'text-yellow-300' : 'text-gray-300')}>
+                            {m.label}
+                          </p>
+                          {m.sub && <p className="text-[11px] text-gray-600 mt-0.5">{m.sub}</p>}
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Split payment */}
+                <AnimatePresence initial={false}>
+                  {splitPayment ? (
+                    <motion.div
+                      key="split"
+                      initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }}
+                      transition={{ duration: 0.2 }}
+                      className="overflow-hidden space-y-3"
+                    >
+                      {/* Method 1 amount (auto) */}
+                      <div className="rounded-xl bg-white/[0.03] border border-white/8 px-3 py-2.5 flex justify-between items-center">
+                        <span className="text-sm text-gray-400">{METHODS.find(m => m.key === payMethod1)?.label}</span>
+                        <span className="text-sm font-semibold text-yellow-400">${amt1.toLocaleString('es-CO')}</span>
+                      </div>
+
+                      {/* Method 2 selector */}
+                      <div className="space-y-1.5">
+                        <p className="text-xs text-gray-500 uppercase tracking-wider">Segundo método</p>
+                        <div className="space-y-1.5">
+                          {method2Options.map(m => (
+                            <button
+                              key={m.key}
+                              type="button"
+                              onClick={() => setPayMethod2(m.key)}
+                              className={cn(
+                                'w-full flex items-center gap-3 rounded-xl border px-3 py-2.5 text-left transition-colors',
+                                payMethod2 === m.key
+                                  ? 'border-blue-500/60 bg-blue-500/10'
+                                  : 'border-white/8 bg-white/[0.03] hover:bg-white/[0.06]'
+                              )}
+                            >
+                              <div className={cn(
+                                'w-4 h-4 rounded-full border-2 shrink-0 flex items-center justify-center',
+                                payMethod2 === m.key ? 'border-blue-400' : 'border-gray-600'
+                              )}>
+                                {payMethod2 === m.key && <div className="w-1.5 h-1.5 rounded-full bg-blue-400" />}
+                              </div>
+                              <div className="min-w-0">
+                                <p className={cn('text-sm font-medium', payMethod2 === m.key ? 'text-blue-300' : 'text-gray-300')}>
+                                  {m.label}
+                                </p>
+                                {m.sub && <p className="text-[11px] text-gray-600 mt-0.5">{m.sub}</p>}
+                              </div>
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Method 2 amount */}
+                      {payMethod2 && (
+                        <div>
+                          <label className="text-xs text-gray-500 block mb-1.5">
+                            Monto — {METHODS.find(m => m.key === payMethod2)?.label}
+                          </label>
+                          <input
+                            type="number" min="0" max={restante} placeholder="0"
+                            value={payAmount2}
+                            onChange={e => setPayAmount2(e.target.value)}
+                            className={inputCls}
+                            autoFocus
+                          />
+                        </div>
                       )}
-                      <input
-                        type="number" min="0" placeholder="0"
-                        value={m.value}
-                        onChange={e => m.set(e.target.value)}
-                        className={inputCls}
-                      />
-                    </div>
-                  ))}
-                </div>
 
-                {/* Running balance */}
-                <div className={cn(
-                  'text-xs text-center rounded-xl px-3 py-2.5 font-medium',
-                  covered === 0   ? 'text-gray-600 bg-white/[0.03] border border-white/8' :
-                  diff > 0        ? 'text-orange-400 bg-orange-500/10 border border-orange-500/20' :
-                  diff < 0        ? 'text-blue-400 bg-blue-500/10 border border-blue-500/20' :
-                                    'text-green-400 bg-green-500/10 border border-green-500/20'
-                )}>
-                  {covered === 0 && 'Ingresa los montos de pago'}
-                  {covered > 0 && diff > 0  && `Faltan $${diff.toLocaleString('es-CO')} por cubrir`}
-                  {covered > 0 && diff < 0  && `Cambio al cliente: $${Math.abs(diff).toLocaleString('es-CO')}`}
-                  {covered > 0 && diff === 0 && '✓ Pago completo'}
-                </div>
+                      {/* Balance */}
+                      {payMethod2 && (
+                        <div className={cn(
+                          'text-xs text-center rounded-xl px-3 py-2 font-medium',
+                          diff === 0  ? 'text-green-400 bg-green-500/10 border border-green-500/20' :
+                          diff < 0    ? 'text-blue-400 bg-blue-500/10 border border-blue-500/20' :
+                                        'text-orange-400 bg-orange-500/10 border border-orange-500/20'
+                        )}>
+                          {diff === 0 && '✓ Pago completo'}
+                          {diff < 0  && `Cambio al cliente: $${Math.abs(diff).toLocaleString('es-CO')}`}
+                          {diff > 0  && `Método principal cubre: $${amt1.toLocaleString('es-CO')}`}
+                        </div>
+                      )}
 
-                <div className="flex gap-3">
+                      <button
+                        type="button"
+                        onClick={() => { setSplitPayment(false); setPayMethod2(''); setPayAmount2('') }}
+                        className="text-xs text-gray-600 hover:text-gray-400 transition-colors"
+                      >
+                        × Cancelar pago dividido
+                      </button>
+                    </motion.div>
+                  ) : (
+                    <motion.div
+                      key="single"
+                      initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+                      transition={{ duration: 0.15 }}
+                      className="space-y-3"
+                    >
+                      {/* Amount (editable, defaults to restante) */}
+                      <div>
+                        <label className="text-xs text-gray-500 block mb-1.5">Monto a cobrar</label>
+                        <input
+                          type="number" min="0" placeholder={String(restante)}
+                          value={payAmount1}
+                          onChange={e => setPayAmount1(e.target.value)}
+                          className={inputCls}
+                        />
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSplitPayment(true)
+                          setPayMethod2(method2Options[0]?.key ?? '')
+                          setPayAmount2('')
+                        }}
+                        className="text-xs text-gray-500 hover:text-yellow-400 transition-colors underline underline-offset-2"
+                      >
+                        + Pago con dos métodos
+                      </button>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+
+                <div className="flex gap-3 pt-1">
                   <Button variant="secondary" size="md" className="flex-1" onClick={() => setPaymentEntry(null)}>
                     Cancelar
                   </Button>
                   <Button variant="primary" size="md" className="flex-1"
-                    onClick={confirmDelivery} disabled={delivering}>
+                    onClick={confirmDelivery}
+                    disabled={delivering || (splitPayment && !payMethod2)}>
                     {delivering ? 'Entregando...' : 'Confirmar Entrega'}
                   </Button>
                 </div>

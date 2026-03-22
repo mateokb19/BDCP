@@ -277,10 +277,11 @@ class Appointment(Base):
 class Expense(Base):
     __tablename__ = "expenses"
 
-    id          = Column(Integer, primary_key=True)
-    date        = Column(Date, nullable=False, server_default=func.current_date())
-    amount      = Column(Numeric(12, 2), nullable=False)
-    category    = Column(String(100))
-    description = Column(String(300))
-    notes       = Column(Text)
-    created_at  = Column(DateTime, server_default=func.now(), nullable=False)
+    id             = Column(Integer, primary_key=True)
+    date           = Column(Date, nullable=False, server_default=func.current_date())
+    amount         = Column(Numeric(12, 2), nullable=False)
+    category       = Column(String(100))
+    description    = Column(String(300))
+    payment_method = Column(String(50))
+    notes          = Column(Text)
+    created_at     = Column(DateTime, server_default=func.now(), nullable=False)

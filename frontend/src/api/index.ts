@@ -362,21 +362,23 @@ export interface ApiIngresosResponse {
 }
 
 export interface ApiExpense {
-  id:          number
-  date:        string
-  amount:      string
-  category?:   string
-  description?: string
-  notes?:      string
-  created_at:  string
+  id:              number
+  date:            string
+  amount:          string
+  category?:       string
+  description?:    string
+  payment_method?: string
+  notes?:          string
+  created_at:      string
 }
 
 export interface ExpenseCreatePayload {
-  date:         string
-  amount:       number
-  category?:    string
-  description?: string
-  notes?:       string
+  date:            string
+  amount:          number
+  category?:       string
+  description?:    string
+  payment_method?: string
+  notes?:          string
 }
 
 // ── API methods ────────────────────────────────────────────────────────────────

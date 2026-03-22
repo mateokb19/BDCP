@@ -96,10 +96,11 @@ export default function IngresosEgresos() {
   const [showModal,   setShowModal]   = useState(false)
   const [saving,      setSaving]      = useState(false)
   const [newExpense,  setNewExpense]  = useState({
-    date: new Date().toISOString().slice(0, 10),
-    amount: '',
-    category: '',
-    description: '',
+    date:           new Date().toISOString().slice(0, 10),
+    amount:         '',
+    category:       '',
+    description:    '',
+    payment_method: '',
   })
 
   // Load income + sync expense date range when period changes
@@ -127,15 +128,16 @@ export default function IngresosEgresos() {
     setSaving(true)
     try {
       const created = await api.egresos.create({
-        date:        newExpense.date,
-        amount:      Number(newExpense.amount),
-        category:    newExpense.category || undefined,
-        description: newExpense.description || undefined,
+        date:           newExpense.date,
+        amount:         Number(newExpense.amount),
+        category:       newExpense.category       || undefined,
+        description:    newExpense.description    || undefined,
+        payment_method: newExpense.payment_method || undefined,
       })
       setExpenses(prev => [created, ...prev].sort((a, b) => b.date.localeCompare(a.date) || b.id - a.id))
       toast.success('Egreso registrado')
       setShowModal(false)
-      setNewExpense({ date: new Date().toISOString().slice(0, 10), amount: '', category: '', description: '' })
+      setNewExpense({ date: new Date().toISOString().slice(0, 10), amount: '', category: '', description: '', payment_method: '' })
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Error al guardar')
     } finally {
@@ -345,6 +347,7 @@ export default function IngresosEgresos() {
               <th className="text-left px-5 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider">Fecha</th>
               <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider">Categoría</th>
               <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider">Descripción</th>
+              <th className="hidden sm:table-cell text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider">Método</th>
               <th className="text-right px-5 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider">Monto</th>
               <th className="px-4 py-3 w-10" />
             </tr>
@@ -356,7 +359,8 @@ export default function IngresosEgresos() {
                   {format(parseISO(e.date), "d MMM yyyy", { locale: es })}
                 </td>
                 <td className="px-4 py-3 text-gray-400 text-xs">{e.category ?? '—'}</td>
-                <td className="px-4 py-3 text-gray-300 text-xs sm:text-sm truncate max-w-[200px]">{e.description ?? '—'}</td>
+                <td className="px-4 py-3 text-gray-300 text-xs sm:text-sm truncate max-w-[180px]">{e.description ?? '—'}</td>
+                <td className="hidden sm:table-cell px-4 py-3 text-xs text-gray-500">{e.payment_method ?? '—'}</td>
                 <td className="px-5 py-3 text-right font-semibold text-red-400 text-sm whitespace-nowrap">
                   −${Number(e.amount).toLocaleString('es-CO')}
                 </td>
@@ -409,9 +413,22 @@ export default function IngresosEgresos() {
                   <label className="text-xs text-gray-500 block mb-1.5">Categoría</label>
                   <select value={newExpense.category}
                     onChange={e => setNewExpense(f => ({ ...f, category: e.target.value }))}
-                    className={inputCls + ' bg-gray-800'}>
-                    <option value="">Sin categoría</option>
-                    {EXPENSE_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+                    className="w-full rounded-xl border border-white/10 bg-gray-800 px-3 py-2.5 text-sm text-gray-100 focus:border-yellow-500/50 focus:outline-none focus:ring-2 focus:ring-yellow-500/20 appearance-none">
+                    <option value="" className="bg-gray-800 text-gray-400">Sin categoría</option>
+                    {EXPENSE_CATEGORIES.map(c => <option key={c} value={c} className="bg-gray-800">{c}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="text-xs text-gray-500 block mb-1.5">Método de pago</label>
+                  <select value={newExpense.payment_method}
+                    onChange={e => setNewExpense(f => ({ ...f, payment_method: e.target.value }))}
+                    className="w-full rounded-xl border border-white/10 bg-gray-800 px-3 py-2.5 text-sm text-gray-100 focus:border-yellow-500/50 focus:outline-none focus:ring-2 focus:ring-yellow-500/20 appearance-none">
+                    <option value="" className="bg-gray-800 text-gray-400">Sin especificar</option>
+                    <option value="Efectivo"      className="bg-gray-800">Efectivo</option>
+                    <option value="Nequi"         className="bg-gray-800">Nequi</option>
+                    <option value="Bancolombia"   className="bg-gray-800">Bancolombia</option>
+                    <option value="Datáfono"      className="bg-gray-800">Datáfono Banco Caja Social</option>
+                    <option value="Transferencia" className="bg-gray-800">Transferencia</option>
                   </select>
                 </div>
                 <div>

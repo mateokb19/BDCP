@@ -474,18 +474,20 @@ class IngresosResponse(BaseModel):
 # ── Expenses (Egresos) ──────────────────────────────────────────────────────────
 
 class ExpenseOut(OrmBase):
-    id:          int
-    date:        date
-    amount:      Decimal
-    category:    Optional[str]
-    description: Optional[str]
-    notes:       Optional[str]
-    created_at:  datetime
+    id:             int
+    date:           date
+    amount:         Decimal
+    category:       Optional[str]
+    description:    Optional[str]
+    payment_method: Optional[str]
+    notes:          Optional[str]
+    created_at:     datetime
 
 
 class ExpenseCreate(BaseModel):
-    date:        date
-    amount:      Decimal
-    category:    Optional[str]  = None
-    description: Optional[str]  = None
-    notes:       Optional[str]  = None
+    date:           date
+    amount:         Decimal
+    category:       Optional[str] = None
+    description:    Optional[str] = None
+    payment_method: Optional[str] = None
+    notes:          Optional[str] = None
