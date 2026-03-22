@@ -60,6 +60,7 @@ def _build_week_response(
                         for i in o.items
                     ],
                     total=o.total or Decimal("0"),
+                    is_liquidated=o.week_liquidation_id is not None,
                 )
                 for o in day_orders
             ],
@@ -69,6 +70,7 @@ def _build_week_response(
 
     week_total = sum((o.total or Decimal("0")) for o in qualifying)
     commission = (rate * week_total).quantize(Decimal("0.01"))
+    unliquidated_count = sum(1 for o in qualifying if o.week_liquidation_id is None)
 
     return schemas.LiqWeekResponse(
         operator_id=operator.id,
@@ -81,6 +83,7 @@ def _build_week_response(
         week_services=len(qualifying),
         commission_amount=commission,
         is_liquidated=liq_record is not None,
+        unliquidated_count=unliquidated_count,
         liquidated_at=str(liq_record.liquidated_at) if liq_record else None,
         net_amount=liq_record.net_amount if liq_record else None,
         payment_transfer_amount=liq_record.payment_transfer if liq_record else None,
@@ -135,15 +138,18 @@ def liquidate_week(
     ws = date.fromisoformat(week_start)
     we = ws + timedelta(days=6)
 
+    qualifying = _fetch_qualifying(op_id, ws, we, db)
+    # Only process orders that haven't been liquidated yet
+    unliquidated = [o for o in qualifying if o.week_liquidation_id is None]
+
     existing = db.query(models.WeekLiquidation).filter_by(operator_id=op_id, week_start=ws).first()
-    if existing:
-        qualifying = _fetch_qualifying(op_id, ws, we, db)
+
+    if not unliquidated:
         return _build_week_response(operator, ws, we, qualifying, existing)
 
-    qualifying = _fetch_qualifying(op_id, ws, we, db)
     rate = Decimal(str(operator.commission_rate)) / Decimal("100")
-    week_total = sum((o.total or Decimal("0")) for o in qualifying)
-    commission = (rate * week_total).quantize(Decimal("0.01"))
+    new_gross = sum((o.total or Decimal("0")) for o in unliquidated)
+    new_commission = (rate * new_gross).quantize(Decimal("0.01"))
 
     # Process operator→company abonos
     total_abonos = Decimal("0")
@@ -162,7 +168,7 @@ def liquidate_week(
             debt.paid = True
         total_abonos += pay
 
-    # Process empresa→operario settlements (company pays operator past debts now)
+    # Process empresa→operario settlements
     total_settled = Decimal("0")
     for settlement in body.company_settlements:
         if settlement.amount <= 0:
@@ -181,11 +187,43 @@ def liquidate_week(
 
     db.flush()
 
-    net_amount = (commission - total_abonos + total_settled).quantize(Decimal("0.01"))
+    net_amount = (new_commission - total_abonos + total_settled).quantize(Decimal("0.01"))
     total_paid = (body.payment_transfer + body.payment_cash).quantize(Decimal("0.01"))
     amount_pending = max(Decimal("0"), net_amount - total_paid).quantize(Decimal("0.01"))
 
-    # Auto-create empresa→operario debt if there's a pending amount
+    if existing:
+        # Update the existing liquidation record with the incremental amounts
+        existing.total_amount      = (existing.total_amount      or Decimal("0")) + new_gross
+        existing.commission_amount = (existing.commission_amount or Decimal("0")) + new_commission
+        existing.net_amount        = (existing.net_amount        or Decimal("0")) + net_amount
+        existing.payment_transfer  = (existing.payment_transfer  or Decimal("0")) + body.payment_transfer
+        existing.payment_cash      = (existing.payment_cash      or Decimal("0")) + body.payment_cash
+        existing.amount_pending    = (existing.amount_pending    or Decimal("0")) + amount_pending
+        liq = existing
+    else:
+        liq = models.WeekLiquidation(
+            operator_id=op_id,
+            week_start=ws,
+            total_amount=new_gross,
+            commission_amount=new_commission,
+            net_amount=net_amount,
+            payment_transfer=body.payment_transfer,
+            payment_cash=body.payment_cash,
+            amount_pending=amount_pending,
+        )
+        db.add(liq)
+        try:
+            db.flush()
+        except IntegrityError:
+            db.rollback()
+            existing = db.query(models.WeekLiquidation).filter_by(operator_id=op_id, week_start=ws).first()
+            return _build_week_response(operator, ws, we, qualifying, existing)
+
+    # Stamp unliquidated orders with this liquidation's id
+    for o in unliquidated:
+        o.week_liquidation_id = liq.id
+
+    # Auto-create empresa→operario debt for any pending amount
     if amount_pending > 0:
         pending_debt = models.Debt(
             operator_id=op_id,
@@ -195,35 +233,19 @@ def liquidate_week(
         )
         db.add(pending_debt)
 
-    liq = models.WeekLiquidation(
-        operator_id=op_id,
-        week_start=ws,
-        total_amount=week_total,
-        commission_amount=commission,
-        net_amount=net_amount,
-        payment_transfer=body.payment_transfer,
-        payment_cash=body.payment_cash,
-        amount_pending=amount_pending,
-    )
-    db.add(liq)
-    try:
-        db.commit()
-    except IntegrityError:
-        db.rollback()
-        existing = db.query(models.WeekLiquidation).filter_by(operator_id=op_id, week_start=ws).first()
-        return _build_week_response(operator, ws, we, qualifying, existing)
-
+    db.commit()
     db.refresh(liq)
 
-    # Link payments to this liquidation
-    db.query(models.DebtPayment).filter(
-        models.DebtPayment.liquidation_id.is_(None),
-        models.DebtPayment.debt_id.in_(
-            [a.debt_id for a in body.abonos] + [s.debt_id for s in body.company_settlements]
-        )
-    ).update({"liquidation_id": liq.id}, synchronize_session=False)
-    db.commit()
+    # Link debt payments to this liquidation
+    all_debt_ids = [a.debt_id for a in body.abonos] + [s.debt_id for s in body.company_settlements]
+    if all_debt_ids:
+        db.query(models.DebtPayment).filter(
+            models.DebtPayment.liquidation_id.is_(None),
+            models.DebtPayment.debt_id.in_(all_debt_ids),
+        ).update({"liquidation_id": liq.id}, synchronize_session=False)
+        db.commit()
 
+    qualifying = _fetch_qualifying(op_id, ws, we, db)
     return _build_week_response(operator, ws, we, qualifying, liq)
 
 
@@ -305,6 +327,7 @@ def get_report(
                 for i in o.items
             ],
             total=o.total or Decimal("0"),
+            is_liquidated=o.week_liquidation_id is not None,
         )
         for o in sorted(qualifying, key=lambda x: x.date)
     ]
@@ -320,10 +343,12 @@ def get_report(
         week_orders = [o for o in qualifying if cur <= o.date <= ws_end]
         wk_gross = sum((o.total or Decimal("0")) for o in week_orders)
         wk_comm  = (rate * wk_gross).quantize(Decimal("0.01"))
+        # Week is fully liquidated only when ALL its orders are stamped
+        all_liquidated = len(week_orders) > 0 and all(o.week_liquidation_id is not None for o in week_orders)
         week_statuses.append(schemas.ReportWeekStatus(
             week_start=str(cur),
             week_end=str(ws_end),
-            is_liquidated=liq is not None,
+            is_liquidated=all_liquidated,
             week_gross=wk_gross,
             week_commission=wk_comm,
             net_amount=liq.net_amount if liq else None,

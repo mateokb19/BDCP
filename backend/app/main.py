@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse
+from sqlalchemy import text
 
 from app.database import engine, SessionLocal
 from app import models
@@ -8,6 +9,14 @@ from app.routers import services, operators, vehicles, orders, patio, history, c
 
 # Create tables (no-op if already exist)
 models.Base.metadata.create_all(bind=engine)
+
+# Incremental migrations (idempotent)
+with engine.connect() as _conn:
+    _conn.execute(text(
+        "ALTER TABLE service_orders ADD COLUMN IF NOT EXISTS "
+        "week_liquidation_id INTEGER REFERENCES week_liquidations(id) ON DELETE SET NULL"
+    ))
+    _conn.commit()
 
 
 _EXPECTED_SERVICES = 28

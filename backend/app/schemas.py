@@ -296,6 +296,7 @@ class LiqWeekOrder(BaseModel):
     vehicle_model: Optional[str]
     items:         List[LiqWeekOrderItem]
     total:         Decimal
+    is_liquidated: bool
 
 
 class LiqWeekDay(BaseModel):
@@ -317,6 +318,7 @@ class LiqWeekResponse(BaseModel):
     week_services:            int
     commission_amount:        Decimal
     is_liquidated:            bool
+    unliquidated_count:       int
     liquidated_at:            Optional[str]
     net_amount:               Optional[Decimal]
     payment_transfer_amount:  Optional[Decimal]
@@ -380,6 +382,7 @@ class ReportOrder(BaseModel):
     vehicle_model: Optional[str]
     items:         List[ReportOrderItem]
     total:         Decimal
+    is_liquidated: bool
 
 
 class ReportWeekStatus(BaseModel):

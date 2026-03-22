@@ -63,7 +63,10 @@ interface LiquidarModalProps {
 }
 
 function LiquidarModal({ open, onClose, operator, weekData, debts, onConfirm }: LiquidarModalProps) {
-  const commission = Number(weekData.commission_amount)
+  // Only compute commission for unliquidated orders
+  const unliqOrders  = weekData.days.flatMap(d => d.orders.filter(o => !o.is_liquidated))
+  const unliqGross   = unliqOrders.reduce((s, o) => s + Number(o.total), 0)
+  const commission   = Math.round(unliqGross * Number(weekData.commission_rate)) / 100
 
   const unpaidOpOwes      = debts.filter(d => d.direction === 'operario_empresa' && !d.paid)
   const unpaidCompanyOwes = debts.filter(d => d.direction === 'empresa_operario' && !d.paid)
@@ -147,16 +150,18 @@ function LiquidarModal({ open, onClose, operator, weekData, debts, onConfirm }: 
             </div>
 
             <div className="p-5 space-y-5">
-              {/* Comisión */}
+              {/* Comisión — solo servicios sin liquidar */}
               <div className="rounded-xl border border-white/8 bg-white/[0.03] px-4 py-3 space-y-1.5">
-                <p className="text-xs text-gray-500 uppercase tracking-wider">Comisión de la semana</p>
+                <p className="text-xs text-gray-500 uppercase tracking-wider">
+                  Servicios a liquidar ({weekData.unliquidated_count})
+                </p>
                 <div className="flex justify-between text-sm">
-                  <span className="text-gray-400">{weekData.week_services} servicios · Total bruto</span>
-                  <span className="text-gray-200">${cop(weekData.week_total)}</span>
+                  <span className="text-gray-400">{weekData.unliquidated_count} servicios sin liquidar · Total bruto</span>
+                  <span className="text-gray-200">${cop(unliqGross)}</span>
                 </div>
                 <div className="flex justify-between text-sm">
                   <span className="text-gray-400">Comisión ({Number(weekData.commission_rate)}%)</span>
-                  <span className="text-yellow-400 font-semibold">${cop(weekData.commission_amount)}</span>
+                  <span className="text-yellow-400 font-semibold">${cop(commission)}</span>
                 </div>
               </div>
 
@@ -517,62 +522,100 @@ export default function LiquidacionPage() {
         // Build service rows: all items from all orders, showing order context
         const serviceRows = weekOrders.flatMap(o => {
           const vehicle = [o.vehicle_brand, o.vehicle_model].filter(Boolean).join(' ') || '—'
+          const orderComm = (Number(o.total) * rate / 100)
+          const orderBadge = o.is_liquidated
+            ? `<span style="background:#dcfce7;color:#166534;font-size:10px;font-weight:700;padding:2px 8px;border-radius:999px;margin-left:8px;">&#10003; LIQUIDADO</span>`
+            : `<span style="background:#fee2e2;color:#991b1b;font-size:10px;font-weight:700;padding:2px 8px;border-radius:999px;margin-left:8px;">&#10005; SIN LIQUIDAR</span>`
           const orderHeader = `<tr style="background:#f0f0f0;">
-            <td colspan="5" style="padding:6px 10px;font-size:12px;font-weight:600;color:#444;">
+            <td colspan="3" style="padding:6px 10px;font-size:12px;font-weight:600;color:#444;">
               ${escapeHtml(o.order_number)} &nbsp;·&nbsp; ${escapeHtml(o.vehicle_plate)} &nbsp;·&nbsp; ${escapeHtml(vehicle)}
               <span style="font-weight:400;color:#999;margin-left:6px;">${escapeHtml(o.date)}</span>
+              ${orderBadge}
             </td>
           </tr>`
           const items = o.items.map(i =>
             `<tr>
               <td style="padding:5px 10px 5px 20px;font-size:13px;color:#333;">${escapeHtml(i.service_name)}</td>
-              <td style="padding:5px 10px;text-align:center;font-size:12px;color:#666;">${i.quantity}</td>
-              <td style="padding:5px 10px;text-align:right;font-size:12px;color:#666;">${fmt(i.unit_price)}</td>
-              <td style="padding:5px 10px;text-align:right;font-size:13px;font-weight:500;">${fmt(i.subtotal)}</td>
+              <td style="padding:5px 10px;text-align:right;font-size:13px;color:#444;">${fmt(i.subtotal)}</td>
+              <td style="padding:5px 10px;text-align:right;font-size:13px;color:#d97706;font-weight:500;">${fmt(Number(i.subtotal) * rate / 100)}</td>
             </tr>`
           ).join('')
-          const orderTotal = `<tr style="border-top:1px dashed #ddd;">
-            <td colspan="3" style="padding:4px 10px;text-align:right;font-size:12px;color:#888;">Subtotal orden</td>
-            <td style="padding:4px 10px;text-align:right;font-size:13px;font-weight:600;">${fmt(o.total)}</td>
+          const orderTotal = `<tr style="border-top:1px dashed #ddd;background:#fafafa;">
+            <td style="padding:5px 10px 5px 20px;font-size:12px;color:#888;font-style:italic;">Subtotal orden</td>
+            <td style="padding:5px 10px;text-align:right;font-size:13px;font-weight:700;">${fmt(o.total)}</td>
+            <td style="padding:5px 10px;text-align:right;font-size:13px;font-weight:700;color:#d97706;">${fmt(orderComm)}</td>
           </tr>`
           return orderHeader + items + orderTotal
-        }).join('<tr><td colspan="4" style="height:6px;border:none;background:#fff;"></td></tr>')
+        }).join('<tr><td colspan="3" style="height:6px;border:none;background:#fff;"></td></tr>')
 
-        // Payment status
-        const badge = w.is_liquidated
+        // Payment status badge — derived from actual order liquidation state
+        const hasAnyLiquidated  = weekOrders.some(o => o.is_liquidated)
+        const hasAllLiquidated  = weekOrders.length > 0 && weekOrders.every(o => o.is_liquidated)
+        const badge = hasAllLiquidated
           ? `<span style="background:#dcfce7;color:#166534;font-size:11px;font-weight:700;padding:3px 10px;border-radius:999px;letter-spacing:0.3px;">&#10003; LIQUIDADA</span>`
-          : `<span style="background:#fef9c3;color:#854d0e;font-size:11px;font-weight:700;padding:3px 10px;border-radius:999px;letter-spacing:0.3px;">&#9888; PENDIENTE</span>`
+          : hasAnyLiquidated
+          ? `<span style="background:#fef9c3;color:#854d0e;font-size:11px;font-weight:700;padding:3px 10px;border-radius:999px;letter-spacing:0.3px;">&#9654; PARCIAL</span>`
+          : `<span style="background:#fee2e2;color:#991b1b;font-size:11px;font-weight:700;padding:3px 10px;border-radius:999px;letter-spacing:0.3px;">&#10005; SIN LIQUIDAR</span>`
 
-        const paymentDetail = w.is_liquidated
-          ? `<table style="width:auto;margin-left:auto;margin-top:8px;">
-              <tr>
-                <td style="padding:3px 12px 3px 0;font-size:12px;color:#555;">Transferencia</td>
-                <td style="padding:3px 0;font-size:12px;font-weight:600;text-align:right;">${fmt(w.payment_transfer ?? 0)}</td>
-              </tr>
-              <tr>
-                <td style="padding:3px 12px 3px 0;font-size:12px;color:#555;">Efectivo</td>
-                <td style="padding:3px 0;font-size:12px;font-weight:600;text-align:right;">${fmt(w.payment_cash ?? 0)}</td>
-              </tr>
-              ${Number(w.amount_pending ?? 0) > 0 ? `<tr>
-                <td style="padding:3px 12px 3px 0;font-size:12px;color:#dc2626;font-weight:600;">Pendiente</td>
-                <td style="padding:3px 0;font-size:12px;font-weight:700;color:#dc2626;text-align:right;">${fmt(w.amount_pending!)}</td>
-              </tr>` : ''}
-            </table>`
-          : `<p style="font-size:12px;color:#92400e;margin-top:6px;">Comision pendiente de liquidar</p>`
+        // Estado de pago section
+        const pendingAmt = Number(w.amount_pending ?? 0)
+        const netAmt     = Number(w.net_amount ?? w.week_commission)
+        const transAmt   = Number(w.payment_transfer ?? 0)
+        const cashAmt    = Number(w.payment_cash ?? 0)
 
-        // Week summary rows (totals that build up)
+        const estadoPago = w.is_liquidated
+          ? `<div style="border-top:2px solid #166534;background:#f0fdf4;padding:16px 18px;">
+              <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:#166534;margin-bottom:12px;">Estado de pago — Liquidada</div>
+              <div style="display:flex;gap:24px;flex-wrap:wrap;align-items:flex-start;">
+                <div>
+                  <div style="font-size:11px;color:#6b7280;margin-bottom:2px;">Comisión semana</div>
+                  <div style="font-size:18px;font-weight:700;color:#1a1a1a;">${fmt(w.week_commission)}</div>
+                </div>
+                <div style="width:1px;background:#d1d5db;align-self:stretch;"></div>
+                <div>
+                  <div style="font-size:11px;color:#6b7280;margin-bottom:2px;">Transferencia</div>
+                  <div style="font-size:16px;font-weight:600;color:#1a1a1a;">${fmt(transAmt)}</div>
+                </div>
+                <div>
+                  <div style="font-size:11px;color:#6b7280;margin-bottom:2px;">Efectivo</div>
+                  <div style="font-size:16px;font-weight:600;color:#1a1a1a;">${fmt(cashAmt)}</div>
+                </div>
+                ${pendingAmt > 0 ? `<div style="width:1px;background:#d1d5db;align-self:stretch;"></div>
+                <div>
+                  <div style="font-size:11px;color:#dc2626;font-weight:600;margin-bottom:2px;">Pendiente por pagar</div>
+                  <div style="font-size:16px;font-weight:700;color:#dc2626;">${fmt(pendingAmt)}</div>
+                </div>` : ''}
+                <div style="margin-left:auto;text-align:right;">
+                  <div style="font-size:11px;color:#166534;font-weight:600;margin-bottom:2px;">Total pagado al operario</div>
+                  <div style="font-size:20px;font-weight:800;color:#166534;">${fmt(netAmt - pendingAmt)}</div>
+                </div>
+              </div>
+            </div>`
+          : `<div style="border-top:2px solid #dc2626;background:#fef2f2;padding:16px 18px;">
+              <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:#dc2626;margin-bottom:12px;">Estado de pago — Sin Liquidar</div>
+              <div style="display:flex;gap:24px;align-items:center;">
+                <div>
+                  <div style="font-size:11px;color:#6b7280;margin-bottom:2px;">Comisión generada esta semana</div>
+                  <div style="font-size:24px;font-weight:800;color:#dc2626;">${fmt(w.week_commission)}</div>
+                </div>
+                <div style="margin-left:auto;background:#fee2e2;border:1px solid #fecaca;border-radius:8px;padding:10px 16px;text-align:right;">
+                  <div style="font-size:12px;color:#991b1b;font-weight:600;">Pendiente de cobro por el operario</div>
+                  <div style="font-size:18px;font-weight:800;color:#991b1b;margin-top:2px;">${fmt(w.week_commission)}</div>
+                </div>
+              </div>
+            </div>`
+
+        // Week summary rows
         const summaryRows = `
           <tr style="background:#f9f9f9;border-top:2px solid #e5e5e5;">
-            <td colspan="2" style="padding:7px 10px;font-size:13px;color:#555;">
-              <strong>Total bruto semana</strong>
-            </td>
-            <td colspan="2" style="padding:7px 10px;text-align:right;font-size:14px;font-weight:700;">${fmt(w.week_gross)}</td>
+            <td style="padding:7px 10px;font-size:13px;color:#555;"><strong>Total bruto semana</strong></td>
+            <td style="padding:7px 10px;text-align:right;font-size:14px;font-weight:700;">${fmt(w.week_gross)}</td>
+            <td style="padding:7px 10px;text-align:right;font-size:13px;color:#888;font-style:italic;">—</td>
           </tr>
           <tr style="background:#f9f9f9;">
-            <td colspan="2" style="padding:4px 10px;font-size:13px;color:#555;">
-              Comision del operario (${rate}%)
-            </td>
-            <td colspan="2" style="padding:4px 10px;text-align:right;font-size:14px;font-weight:700;color:#d97706;">${fmt(w.week_commission)}</td>
+            <td style="padding:4px 10px;font-size:13px;color:#555;">Comision del operario (${rate}%)</td>
+            <td style="padding:4px 10px;text-align:right;font-size:13px;color:#888;font-style:italic;">—</td>
+            <td style="padding:4px 10px;text-align:right;font-size:14px;font-weight:700;color:#d97706;">${fmt(w.week_commission)}</td>
           </tr>`
 
         return `
@@ -587,17 +630,13 @@ export default function LiquidacionPage() {
                   <thead>
                     <tr style="background:#333;color:#fff;">
                       <th style="padding:7px 10px;text-align:left;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.4px;">Servicio</th>
-                      <th style="padding:7px 10px;text-align:center;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.4px;width:50px;">Cant.</th>
-                      <th style="padding:7px 10px;text-align:right;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.4px;">Precio unit.</th>
-                      <th style="padding:7px 10px;text-align:right;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.4px;">Subtotal</th>
+                      <th style="padding:7px 10px;text-align:right;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.4px;">Precio total</th>
+                      <th style="padding:7px 10px;text-align:right;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.4px;color:#fbbf24;">Comision</th>
                     </tr>
                   </thead>
                   <tbody>${serviceRows}${summaryRows}</tbody>
                 </table>`}
-            <div style="padding:10px 14px;border-top:1px solid #eee;display:flex;justify-content:space-between;align-items:flex-start;">
-              <div style="font-size:13px;font-weight:600;color:#333;">Estado de pago</div>
-              <div style="text-align:right;">${paymentDetail}</div>
-            </div>
+            ${estadoPago}
           </div>`
       }).join('')
 
@@ -993,57 +1032,61 @@ ${r.pending_debts.length > 0 ? `
               ))}
             </div>
 
-            {weekData.is_liquidated ? (
-              <div className="space-y-1.5">
-                <div className="flex items-center justify-center gap-2 rounded-xl border border-green-500/25 bg-green-500/8 py-3">
-                  <Check size={15} className="text-green-400" />
-                  <span className="text-sm text-green-400 font-medium">
-                    Semana liquidada
-                    {weekData.liquidated_at && (
-                      <span className="text-green-600 font-normal ml-2">
-                        · {format(new Date(weekData.liquidated_at), "d MMM yyyy", { locale: es })}
-                      </span>
+            <div className="space-y-2">
+              {weekData.is_liquidated && (
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-center gap-2 rounded-xl border border-green-500/25 bg-green-500/8 py-2.5">
+                    <Check size={14} className="text-green-400" />
+                    <span className="text-sm text-green-400 font-medium">
+                      {weekData.unliquidated_count === 0 ? 'Semana completamente liquidada' : 'Semana parcialmente liquidada'}
+                      {weekData.liquidated_at && (
+                        <span className="text-green-600 font-normal ml-2">
+                          · {format(new Date(weekData.liquidated_at), "d MMM yyyy", { locale: es })}
+                        </span>
+                      )}
+                    </span>
+                  </div>
+                  {/* Payment breakdown */}
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
+                    {weekData.net_amount && (
+                      <div className="rounded-lg border border-white/6 bg-white/[0.02] px-3 py-2 text-center">
+                        <p className="text-gray-600">Neto pagado</p>
+                        <p className="text-gray-200 font-semibold">${cop(weekData.net_amount)}</p>
+                      </div>
                     )}
-                  </span>
+                    {Number(weekData.payment_transfer_amount) > 0 && (
+                      <div className="rounded-lg border border-white/6 bg-white/[0.02] px-3 py-2 text-center">
+                        <p className="text-gray-600">Transferencia</p>
+                        <p className="text-gray-200 font-semibold">${cop(weekData.payment_transfer_amount!)}</p>
+                      </div>
+                    )}
+                    {Number(weekData.payment_cash_amount) > 0 && (
+                      <div className="rounded-lg border border-white/6 bg-white/[0.02] px-3 py-2 text-center">
+                        <p className="text-gray-600">Efectivo</p>
+                        <p className="text-gray-200 font-semibold">${cop(weekData.payment_cash_amount!)}</p>
+                      </div>
+                    )}
+                    {Number(weekData.amount_pending) > 0 && (
+                      <div className="rounded-lg border border-orange-500/20 bg-orange-500/5 px-3 py-2 text-center">
+                        <p className="text-orange-600">Pendiente</p>
+                        <p className="text-orange-400 font-semibold">${cop(weekData.amount_pending!)}</p>
+                      </div>
+                    )}
+                  </div>
                 </div>
-                {/* Payment breakdown when liquidated */}
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
-                  {weekData.net_amount && (
-                    <div className="rounded-lg border border-white/6 bg-white/[0.02] px-3 py-2 text-center">
-                      <p className="text-gray-600">Neto pagado</p>
-                      <p className="text-gray-200 font-semibold">${cop(weekData.net_amount)}</p>
-                    </div>
-                  )}
-                  {Number(weekData.payment_transfer_amount) > 0 && (
-                    <div className="rounded-lg border border-white/6 bg-white/[0.02] px-3 py-2 text-center">
-                      <p className="text-gray-600">Transferencia</p>
-                      <p className="text-gray-200 font-semibold">${cop(weekData.payment_transfer_amount!)}</p>
-                    </div>
-                  )}
-                  {Number(weekData.payment_cash_amount) > 0 && (
-                    <div className="rounded-lg border border-white/6 bg-white/[0.02] px-3 py-2 text-center">
-                      <p className="text-gray-600">Efectivo</p>
-                      <p className="text-gray-200 font-semibold">${cop(weekData.payment_cash_amount!)}</p>
-                    </div>
-                  )}
-                  {Number(weekData.amount_pending) > 0 && (
-                    <div className="rounded-lg border border-orange-500/20 bg-orange-500/5 px-3 py-2 text-center">
-                      <p className="text-orange-600">Pendiente</p>
-                      <p className="text-orange-400 font-semibold">${cop(weekData.amount_pending!)}</p>
-                    </div>
-                  )}
-                </div>
-              </div>
-            ) : (
+              )}
               <Button
-                variant="primary" size="md" className="w-full"
+                variant={weekData.unliquidated_count === 0 ? 'secondary' : 'primary'}
+                size="md" className="w-full"
                 onClick={() => setLiquidarOpen(true)}
-                disabled={weekData.week_services === 0}
+                disabled={weekData.unliquidated_count === 0}
               >
                 <Banknote size={16} />
-                Liquidar semana
+                {weekData.unliquidated_count === 0
+                  ? 'Todo liquidado'
+                  : `${weekData.unliquidated_count} servicio${weekData.unliquidated_count !== 1 ? 's' : ''} sin liquidar`}
               </Button>
-            )}
+            </div>
           </>
         )}
 

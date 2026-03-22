@@ -132,9 +132,10 @@ class ServiceOrder(Base):
     paid           = Column(Boolean, nullable=False, default=False)
     payment_method = Column(String(50))
     notes          = Column(Text)
-    appointment_id = Column(Integer, ForeignKey("appointments.id", ondelete="SET NULL"))
-    created_at     = Column(DateTime, server_default=func.now(), nullable=False)
-    updated_at     = Column(DateTime, server_default=func.now(), onupdate=func.now(), nullable=False)
+    appointment_id       = Column(Integer, ForeignKey("appointments.id", ondelete="SET NULL"))
+    week_liquidation_id  = Column(Integer, ForeignKey("week_liquidations.id", ondelete="SET NULL"), nullable=True)
+    created_at           = Column(DateTime, server_default=func.now(), nullable=False)
+    updated_at           = Column(DateTime, server_default=func.now(), onupdate=func.now(), nullable=False)
 
     vehicle     = relationship("Vehicle", back_populates="orders")
     operator    = relationship("Operator", back_populates="orders")

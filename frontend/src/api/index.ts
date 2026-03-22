@@ -128,6 +128,7 @@ export interface ApiLiqWeekOrder {
   vehicle_model?: string
   items:         ApiLiqWeekOrderItem[]
   total:         string
+  is_liquidated: boolean
 }
 
 export interface ApiLiqWeekDay {
@@ -149,6 +150,7 @@ export interface ApiLiqWeekResponse {
   week_services:             number
   commission_amount:         string
   is_liquidated:             boolean
+  unliquidated_count:        number
   liquidated_at?:            string
   net_amount?:               string
   payment_transfer_amount?:  string
@@ -280,6 +282,7 @@ export interface ApiReportOrder {
   vehicle_model?: string
   items:         ApiReportOrderItem[]
   total:         string
+  is_liquidated: boolean
 }
 
 export interface ApiReportWeekStatus {
