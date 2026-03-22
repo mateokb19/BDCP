@@ -50,7 +50,7 @@ const categoryLabels: Record<string, string> = {
   exterior:           'Exterior',
   interior:           'Interior',
   ceramico:           'Cerámico',
-  correccion_pintura: 'Corrección de Pintura',
+  correccion_pintura: 'Corrección',
 }
 
 const BRANDS = [
@@ -717,64 +717,64 @@ export default function IngresarServicio() {
                           'rounded-xl border px-3 py-2.5 transition-colors',
                           isWarrantySvc ? 'border-orange-500/25 bg-orange-500/5' : 'border-white/6 bg-white/[0.02]'
                         )}>
-                          <div className="flex items-center justify-between gap-2">
-                            <div className="flex items-center gap-2 flex-1 min-w-0">
-                              <Badge variant={s.category === 'exterior' ? 'yellow' : s.category === 'interior' ? 'blue' : s.category === 'correccion_pintura' ? 'orange' : 'purple'}>
-                                {categoryLabels[s.category]}
-                              </Badge>
-                              <span className="text-sm text-gray-200 truncate">{s.name}</span>
-                            </div>
-                            <div className="flex items-center gap-2 shrink-0">
-                              {/* Warranty toggle — only when isWarranty flag is on */}
-                              {form.isWarranty && (
-                                <button onClick={toggleWarrantySvc}
-                                  title={isWarrantySvc ? 'Quitar garantía' : 'Marcar como garantía'}
-                                  className={cn(
-                                    'p-1 rounded-lg transition-colors',
-                                    isWarrantySvc
-                                      ? 'text-orange-400 bg-orange-500/15'
-                                      : 'text-gray-600 hover:text-orange-400 hover:bg-orange-500/10'
-                                  )}>
-                                  <ShieldCheck size={14} />
-                                </button>
-                              )}
-                              {/* Price section */}
-                              {isWarrantySvc ? (
-                                <>
+                          {/* Row 1: badge + service name */}
+                          <div className="flex items-center gap-2 min-w-0">
+                            <Badge variant={s.category === 'exterior' ? 'yellow' : s.category === 'interior' ? 'blue' : s.category === 'correccion_pintura' ? 'orange' : 'purple'} className="shrink-0">
+                              {categoryLabels[s.category]}
+                            </Badge>
+                            <span className="text-sm text-gray-200 truncate">{s.name}</span>
+                          </div>
+                          {/* Row 2: price + actions (right-aligned) */}
+                          <div className="flex items-center justify-end gap-2 mt-1.5">
+                            {/* Warranty toggle — only when isWarranty flag is on */}
+                            {form.isWarranty && (
+                              <button onClick={toggleWarrantySvc}
+                                title={isWarrantySvc ? 'Quitar garantía' : 'Marcar como garantía'}
+                                className={cn(
+                                  'p-1 rounded-lg transition-colors',
+                                  isWarrantySvc
+                                    ? 'text-orange-400 bg-orange-500/15'
+                                    : 'text-gray-600 hover:text-orange-400 hover:bg-orange-500/10'
+                                )}>
+                                <ShieldCheck size={14} />
+                              </button>
+                            )}
+                            {/* Price section */}
+                            {isWarrantySvc ? (
+                              <>
+                                <span className="text-xs text-gray-500 line-through">${stdPrice.toLocaleString('es-CO')}</span>
+                                <span className="text-sm font-medium text-orange-400">$0</span>
+                              </>
+                            ) : isEditingThis ? (
+                              <input
+                                type="number" min="0"
+                                value={form.customPrices[s.id] ?? String(stdPrice)}
+                                onChange={e => setForm(f => ({ ...f, customPrices: { ...f.customPrices, [s.id]: e.target.value } }))}
+                                onBlur={() => setEditingPriceId(null)}
+                                onKeyDown={e => e.key === 'Enter' && setEditingPriceId(null)}
+                                className="w-28 rounded-lg border border-yellow-500/40 bg-gray-900 px-2 py-1 text-sm text-yellow-400 text-right focus:outline-none"
+                                autoFocus
+                              />
+                            ) : (
+                              <>
+                                {discAmt > 0 && (
                                   <span className="text-xs text-gray-500 line-through">${stdPrice.toLocaleString('es-CO')}</span>
-                                  <span className="text-sm font-medium text-orange-400">$0</span>
-                                </>
-                              ) : isEditingThis ? (
-                                <input
-                                  type="number" min="0"
-                                  value={form.customPrices[s.id] ?? String(stdPrice)}
-                                  onChange={e => setForm(f => ({ ...f, customPrices: { ...f.customPrices, [s.id]: e.target.value } }))}
-                                  onBlur={() => setEditingPriceId(null)}
-                                  onKeyDown={e => e.key === 'Enter' && setEditingPriceId(null)}
-                                  className="w-28 rounded-lg border border-yellow-500/40 bg-gray-900 px-2 py-1 text-sm text-yellow-400 text-right focus:outline-none"
-                                  autoFocus
-                                />
-                              ) : (
-                                <>
-                                  {discAmt > 0 && (
-                                    <span className="text-xs text-gray-500 line-through">${stdPrice.toLocaleString('es-CO')}</span>
-                                  )}
-                                  <span className={cn('text-sm font-medium', discAmt > 0 ? 'text-green-400' : 'text-yellow-400')}>
-                                    ${effPrice.toLocaleString('es-CO')}
-                                  </span>
-                                  <button onClick={() => setEditingPriceId(s.id)}
-                                    className="p-1 rounded-lg hover:bg-white/10 text-gray-600 hover:text-gray-300 transition-colors" title="Editar precio">
-                                    <Pencil size={12} />
-                                  </button>
-                                </>
-                              )}
-                            </div>
+                                )}
+                                <span className={cn('text-sm font-medium', discAmt > 0 ? 'text-green-400' : 'text-yellow-400')}>
+                                  ${effPrice.toLocaleString('es-CO')}
+                                </span>
+                                <button onClick={() => setEditingPriceId(s.id)}
+                                  className="p-1 rounded-lg hover:bg-white/10 text-gray-600 hover:text-gray-300 transition-colors" title="Editar precio">
+                                  <Pencil size={12} />
+                                </button>
+                              </>
+                            )}
                           </div>
                           {isWarrantySvc && (
-                            <p className="text-xs text-orange-400/60 mt-1 text-right">Servicio en garantía · sin cobro</p>
+                            <p className="text-xs text-orange-400/60 mt-0.5 text-right">Servicio en garantía · sin cobro</p>
                           )}
                           {!isWarrantySvc && discAmt > 0 && (
-                            <p className="text-xs text-green-400/70 mt-1 text-right">
+                            <p className="text-xs text-green-400/70 mt-0.5 text-right">
                               Descuento: −${discAmt.toLocaleString('es-CO')} ({Math.round((discAmt / stdPrice) * 100)}%)
                             </p>
                           )}
