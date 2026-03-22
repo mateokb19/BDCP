@@ -2,6 +2,7 @@ import calendar
 from decimal import Decimal
 from datetime import date
 from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 from app.database import get_db
 from app import models, schemas
@@ -26,8 +27,22 @@ def _get_service_price(service: models.Service, vehicle_type: str) -> Decimal:
 
 
 def _next_order_number(db: Session) -> str:
-    count = db.query(models.ServiceOrder).count()
-    return f"ORD-{date.today().year}-{str(count + 1).zfill(4)}"
+    year = date.today().year
+    prefix = f"ORD-{year}-"
+    # Find the highest sequence number already used this year
+    last = (
+        db.query(func.max(models.ServiceOrder.order_number))
+        .filter(models.ServiceOrder.order_number.like(f"{prefix}%"))
+        .scalar()
+    )
+    if last:
+        try:
+            seq = int(last.split("-")[-1]) + 1
+        except (ValueError, IndexError):
+            seq = 1
+    else:
+        seq = 1
+    return f"{prefix}{str(seq).zfill(4)}"
 
 
 @router.post("", response_model=schemas.OrderOut, status_code=201)
