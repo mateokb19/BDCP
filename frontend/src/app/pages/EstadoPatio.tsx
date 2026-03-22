@@ -12,6 +12,22 @@ import { Select } from '@/app/components/ui/Select'
 import { useAppContext } from '@/app/context/AppContext'
 import type { PatioStatus, ServiceCategory } from '@/types'
 
+interface FacturaRecord {
+  tipo:      'persona_natural' | 'empresa'
+  id_type:   string
+  id_number: string
+  dv:        string
+  name:      string
+  phone:     string
+  email:     string
+}
+
+const FACTURA_KEY = 'bdcpolo_facturas'
+
+function loadFacturas(): Record<number, FacturaRecord> {
+  try { return JSON.parse(localStorage.getItem(FACTURA_KEY) ?? '{}') } catch { return {} }
+}
+
 const COLUMNS: { status: PatioStatus; label: string; color: string; border: string; dot: string }[] = [
   { status: 'esperando',  label: 'Esperando',  color: 'text-orange-400', border: 'border-t-orange-500/60', dot: 'bg-orange-500' },
   { status: 'en_proceso', label: 'En Proceso', color: 'text-blue-400',   border: 'border-t-blue-500/60',   dot: 'bg-blue-500'   },
@@ -50,13 +66,14 @@ function useElapsed(startISO?: string): string {
 }
 
 interface PatioCardProps {
-  entry:     ApiPatioEntry
-  opName?:   string
-  onAdvance: (entry: ApiPatioEntry) => void
-  onEdit:    (entry: ApiPatioEntry) => void
+  entry:         ApiPatioEntry
+  opName?:       string
+  facturaRecord?: FacturaRecord
+  onAdvance:     (entry: ApiPatioEntry) => void
+  onEdit:        (entry: ApiPatioEntry) => void
 }
 
-function PatioCard({ entry, opName, onAdvance, onEdit }: PatioCardProps) {
+function PatioCard({ entry, opName, facturaRecord, onAdvance, onEdit }: PatioCardProps) {
   const elapsed  = useElapsed(entry.started_at ?? entry.entered_at)
   const next     = NEXT_STATUS[entry.status as PatioStatus]
   const vehicle  = entry.vehicle
@@ -98,7 +115,15 @@ function PatioCard({ entry, opName, onAdvance, onEdit }: PatioCardProps) {
               {vehicle?.plate ?? '—'}{vehicle?.color ? ` · ${vehicle.color}` : ''}
             </div>
           </div>
-          <div className="ml-auto shrink-0">
+          <div className="ml-auto shrink-0 flex items-center gap-1.5">
+            {facturaRecord && (
+              <span className="flex items-center gap-1 rounded-full bg-blue-500/15 border border-blue-500/30 px-2 py-0.5 text-[10px] font-semibold text-blue-400 leading-none">
+                <svg viewBox="0 0 14 14" className="w-3 h-3 fill-current shrink-0" xmlns="http://www.w3.org/2000/svg">
+                  <path d="M2 1.5A1.5 1.5 0 013.5 0h7A1.5 1.5 0 0112 1.5v11a.5.5 0 01-.757.429L7 10.697l-4.243 2.232A.5.5 0 012 12.5v-11zM3.5 1a.5.5 0 00-.5.5v10.303l3.743-1.97a.5.5 0 01.514 0L11 11.803V1.5a.5.5 0 00-.5-.5h-7z"/>
+                </svg>
+                FE
+              </span>
+            )}
             {expanded ? (
               <ChevronUp size={14} className="text-gray-600" />
             ) : (
@@ -219,6 +244,34 @@ function PatioCard({ entry, opName, onAdvance, onEdit }: PatioCardProps) {
                 </div>
               )}
 
+              {/* Facturación electrónica detail */}
+              {facturaRecord && (
+                <div className="rounded-xl bg-blue-500/[0.07] border border-blue-500/25 px-3 py-2.5 space-y-1.5">
+                  <div className="flex items-center gap-1.5">
+                    <svg viewBox="0 0 14 14" className="w-3 h-3 fill-current text-blue-400 shrink-0" xmlns="http://www.w3.org/2000/svg">
+                      <path d="M2 1.5A1.5 1.5 0 013.5 0h7A1.5 1.5 0 0112 1.5v11a.5.5 0 01-.757.429L7 10.697l-4.243 2.232A.5.5 0 012 12.5v-11zM3.5 1a.5.5 0 00-.5.5v10.303l3.743-1.97a.5.5 0 01.514 0L11 11.803V1.5a.5.5 0 00-.5-.5h-7z"/>
+                    </svg>
+                    <span className="text-[11px] font-semibold text-blue-400 uppercase tracking-wider">Facturación Electrónica</span>
+                  </div>
+                  <div className="space-y-0.5">
+                    <div className="flex justify-between text-xs">
+                      <span className="text-gray-500">Tipo</span>
+                      <span className="text-gray-300">{facturaRecord.tipo === 'empresa' ? 'Empresa' : 'Persona Natural'}</span>
+                    </div>
+                    <div className="flex justify-between text-xs">
+                      <span className="text-gray-500">{facturaRecord.id_type}{facturaRecord.dv ? ` · Dv ${facturaRecord.dv}` : ''}</span>
+                      <span className="text-gray-300">{facturaRecord.id_number}</span>
+                    </div>
+                    {facturaRecord.email && (
+                      <div className="flex justify-between text-xs">
+                        <span className="text-gray-500">Correo</span>
+                        <span className="text-blue-300 truncate max-w-[140px]">{facturaRecord.email}</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
               {/* Edit button */}
               {entry.status !== 'entregado' && (
                 <button
@@ -260,8 +313,9 @@ const CATEGORY_ORDER: ServiceCategory[] = ['exterior', 'interior', 'correccion_p
 
 export default function EstadoPatio() {
   const { operators, services } = useAppContext()
-  const [entries,  setEntries]  = useState<ApiPatioEntry[]>([])
-  const [loading,  setLoading]  = useState(true)
+  const [entries,        setEntries]        = useState<ApiPatioEntry[]>([])
+  const [loading,        setLoading]        = useState(true)
+  const [facturaRecords, setFacturaRecords] = useState<Record<number, FacturaRecord>>(loadFacturas)
 
   // Edit modal state
   const [editingEntry, setEditingEntry] = useState<ApiPatioEntry | null>(null)
@@ -404,6 +458,12 @@ export default function EstadoPatio() {
     try {
       const updated = await api.patio.advance(paymentEntry.id, payment)
       setEntries(prev => prev.map(e => e.id === updated.id ? updated : e))
+      // Persist factura data keyed by order id
+      if (factura && facturaData.id_number && paymentEntry.order?.id) {
+        const next = { ...facturaRecords, [paymentEntry.order.id]: facturaData as FacturaRecord }
+        setFacturaRecords(next)
+        localStorage.setItem(FACTURA_KEY, JSON.stringify(next))
+      }
       toast.success(`${updated.vehicle?.plate ?? 'Vehículo'} entregado`)
       setPaymentEntry(null)
     } catch (err) {
@@ -499,6 +559,7 @@ export default function EstadoPatio() {
                           key={entry.id}
                           entry={entry}
                           opName={opName}
+                          facturaRecord={entry.order?.id != null ? facturaRecords[entry.order.id] : undefined}
                           onAdvance={advanceStatus}
                           onEdit={openEdit}
                         />
