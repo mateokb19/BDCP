@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { format, parseISO, startOfWeek, isWithinInterval } from 'date-fns'
+import { format, parseISO, startOfWeek } from 'date-fns'
 import { es } from 'date-fns/locale'
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend,
@@ -29,6 +29,27 @@ const rowAnim = { hidden: { opacity: 0, y: 6 }, show: { opacity: 1, y: 0, transi
 
 type IngresosPeriod = 'day' | 'week' | 'month' | 'year'
 const PERIOD_LABELS: Record<IngresosPeriod, string> = { day: 'Hoy', week: 'Semana', month: 'Mes', year: 'Año' }
+
+function getPeriodDates(period: IngresosPeriod): { start: string; end: string } {
+  const now = new Date()
+  const pad = (n: number) => String(n).padStart(2, '0')
+  const ymd = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+  if (period === 'day') {
+    const s = ymd(now); return { start: s, end: s }
+  }
+  if (period === 'week') {
+    const sun = new Date(now); sun.setDate(now.getDate() - now.getDay())
+    const sat = new Date(sun); sat.setDate(sun.getDate() + 6)
+    return { start: ymd(sun), end: ymd(sat) }
+  }
+  if (period === 'year') {
+    return { start: `${now.getFullYear()}-01-01`, end: `${now.getFullYear()}-12-31` }
+  }
+  // month
+  const first = new Date(now.getFullYear(), now.getMonth(), 1)
+  const last  = new Date(now.getFullYear(), now.getMonth() + 1, 0)
+  return { start: ymd(first), end: ymd(last) }
+}
 
 const PAY_METHODS = [
   { key: 'payment_cash'        as const, label: 'Efectivo',    color: '#eab308', icon: <Banknote size={13} /> },
@@ -67,11 +88,9 @@ export default function IngresosEgresos() {
   const [ingresosData,   setIngresosData]   = useState<ApiIngresosResponse | null>(null)
 
   // Expenses (real data)
-  const [expenses,     setExpenses]     = useState<ApiExpense[]>([])
-  const [dateStart,    setDateStart]    = useState(() => {
-    const d = new Date(); d.setDate(1); return d.toISOString().slice(0, 10)
-  })
-  const [dateEnd, setDateEnd] = useState(() => new Date().toISOString().slice(0, 10))
+  const [expenses,  setExpenses]  = useState<ApiExpense[]>([])
+  const [dateStart, setDateStart] = useState(() => getPeriodDates('month').start)
+  const [dateEnd,   setDateEnd]   = useState(() => getPeriodDates('month').end)
 
   // New expense modal
   const [showModal,   setShowModal]   = useState(false)
@@ -83,11 +102,14 @@ export default function IngresosEgresos() {
     description: '',
   })
 
-  // Load income
+  // Load income + sync expense date range when period changes
   useEffect(() => {
     api.ingresos.get(ingresosPeriod)
       .then(setIngresosData)
       .catch(err => toast.error(err.message ?? 'Error al cargar ingresos'))
+    const { start, end } = getPeriodDates(ingresosPeriod)
+    setDateStart(start)
+    setDateEnd(end)
   }, [ingresosPeriod])
 
   // Load expenses
@@ -146,17 +168,34 @@ export default function IngresosEgresos() {
     return Object.entries(cats).map(([name, value]) => ({ name, value }))
   }, [expenses])
 
-  // Weekly bar chart (expenses)
-  const weeklyEgresos = useMemo(() => {
-    const weeks: Record<string, { week: string; egresos: number }> = {}
-    expenses.forEach(e => {
-      const ws  = startOfWeek(parseISO(e.date), { weekStartsOn: 1 })
-      const key = format(ws, 'dd MMM', { locale: es })
-      if (!weeks[key]) weeks[key] = { week: key, egresos: 0 }
-      weeks[key].egresos += Number(e.amount)
-    })
-    return Object.values(weeks)
-  }, [expenses])
+  // Combined chart: ingresos + egresos grouped by period granularity
+  const chartData = useMemo(() => {
+    if (!ingresosData) return []
+    const expByDate: Record<string, number> = {}
+    expenses.forEach(e => { expByDate[e.date] = (expByDate[e.date] ?? 0) + Number(e.amount) })
+
+    if (ingresosPeriod === 'year') {
+      const months: Record<string, { label: string; ingresos: number; egresos: number }> = {}
+      ingresosData.daily_totals.forEach(d => {
+        const key   = d.date.slice(0, 7)
+        const label = format(parseISO(d.date), 'MMM', { locale: es })
+        if (!months[key]) months[key] = { label, ingresos: 0, egresos: 0 }
+        months[key].ingresos += Number(d.total)
+        months[key].egresos  += expByDate[d.date] ?? 0
+      })
+      return Object.values(months)
+    }
+
+    return ingresosData.daily_totals.map(d => ({
+      label: ingresosPeriod === 'week'
+        ? format(parseISO(d.date), 'EEE', { locale: es })
+        : ingresosPeriod === 'day'
+        ? format(parseISO(d.date), 'EEEE', { locale: es })
+        : format(parseISO(d.date), 'd MMM', { locale: es }),
+      ingresos: Number(d.total),
+      egresos:  expByDate[d.date] ?? 0,
+    }))
+  }, [ingresosData, expenses, ingresosPeriod])
 
   const inputCls = "w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2.5 text-sm text-gray-100 focus:border-yellow-500/50 focus:outline-none focus:ring-2 focus:ring-yellow-500/20 placeholder:text-gray-600"
 
@@ -229,19 +268,29 @@ export default function IngresosEgresos() {
       {/* ── Charts ───────────────────────────────────────────── */}
       <div className="grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-4 mb-6">
         <GlassCard padding>
-          <h3 className="text-sm font-medium text-gray-400 mb-4">Egresos por semana</h3>
-          {weeklyEgresos.length > 0 ? (
+          <h3 className="text-sm font-medium text-gray-400 mb-4">
+            Ingresos vs Egresos
+            {' · '}
+            <span className="text-gray-600">
+              {ingresosPeriod === 'day' ? 'hoy' : ingresosPeriod === 'week' ? 'por día' : ingresosPeriod === 'month' ? 'por día' : 'por mes'}
+            </span>
+          </h3>
+          {chartData.some(d => d.ingresos > 0 || d.egresos > 0) ? (
             <ResponsiveContainer width="100%" height={200}>
-              <BarChart data={weeklyEgresos} barGap={4}>
-                <XAxis dataKey="week" tick={{ fill: '#6b7280', fontSize: 11 }} axisLine={false} tickLine={false} />
-                <YAxis tick={{ fill: '#6b7280', fontSize: 11 }} axisLine={false} tickLine={false} />
+              <BarChart data={chartData} barGap={3}>
+                <XAxis dataKey="label" tick={{ fill: '#6b7280', fontSize: 11 }} axisLine={false} tickLine={false}
+                  interval={ingresosPeriod === 'month' ? 4 : 0} />
+                <YAxis tick={{ fill: '#6b7280', fontSize: 11 }} axisLine={false} tickLine={false}
+                  tickFormatter={v => v >= 1000000 ? `${(v/1000000).toFixed(1)}M` : v >= 1000 ? `${(v/1000).toFixed(0)}k` : String(v)} />
                 <Tooltip {...TOOLTIP_STYLE} formatter={(v) => [`$${Number(v).toLocaleString('es-CO')}`, '']} />
-                <Bar dataKey="egresos" fill="#ef4444" radius={[4, 4, 0, 0]} />
+                <Legend wrapperStyle={{ fontSize: 12, color: '#9ca3af' }} />
+                <Bar dataKey="ingresos" fill="#eab308" radius={[4, 4, 0, 0]} />
+                <Bar dataKey="egresos"  fill="#ef4444" radius={[4, 4, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
           ) : (
             <div className="h-[200px] flex items-center justify-center">
-              <p className="text-sm text-gray-700">Sin egresos en el período</p>
+              <p className="text-sm text-gray-700">Sin datos en el período</p>
             </div>
           )}
         </GlassCard>
