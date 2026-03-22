@@ -10,9 +10,12 @@ export interface NewOrderPayload {
   color: string
   clientName: string
   clientPhone: string
-  operatorId: number | null
   serviceIds: number[]
   notes?: string
+  scheduledDeliveryAt?: string
+  downpayment?: number
+  isWarranty?: boolean
+  itemOverrides?: { service_id: number; unit_price: number }[]
 }
 
 interface AppCtx {
@@ -38,16 +41,19 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   async function createOrder(data: NewOrderPayload): Promise<string> {
     const order = await api.orders.create({
-      vehicle_type: data.vehicleType,
-      plate:        data.plate,
-      brand:        data.brand,
-      model:        data.model   || undefined,
-      color:        data.color   || undefined,
-      client_name:  data.clientName,
-      client_phone: data.clientPhone,
-      operator_id:  data.operatorId,
-      service_ids:  data.serviceIds,
-      notes:        data.notes,
+      vehicle_type:           data.vehicleType,
+      plate:                  data.plate,
+      brand:                  data.brand,
+      model:                  data.model   || undefined,
+      color:                  data.color   || undefined,
+      client_name:            data.clientName,
+      client_phone:           data.clientPhone,
+      service_ids:            data.serviceIds,
+      notes:                  data.notes,
+      scheduled_delivery_at:  data.scheduledDeliveryAt,
+      downpayment:            data.downpayment,
+      is_warranty:            data.isWarranty,
+      item_overrides:         data.itemOverrides,
     })
     return order.order_number
   }

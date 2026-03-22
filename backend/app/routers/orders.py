@@ -72,11 +72,16 @@ def create_order(payload: schemas.OrderCreate, db: Session = Depends(get_db)):
         db.add(vehicle)
         db.flush()
 
-    # 4. Build order items with price snapshot
-    total = Decimal("0.00")
+    # 4. Build order items with price snapshot (overrides supported)
+    override_map = {ov.service_id: ov.unit_price for ov in payload.item_overrides}
+    subtotal = Decimal("0.00")
+    discount = Decimal("0.00")
     item_rows = []
     for svc in services:
-        price = _get_service_price(svc, payload.vehicle_type)
+        std_price = _get_service_price(svc, payload.vehicle_type)
+        price     = override_map.get(svc.id, std_price)
+        if price < std_price:
+            discount += std_price - price
         item_rows.append(models.ServiceOrderItem(
             service_id=svc.id,
             service_name=svc.name,
@@ -85,7 +90,7 @@ def create_order(payload: schemas.OrderCreate, db: Session = Depends(get_db)):
             quantity=1,
             subtotal=price,
         ))
-        total += price
+        subtotal += price
 
     # 5. Create service order
     order = models.ServiceOrder(
@@ -93,10 +98,12 @@ def create_order(payload: schemas.OrderCreate, db: Session = Depends(get_db)):
         vehicle_id=vehicle.id,
         operator_id=payload.operator_id,
         status=models.OrderStatusEnum.pendiente,
-        subtotal=total,
-        discount=Decimal("0.00"),
-        total=total,
+        subtotal=subtotal,
+        discount=discount,
+        total=subtotal,            # full amount (before abono; abono is separate field)
         paid=False,
+        downpayment=payload.downpayment or Decimal("0.00"),
+        is_warranty=payload.is_warranty,
         notes=payload.notes,
     )
     db.add(order)
@@ -111,6 +118,7 @@ def create_order(payload: schemas.OrderCreate, db: Session = Depends(get_db)):
         order_id=order.id,
         vehicle_id=vehicle.id,
         status=models.PatioStatusEnum.esperando,
+        scheduled_delivery_at=payload.scheduled_delivery_at,
     )
     db.add(patio)
 

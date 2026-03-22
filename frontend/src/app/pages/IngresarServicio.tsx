@@ -1,6 +1,6 @@
 import { useState, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Car, Truck, Check, ChevronRight, Search, User, Phone, Palette, Hash, Calendar } from 'lucide-react'
+import { Car, Truck, Check, ChevronRight, Search, User, Phone, Palette, Hash, Calendar, Pencil, AlertTriangle, ShieldCheck } from 'lucide-react'
 import { useNavigate } from 'react-router'
 import { toast } from 'sonner'
 import { Button } from '@/app/components/ui/Button'
@@ -9,7 +9,6 @@ import { GlassCard } from '@/app/components/ui/GlassCard'
 import { Badge } from '@/app/components/ui/Badge'
 import { cn } from '@/app/components/ui/cn'
 import { api } from '@/api'
-import { Select } from '@/app/components/ui/Select'
 import { useAppContext } from '@/app/context/AppContext'
 import type { VehicleType, Service } from '@/types'
 
@@ -22,9 +21,14 @@ interface OrderDraft {
   color: string
   clientName: string
   clientPhone: string
-  operatorId: number | null
   selectedServices: number[]
   notes: string
+  deliveryDate: string
+  deliveryTime: string
+  customPrices: Record<number, string>
+  warrantyServiceIds: number[]
+  downpayment: string
+  isWarranty: boolean
 }
 
 const TODAY = new Date().toISOString().split('T')[0]
@@ -98,17 +102,19 @@ function getServicePrice(service: Service, type: VehicleType): number {
 
 export default function IngresarServicio() {
   const navigate = useNavigate()
-  const { services, operators, createOrder } = useAppContext()
+  const { services, createOrder } = useAppContext()
 
-  const [step, setStep]           = useState<Step>(1)
-  const [prevStep, setPrevStep]   = useState<Step>(1)
+  const [step, setStep]               = useState<Step>(1)
+  const [prevStep, setPrevStep]       = useState<Step>(1)
   const [vehicleType, setVehicleType] = useState<VehicleType | null>(null)
-  const [submitting, setSubmitting] = useState(false)
+  const [submitting, setSubmitting]   = useState(false)
+  const [plateTypeMismatch, setPlateTypeMismatch] = useState(false)
   const [form, setForm] = useState<OrderDraft>({
     plate: '', brand: '', model: '', color: '',
     clientName: '', clientPhone: '',
-    operatorId: null,
     selectedServices: [], notes: '',
+    deliveryDate: '', deliveryTime: '',
+    customPrices: {}, warrantyServiceIds: [], downpayment: '', isWarranty: false,
   })
 
   // Brand autocomplete
@@ -122,6 +128,9 @@ export default function IngresarServicio() {
   const modelRef = useRef<HTMLDivElement>(null)
   const modelSuggestions = getModelSuggestions(form.brand, form.model)
 
+  // Price editing
+  const [editingPriceId, setEditingPriceId] = useState<number | null>(null)
+
   function goTo(next: Step) {
     setPrevStep(step)
     setStep(next)
@@ -129,23 +138,59 @@ export default function IngresarServicio() {
 
   function handlePlateChange(e: React.ChangeEvent<HTMLInputElement>) {
     const val = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6)
-    setForm(f => ({ ...f, plate: val }))
+    // Clear auto-filled vehicle + client fields when plate is edited
+    setForm(f => ({
+      ...f, plate: val,
+      brand: '', model: '', color: '',
+      clientName: '', clientPhone: '',
+    }))
+    setBrandQuery('')
+    setPlateTypeMismatch(false)
+  }
+
+  const TYPE_LABELS: Record<string, string> = {
+    automovil:       'Automóvil',
+    camion_estandar: 'Camioneta Estándar',
+    camion_xl:       'Camioneta XL',
   }
 
   async function handlePlateBlur() {
     if (form.plate.length < 3) return
     try {
       const found = await api.vehicles.byPlate(form.plate)
+      const typeMatches = found.type === vehicleType
+
+      // Req 1: type mismatch — warn and don't fill vehicle fields
+      if (!typeMatches) {
+        setPlateTypeMismatch(true)
+        toast.warning(
+          `Esta placa está registrada como ${TYPE_LABELS[found.type] ?? found.type}. ` +
+          `Cambia el tipo de vehículo para continuar.`,
+          { duration: 5000 }
+        )
+        // Still fill client (plate is unique to one person, always bring their info)
+        if (found.client) {
+          setForm(f => ({
+            ...f,
+            clientName:  found.client!.name,
+            clientPhone: found.client!.phone ?? f.clientPhone,
+          }))
+        }
+        return
+      }
+
+      setPlateTypeMismatch(false)
+      // Type matches — fill vehicle + client
       setForm(f => ({
         ...f,
-        brand: found.brand ?? f.brand,
-        model: found.model ?? f.model,
-        color: found.color ?? f.color,
+        brand:       found.brand         ?? f.brand,
+        model:       found.model         ?? f.model,
+        color:       found.color         ?? f.color,
+        clientName:  found.client?.name  ?? f.clientName,
+        clientPhone: found.client?.phone ?? f.clientPhone,
       }))
-      if (found.brand) {
-        setBrandQuery(found.brand)
-        toast.info(`Vehículo encontrado: ${found.brand} ${found.model ?? ''}`)
-      }
+      if (found.brand) setBrandQuery(found.brand)
+      toast.info(`Vehículo encontrado: ${found.brand} ${found.model ?? ''}`)
     } catch {
       // 404 = vehicle not registered, that's fine
     }
@@ -170,14 +215,30 @@ export default function IngresarServicio() {
     }))
   }
 
-  function getPrice(service: Service): number {
-    return vehicleType ? getServicePrice(service, vehicleType) : service.price_automovil
+  function getStandardPrice(service: Service): number {
+    return vehicleType ? getServicePrice(service, vehicleType) : Number(service.price_automovil)
+  }
+  function getEffectivePrice(service: Service): number {
+    if (form.warrantyServiceIds.includes(service.id)) return 0
+    const custom = form.customPrices[service.id]
+    if (custom !== undefined && custom !== '') {
+      const n = Number(custom)
+      if (!isNaN(n) && n >= 0) return n
+    }
+    return getStandardPrice(service)
   }
 
   const total = form.selectedServices.reduce((sum, id) => {
     const s = services.find(s => s.id === id)
-    return sum + (s ? Number(getPrice(s)) : 0)
+    return sum + (s ? getEffectivePrice(s) : 0)
   }, 0)
+  const standardTotal = form.selectedServices.reduce((sum, id) => {
+    const s = services.find(s => s.id === id)
+    return sum + (s ? getStandardPrice(s) : 0)
+  }, 0)
+  const totalDiscount = standardTotal - total
+  const abonoAmt = Number(form.downpayment) || 0
+  const restante = Math.max(0, total - abonoAmt)
 
   const selectedServiceObjs = form.selectedServices.map(id => services.find(s => s.id === id)!).filter(Boolean)
 
@@ -185,24 +246,48 @@ export default function IngresarServicio() {
     if (!vehicleType || submitting) return
     setSubmitting(true)
     try {
+      // Custom price overrides (skip if service is warranty — warranty takes precedence)
+      const customOverrides = Object.entries(form.customPrices)
+        .filter(([id, priceStr]) => {
+          if (!priceStr || isNaN(Number(priceStr))) return false
+          if (form.warrantyServiceIds.includes(Number(id))) return false
+          const s = services.find(s => s.id === Number(id))
+          if (!s) return false
+          return Number(priceStr) !== getStandardPrice(s)
+        })
+        .map(([id, priceStr]) => ({ service_id: Number(id), unit_price: Number(priceStr) }))
+
+      // Warranty service overrides (price = 0)
+      const warrantyOverrides = form.warrantyServiceIds
+        .filter(id => form.selectedServices.includes(id))
+        .map(id => ({ service_id: id, unit_price: 0 }))
+
+      const itemOverrides = [...customOverrides, ...warrantyOverrides]
+
+      const scheduledDeliveryAt = form.deliveryDate
+        ? `${form.deliveryDate}T${form.deliveryTime || '00:00'}:00`
+        : undefined
+
       const orderNumber = await createOrder({
         vehicleType,
-        plate:       form.plate,
-        brand:       form.brand,
-        model:       form.model,
-        color:       form.color,
-        clientName:  form.clientName,
-        clientPhone: form.clientPhone,
-        operatorId:  form.operatorId,
-        serviceIds:  form.selectedServices,
-        notes:       form.notes || undefined,
+        plate:        form.plate,
+        brand:        form.brand,
+        model:        form.model,
+        color:        form.color,
+        clientName:   form.clientName,
+        clientPhone:  form.clientPhone,
+        serviceIds:   form.selectedServices,
+        notes:        form.notes || undefined,
+        scheduledDeliveryAt,
+        downpayment:  abonoAmt > 0 ? abonoAmt : undefined,
+        isWarranty:   form.isWarranty,
+        itemOverrides: itemOverrides.length > 0 ? itemOverrides : undefined,
       })
       toast.success(`Orden ${orderNumber} creada`, {
         description: `${form.plate} · ${form.clientName} → Estado de Patio`,
       })
-      // Reset
       setStep(1); setPrevStep(1); setVehicleType(null)
-      setForm({ plate: '', brand: '', model: '', color: '', clientName: '', clientPhone: '', operatorId: null, selectedServices: [], notes: '' })
+      setForm({ plate: '', brand: '', model: '', color: '', clientName: '', clientPhone: '', selectedServices: [], notes: '', deliveryDate: '', deliveryTime: '', customPrices: {}, warrantyServiceIds: [], downpayment: '', isWarranty: false })
       setBrandQuery('')
       navigate('/')
     } catch (err) {
@@ -257,7 +342,7 @@ export default function IngresarServicio() {
                     key={opt.type}
                     whileHover={{ scale: 1.03, y: -3 }}
                     whileTap={{ scale: 0.98 }}
-                    onClick={() => { setVehicleType(opt.type); goTo(2) }}
+                    onClick={() => { setVehicleType(opt.type); setPlateTypeMismatch(false); goTo(2) }}
                     className={cn(
                       'group flex flex-col items-center gap-5 rounded-2xl border p-8 text-center transition-all duration-200',
                       'bg-white/[0.03] border-white/8 hover:border-yellow-500/40 hover:bg-yellow-500/5',
@@ -282,7 +367,7 @@ export default function IngresarServicio() {
           {step === 2 && vehicleType && (
             <div>
               <div className="flex items-center gap-3 mb-6">
-                <button onClick={() => goTo(1)} className="text-sm text-gray-400 hover:text-yellow-400 transition-colors">
+                <button onClick={() => { setPlateTypeMismatch(false); goTo(1) }} className="text-sm text-gray-400 hover:text-yellow-400 transition-colors">
                   ← Cambiar tipo
                 </button>
                 <span className="text-gray-700">|</span>
@@ -292,7 +377,7 @@ export default function IngresarServicio() {
               </div>
 
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 lg:gap-5">
-                {/* Col 1 — Vehículo & Cliente (shown first on mobile, side on desktop) */}
+                {/* Col 1 — Vehículo & Cliente */}
                 <div className="space-y-3">
                   <GlassCard padding className="space-y-3">
                     <h3 className="text-sm font-semibold text-gray-300 uppercase tracking-wider">Vehículo</h3>
@@ -372,6 +457,18 @@ export default function IngresarServicio() {
                         <span>{TODAY}</span>
                       </div>
                     </div>
+
+                    {/* Warranty toggle */}
+                    <div className="flex items-center justify-between rounded-xl border border-orange-500/20 bg-orange-500/5 px-3 py-2.5">
+                      <div>
+                        <span className="text-sm font-medium text-gray-200">Entrada por garantía</span>
+                        <p className="text-xs text-gray-500 mt-0.5">Proceso previo sin costo adicional</p>
+                      </div>
+                      <button type="button" onClick={() => setForm(f => ({ ...f, isWarranty: !f.isWarranty }))}
+                        className={cn('relative w-10 h-6 rounded-full transition-colors duration-200 shrink-0', form.isWarranty ? 'bg-orange-500' : 'bg-white/10')}>
+                        <span className={cn('absolute top-1 left-1 w-4 h-4 rounded-full bg-white transition-transform duration-200', form.isWarranty && 'translate-x-4')} />
+                      </button>
+                    </div>
                   </GlassCard>
 
                   <GlassCard padding className="space-y-3">
@@ -395,20 +492,30 @@ export default function IngresarServicio() {
                         <p className="text-[11px] text-red-400 pl-1">Máximo 15 caracteres</p>
                       )}
                     </div>
-                    <Select
-                      label="Operario (opcional)"
-                      value={form.operatorId ? String(form.operatorId) : '0'}
-                      onValueChange={v => setForm(f => ({ ...f, operatorId: v === '0' ? null : Number(v) }))}
-                      options={[
-                        { value: '0', label: 'Sin asignar' },
-                        ...operators.map(op => ({ value: String(op.id), label: op.name })),
-                      ]}
-                    />
                   </GlassCard>
                 </div>
 
                 {/* Col 2 — Services */}
                 <div className="space-y-3">
+                  {plateTypeMismatch && (
+                    <motion.div
+                      initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }}
+                      className="rounded-xl border border-red-500/30 bg-red-500/5 px-4 py-4 flex flex-col items-center gap-2 text-center"
+                    >
+                      <AlertTriangle size={22} className="text-red-400" />
+                      <p className="text-sm font-medium text-red-300">Tipo de vehículo incorrecto</p>
+                      <p className="text-xs text-gray-500">
+                        Esta placa no corresponde al tipo seleccionado.<br/>Cambia el tipo para habilitar los servicios.
+                      </p>
+                      <button
+                        onClick={() => { setPlateTypeMismatch(false); goTo(1) }}
+                        className="mt-1 text-xs text-yellow-400 hover:text-yellow-300 underline underline-offset-2 transition-colors"
+                      >
+                        ← Cambiar tipo de vehículo
+                      </button>
+                    </motion.div>
+                  )}
+                  <div className={cn(plateTypeMismatch && 'opacity-25 pointer-events-none select-none')}>
                   {(['exterior', 'interior', 'correccion_pintura', 'ceramico'] as const).map(cat => (
                     <div key={cat}>
                       <div className={cn('rounded-xl border p-3', categoryColors[cat])}>
@@ -417,7 +524,7 @@ export default function IngresarServicio() {
                         </h3>
                         <div className="space-y-1 max-h-52 overflow-y-auto pr-1">
                         {services.filter(s => s.category === cat).map(service => {
-                          const price   = getPrice(service)
+                          const price   = getStandardPrice(service)
                           const checked = form.selectedServices.includes(service.id)
                           return (
                             <motion.label key={service.id} whileHover={{ x: 2 }}
@@ -433,6 +540,7 @@ export default function IngresarServicio() {
                       </div>
                     </div>
                   ))}
+                  </div>
                 </div>
 
                 {/* Col 3 — Summary + actions */}
@@ -450,7 +558,7 @@ export default function IngresarServicio() {
                               initial={{ opacity: 0, x: 10 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 10 }}
                               className="flex justify-between items-center py-2 border-b border-white/6">
                               <span className="text-sm text-gray-300">{s.name}</span>
-                              <span className="text-sm font-medium text-yellow-400">${Number(getPrice(s)).toLocaleString('es-CO')}</span>
+                              <span className="text-sm font-medium text-yellow-400">${Number(getEffectivePrice(s)).toLocaleString('es-CO')}</span>
                             </motion.div>
                           ))}
                         </AnimatePresence>
@@ -470,7 +578,7 @@ export default function IngresarServicio() {
                     )}
 
                     <div className="mt-5 space-y-2">
-                      <Button variant="primary" size="lg" className="w-full" onClick={handleReviewOrder}>
+                      <Button variant="primary" size="lg" className="w-full" onClick={handleReviewOrder} disabled={plateTypeMismatch}>
                         Revisar Orden →
                       </Button>
                       <Button variant="ghost" size="md" className="w-full" onClick={() => goTo(1)}>
@@ -486,55 +594,204 @@ export default function IngresarServicio() {
           {/* STEP 3 — Confirm */}
           {step === 3 && (
             <div className="max-w-2xl mx-auto">
-              <h2 className="text-2xl font-semibold text-white text-center mb-2">Confirmar Orden</h2>
-              <p className="text-gray-400 text-center mb-8">Revisa los detalles antes de guardar</p>
+              <h2 className="text-2xl font-semibold text-white text-center mb-2">Revisar Orden</h2>
+              <p className="text-gray-400 text-center mb-8">Confirma los detalles antes de guardar</p>
 
               <GlassCard padding className="space-y-5">
+                {/* Vehicle + Client */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
                     <p className="text-xs text-gray-500 uppercase tracking-wider mb-1">Vehículo</p>
                     <p className="text-white font-medium break-words">{form.brand} {form.model}</p>
                     <p className="text-gray-400 text-sm">{form.plate}{form.color ? ` · ${form.color}` : ''}</p>
                     <p className="text-gray-500 text-sm mt-1">{TODAY}</p>
+                    {form.isWarranty && (
+                      <span className="inline-flex items-center gap-1 mt-1.5 text-xs font-medium text-orange-400 bg-orange-500/10 rounded-full px-2.5 py-0.5 border border-orange-500/20">
+                        Entrada por garantía
+                      </span>
+                    )}
                   </div>
                   <div>
                     <p className="text-xs text-gray-500 uppercase tracking-wider mb-1">Cliente</p>
                     <p className="text-white font-medium break-words">{form.clientName}</p>
                     <p className="text-gray-400 text-sm break-all">{form.clientPhone}</p>
-                    {form.operatorId && (
-                      <p className="text-gray-400 text-sm mt-1">
-                        Operario: {operators.find(o => o.id === form.operatorId)?.name}
-                      </p>
+                  </div>
+                </div>
+
+                {/* Delivery date/time — optional */}
+                <div className="border-t border-white/8 pt-4">
+                  <p className="text-xs text-gray-500 uppercase tracking-wider mb-3">Fecha de Entrega Acordada <span className="text-gray-600 normal-case">(opcional)</span></p>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="text-sm text-gray-400 block mb-1.5">Fecha</label>
+                      <input type="date" value={form.deliveryDate}
+                        onChange={e => setForm(f => ({ ...f, deliveryDate: e.target.value }))}
+                        className="w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-gray-100 focus:border-yellow-500/50 focus:outline-none focus:ring-2 focus:ring-yellow-500/20 [color-scheme:dark]" />
+                    </div>
+                    <div>
+                      <label className="text-sm text-gray-400 block mb-1.5">Hora</label>
+                      <input type="time" value={form.deliveryTime}
+                        onChange={e => setForm(f => ({ ...f, deliveryTime: e.target.value }))}
+                        disabled={!form.deliveryDate}
+                        className="w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-gray-100 focus:border-yellow-500/50 focus:outline-none focus:ring-2 focus:ring-yellow-500/20 [color-scheme:dark] disabled:opacity-40" />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Services with price editing */}
+                <div className="border-t border-white/8 pt-4">
+                  <p className="text-xs text-gray-500 uppercase tracking-wider mb-3">Servicios</p>
+                  <div className="space-y-2">
+                    {selectedServiceObjs.map(s => {
+                      const stdPrice       = getStandardPrice(s)
+                      const isWarrantySvc  = form.warrantyServiceIds.includes(s.id)
+                      const effPrice       = getEffectivePrice(s)          // 0 if warranty
+                      const discAmt        = isWarrantySvc ? 0 : stdPrice - effPrice
+                      const isEditingThis  = !isWarrantySvc && editingPriceId === s.id
+
+                      function toggleWarrantySvc() {
+                        setForm(f => ({
+                          ...f,
+                          warrantyServiceIds: isWarrantySvc
+                            ? f.warrantyServiceIds.filter(id => id !== s.id)
+                            : [...f.warrantyServiceIds, s.id],
+                        }))
+                        if (isWarrantySvc) return
+                        // clear custom price if marking as warranty
+                        setEditingPriceId(null)
+                      }
+
+                      return (
+                        <div key={s.id} className={cn(
+                          'rounded-xl border px-3 py-2.5 transition-colors',
+                          isWarrantySvc ? 'border-orange-500/25 bg-orange-500/5' : 'border-white/6 bg-white/[0.02]'
+                        )}>
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="flex items-center gap-2 flex-1 min-w-0">
+                              <Badge variant={s.category === 'exterior' ? 'yellow' : s.category === 'interior' ? 'blue' : s.category === 'correccion_pintura' ? 'orange' : 'purple'}>
+                                {categoryLabels[s.category]}
+                              </Badge>
+                              <span className="text-sm text-gray-200 truncate">{s.name}</span>
+                            </div>
+                            <div className="flex items-center gap-2 shrink-0">
+                              {/* Warranty toggle — only when isWarranty flag is on */}
+                              {form.isWarranty && (
+                                <button onClick={toggleWarrantySvc}
+                                  title={isWarrantySvc ? 'Quitar garantía' : 'Marcar como garantía'}
+                                  className={cn(
+                                    'p-1 rounded-lg transition-colors',
+                                    isWarrantySvc
+                                      ? 'text-orange-400 bg-orange-500/15'
+                                      : 'text-gray-600 hover:text-orange-400 hover:bg-orange-500/10'
+                                  )}>
+                                  <ShieldCheck size={14} />
+                                </button>
+                              )}
+                              {/* Price section */}
+                              {isWarrantySvc ? (
+                                <>
+                                  <span className="text-xs text-gray-500 line-through">${stdPrice.toLocaleString('es-CO')}</span>
+                                  <span className="text-sm font-medium text-orange-400">$0</span>
+                                </>
+                              ) : isEditingThis ? (
+                                <input
+                                  type="number" min="0"
+                                  value={form.customPrices[s.id] ?? String(stdPrice)}
+                                  onChange={e => setForm(f => ({ ...f, customPrices: { ...f.customPrices, [s.id]: e.target.value } }))}
+                                  onBlur={() => setEditingPriceId(null)}
+                                  onKeyDown={e => e.key === 'Enter' && setEditingPriceId(null)}
+                                  className="w-28 rounded-lg border border-yellow-500/40 bg-gray-900 px-2 py-1 text-sm text-yellow-400 text-right focus:outline-none"
+                                  autoFocus
+                                />
+                              ) : (
+                                <>
+                                  {discAmt > 0 && (
+                                    <span className="text-xs text-gray-500 line-through">${stdPrice.toLocaleString('es-CO')}</span>
+                                  )}
+                                  <span className={cn('text-sm font-medium', discAmt > 0 ? 'text-green-400' : 'text-yellow-400')}>
+                                    ${effPrice.toLocaleString('es-CO')}
+                                  </span>
+                                  <button onClick={() => setEditingPriceId(s.id)}
+                                    className="p-1 rounded-lg hover:bg-white/10 text-gray-600 hover:text-gray-300 transition-colors" title="Editar precio">
+                                    <Pencil size={12} />
+                                  </button>
+                                </>
+                              )}
+                            </div>
+                          </div>
+                          {isWarrantySvc && (
+                            <p className="text-xs text-orange-400/60 mt-1 text-right">Servicio en garantía · sin cobro</p>
+                          )}
+                          {!isWarrantySvc && discAmt > 0 && (
+                            <p className="text-xs text-green-400/70 mt-1 text-right">
+                              Descuento: −${discAmt.toLocaleString('es-CO')} ({Math.round((discAmt / stdPrice) * 100)}%)
+                            </p>
+                          )}
+                        </div>
+                      )
+                    })}
+                  </div>
+
+                  {/* Totals */}
+                  <div className="mt-4 pt-4 border-t border-white/8 space-y-1.5">
+                    {totalDiscount > 0 && (
+                      <>
+                        <div className="flex justify-between text-sm">
+                          <span className="text-gray-400">Subtotal</span>
+                          <span className="text-gray-300">${standardTotal.toLocaleString('es-CO')}</span>
+                        </div>
+                        <div className="flex justify-between text-sm">
+                          <span className="text-green-400">Descuentos</span>
+                          <span className="text-green-400">−${totalDiscount.toLocaleString('es-CO')}</span>
+                        </div>
+                        <div className="flex justify-between items-center pt-1.5 border-t border-white/8">
+                          <span className="text-gray-200 font-medium">Total</span>
+                          <span className="text-2xl font-bold text-yellow-400">${total.toLocaleString('es-CO')}</span>
+                        </div>
+                      </>
+                    )}
+                    {totalDiscount === 0 && (
+                      <div className="flex justify-between items-center">
+                        <span className="text-lg text-gray-200 font-medium">Total</span>
+                        <span className="text-3xl font-bold text-yellow-400">${total.toLocaleString('es-CO')}</span>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Abono */}
+                  <div className="mt-4 pt-4 border-t border-white/8">
+                    <p className="text-xs text-gray-500 uppercase tracking-wider mb-3">Abono del Cliente <span className="text-gray-600 normal-case">(opcional)</span></p>
+                    <div className="flex items-center gap-3">
+                      <div className="relative flex-1">
+                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 text-sm">$</span>
+                        <input
+                          type="number" min="0" max={total}
+                          placeholder="0"
+                          value={form.downpayment}
+                          onChange={e => setForm(f => ({ ...f, downpayment: e.target.value }))}
+                          className="w-full rounded-xl border border-white/10 bg-white/5 pl-7 pr-3 py-2 text-sm text-gray-100 focus:border-yellow-500/50 focus:outline-none focus:ring-2 focus:ring-yellow-500/20"
+                        />
+                      </div>
+                      {abonoAmt > 0 && (
+                        <div className="text-right shrink-0">
+                          <p className="text-xs text-gray-500">Restante</p>
+                          <p className="text-lg font-bold text-orange-400">${restante.toLocaleString('es-CO')}</p>
+                        </div>
+                      )}
+                    </div>
+                    {abonoAmt > total && (
+                      <p className="text-xs text-red-400 mt-1">El abono no puede superar el total</p>
                     )}
                   </div>
                 </div>
 
-                <div className="border-t border-white/8 pt-4">
-                  <p className="text-xs text-gray-500 uppercase tracking-wider mb-3">Servicios</p>
-                  <div className="space-y-2">
-                    {selectedServiceObjs.map(s => (
-                      <div key={s.id} className="flex justify-between items-center">
-                        <div className="flex items-center gap-2">
-                          <Badge variant={s.category === 'exterior' ? 'yellow' : s.category === 'interior' ? 'blue' : s.category === 'correccion_pintura' ? 'orange' : 'purple'}>
-                            {categoryLabels[s.category]}
-                          </Badge>
-                          <span className="text-sm text-gray-200">{s.name}</span>
-                        </div>
-                        <span className="text-sm font-medium text-yellow-400">${Number(getPrice(s)).toLocaleString('es-CO')}</span>
-                      </div>
-                    ))}
-                  </div>
-                  <div className="flex justify-between items-center mt-4 pt-4 border-t border-white/8">
-                    <span className="text-lg text-gray-200 font-medium">Total</span>
-                    <span className="text-3xl font-bold text-yellow-400">${total.toLocaleString('es-CO')}</span>
-                  </div>
-                </div>
-
+                {/* Actions */}
                 <div className="flex gap-3 pt-2">
                   <Button variant="secondary" size="lg" className="flex-1" onClick={() => goTo(2)} disabled={submitting}>
                     ← Editar
                   </Button>
-                  <Button variant="primary" size="lg" className="flex-1" onClick={handleConfirm} disabled={submitting}>
+                  <Button variant="primary" size="lg" className="flex-1" onClick={handleConfirm}
+                    disabled={submitting || abonoAmt > total}>
                     {submitting ? 'Guardando...' : <><Check size={18} /> Confirmar Orden</>}
                   </Button>
                 </div>

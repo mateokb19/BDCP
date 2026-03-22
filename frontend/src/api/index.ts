@@ -24,6 +24,7 @@ export interface ApiVehicle {
   plate: string
   color?: string
   client_id?: number
+  client?: { name: string; phone?: string }
 }
 
 export interface ApiOrderItem {
@@ -46,6 +47,8 @@ export interface ApiOrder {
   subtotal: number
   total: number
   paid: boolean
+  downpayment: string
+  is_warranty: boolean
   items: ApiOrderItem[]
 }
 
@@ -60,6 +63,7 @@ export interface ApiPatioEntry {
   completed_at?: string
   delivered_at?: string
   notes?: string
+  scheduled_delivery_at?: string
   vehicle?: ApiVehicle
   order?: ApiOrder
 }
@@ -75,6 +79,10 @@ export interface OrderCreatePayload {
   operator_id?: number | null
   service_ids: number[]
   notes?: string
+  item_overrides?: { service_id: number; unit_price: number }[]
+  scheduled_delivery_at?: string
+  downpayment?: number
+  is_warranty?: boolean
 }
 
 export interface PatioPatchPayload {

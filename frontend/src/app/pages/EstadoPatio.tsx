@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { motion, AnimatePresence, LayoutGroup } from 'framer-motion'
-import { Clock, ArrowRight, MapPin, Wrench, Pencil, X, ChevronDown } from 'lucide-react'
+import { Clock, ArrowRight, MapPin, Wrench, Pencil, X, ChevronDown, Calendar } from 'lucide-react'
 import { toast } from 'sonner'
 import { PageHeader } from '@/app/components/ui/PageHeader'
 import { Badge } from '@/app/components/ui/Badge'
@@ -52,7 +52,7 @@ function useElapsed(startISO?: string): string {
 interface PatioCardProps {
   entry:     ApiPatioEntry
   opName?:   string
-  onAdvance: (id: number) => void
+  onAdvance: (entry: ApiPatioEntry) => void
   onEdit:    (entry: ApiPatioEntry) => void
 }
 
@@ -122,6 +122,14 @@ function PatioCard({ entry, opName, onAdvance, onEdit }: PatioCardProps) {
         )}
       </div>
 
+      {/* Scheduled delivery */}
+      {entry.scheduled_delivery_at && (
+        <div className="flex items-center gap-1.5 text-xs text-blue-400/80">
+          <Calendar size={11} />
+          <span>Entrega: {new Date(entry.scheduled_delivery_at).toLocaleString('es-CO', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}</span>
+        </div>
+      )}
+
       {/* Services */}
       {items.length > 0 && (
         <div className="flex flex-wrap gap-1">
@@ -139,13 +147,28 @@ function PatioCard({ entry, opName, onAdvance, onEdit }: PatioCardProps) {
           <Clock size={12} />
           <span>{elapsed}</span>
         </div>
-        {entry.order?.total != null && (
-          <span className="text-sm font-bold text-yellow-400 flex-1 text-center">
+        {entry.order?.is_warranty ? (
+          <span className="text-xs font-medium text-orange-400 bg-orange-500/10 rounded-full px-2 py-0.5 border border-orange-500/20">Garantía</span>
+        ) : entry.order?.downpayment && Number(entry.order.downpayment) > 0 ? (
+          <div className="flex-1 text-center space-y-0.5">
+            {[
+              { label: 'Total',  value: Number(entry.order.total),                                              cls: 'text-gray-400' },
+              { label: 'Abono',  value: Number(entry.order.downpayment),                                        cls: 'text-green-400' },
+              { label: 'Resta',  value: Number(entry.order.total) - Number(entry.order.downpayment),            cls: 'text-orange-400 font-bold' },
+            ].map(row => (
+              <div key={row.label} className="flex items-center justify-center gap-1.5 text-xs">
+                <span className="text-gray-600 w-8 text-right">{row.label}</span>
+                <span className={row.cls}>${row.value.toLocaleString('es-CO')}</span>
+              </div>
+            ))}
+          </div>
+        ) : entry.order?.total != null ? (
+          <span className="text-sm font-bold text-yellow-400">
             ${Number(entry.order.total).toLocaleString('es-CO')}
           </span>
-        )}
+        ) : null}
         {next && (
-          <Button variant="outline" size="sm" onClick={() => onAdvance(entry.id)}
+          <Button variant="outline" size="sm" onClick={() => onAdvance(entry)}
             className="text-xs py-1 h-7 shrink-0">
             {NEXT_LABEL[entry.status as PatioStatus]} <ArrowRight size={12} />
           </Button>
@@ -172,6 +195,11 @@ export default function EstadoPatio() {
   const [editingEntry, setEditingEntry] = useState<ApiPatioEntry | null>(null)
   const [editForm, setEditForm] = useState({ color: '', operatorId: '', serviceIds: [] as number[] })
   const [openCats, setOpenCats] = useState<Set<string>>(new Set())
+
+  // Operator picker modal state
+  const [operatorPickEntry, setOperatorPickEntry] = useState<ApiPatioEntry | null>(null)
+  const [pickedOpId, setPickedOpId]               = useState('')
+  const [picking, setPicking]                     = useState(false)
 
   useEffect(() => {
     api.patio.list()
@@ -211,14 +239,35 @@ export default function EstadoPatio() {
     }
   }
 
-  async function advanceStatus(id: number) {
+  async function advanceStatus(entry: ApiPatioEntry) {
+    if (entry.status === 'esperando' && !entry.order?.operator_id) {
+      setOperatorPickEntry(entry)
+      setPickedOpId('')
+      return
+    }
     try {
-      const updated = await api.patio.advance(id)
+      const updated = await api.patio.advance(entry.id)
       setEntries(prev => prev.map(e => e.id === updated.id ? updated : e))
       const label = COLUMNS.find(c => c.status === updated.status)?.label
       toast.success(`${updated.vehicle?.plate ?? 'Vehículo'} → ${label}`)
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Error al avanzar estado')
+    }
+  }
+
+  async function confirmAdvanceWithOperator() {
+    if (!operatorPickEntry || !pickedOpId) return
+    setPicking(true)
+    try {
+      await api.patio.edit(operatorPickEntry.id, { operator_id: Number(pickedOpId) })
+      const updated = await api.patio.advance(operatorPickEntry.id)
+      setEntries(prev => prev.map(e => e.id === updated.id ? updated : e))
+      toast.success(`${updated.vehicle?.plate ?? 'Vehículo'} → En Proceso`)
+      setOperatorPickEntry(null)
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Error al iniciar proceso')
+    } finally {
+      setPicking(false)
     }
   }
 
@@ -484,6 +533,52 @@ export default function EstadoPatio() {
             </motion.div>
           )
         })()}
+      </AnimatePresence>
+
+      {/* Operator picker modal — required when advancing from Esperando */}
+      <AnimatePresence>
+        {operatorPickEntry && (
+          <motion.div
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
+            onClick={e => { if (e.target === e.currentTarget) setOperatorPickEntry(null) }}
+          >
+            <motion.div
+              initial={{ opacity: 0, scale: 0.94, y: 12 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.94, y: 12 }}
+              transition={{ type: 'spring', stiffness: 300, damping: 28 }}
+              className="w-full max-w-sm rounded-2xl border border-white/10 bg-gray-900 shadow-2xl p-6 space-y-4"
+            >
+              <div>
+                <h3 className="text-base font-semibold text-white">Asignar Operario</h3>
+                <p className="text-sm text-gray-500 mt-1">
+                  Para iniciar el proceso es necesario asignar un operario a{' '}
+                  <span className="text-gray-300">{operatorPickEntry.vehicle?.brand} {operatorPickEntry.vehicle?.plate}</span>.
+                </p>
+              </div>
+              <Select
+                label="Operario *"
+                value={pickedOpId || '0'}
+                onValueChange={v => setPickedOpId(v === '0' ? '' : v)}
+                options={[
+                  { value: '0', label: 'Seleccionar operario...' },
+                  ...operators.map(op => ({ value: String(op.id), label: op.name })),
+                ]}
+              />
+              <div className="flex gap-3 pt-1">
+                <Button variant="secondary" size="md" className="flex-1" onClick={() => setOperatorPickEntry(null)}>
+                  Cancelar
+                </Button>
+                <Button variant="primary" size="md" className="flex-1"
+                  onClick={confirmAdvanceWithOperator}
+                  disabled={!pickedOpId || picking}>
+                  {picking ? 'Iniciando...' : 'Iniciar Proceso'}
+                </Button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
       </AnimatePresence>
     </div>
   )

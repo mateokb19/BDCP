@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from app.database import get_db
 from app import models, schemas
 
@@ -12,6 +12,7 @@ def get_vehicle_by_plate(plate: str, db: Session = Depends(get_db)):
     normalized = plate.upper().replace("-", "").strip()
     vehicle = (
         db.query(models.Vehicle)
+        .options(joinedload(models.Vehicle.client))
         .filter(models.Vehicle.plate == normalized)
         .first()
     )

@@ -132,6 +132,8 @@ class ServiceOrder(Base):
     paid           = Column(Boolean, nullable=False, default=False)
     payment_method = Column(String(50))
     notes          = Column(Text)
+    downpayment    = Column(Numeric(12, 2), nullable=False, default=0)
+    is_warranty    = Column(Boolean, nullable=False, default=False)
     appointment_id       = Column(Integer, ForeignKey("appointments.id", ondelete="SET NULL"))
     week_liquidation_id  = Column(Integer, ForeignKey("week_liquidations.id", ondelete="SET NULL"), nullable=True)
     created_at           = Column(DateTime, server_default=func.now(), nullable=False)
@@ -171,6 +173,7 @@ class PatioEntry(Base):
     completed_at = Column(DateTime)
     delivered_at = Column(DateTime)
     notes        = Column(Text)
+    scheduled_delivery_at = Column(DateTime)
 
     order   = relationship("ServiceOrder", back_populates="patio_entry")
     vehicle = relationship("Vehicle", back_populates="patio_entries")
