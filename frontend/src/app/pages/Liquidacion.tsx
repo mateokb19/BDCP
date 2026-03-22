@@ -557,13 +557,21 @@ export default function LiquidacionPage() {
           ? `<span style="background:#fef9c3;color:#854d0e;font-size:11px;font-weight:700;padding:3px 10px;border-radius:999px;letter-spacing:0.3px;">&#9654; PARCIAL</span>`
           : `<span style="background:#fee2e2;color:#991b1b;font-size:11px;font-weight:700;padding:3px 10px;border-radius:999px;letter-spacing:0.3px;">&#10005; SIN LIQUIDAR</span>`
 
-        // Estado de pago section
-        const pendingAmt = Number(w.amount_pending ?? 0)
-        const netAmt     = Number(w.net_amount ?? w.week_commission)
-        const transAmt   = Number(w.payment_transfer ?? 0)
-        const cashAmt    = Number(w.payment_cash ?? 0)
+        // Estado de pago section — split by liquidation state
+        const pendingAmt  = Number(w.amount_pending ?? 0)
+        const transAmt    = Number(w.payment_transfer ?? 0)
+        const cashAmt     = Number(w.payment_cash ?? 0)
 
-        const estadoPago = w.is_liquidated
+        // Compute per-state commission from orders (more accurate than w.week_commission for partial)
+        const liqOrders   = weekOrders.filter(o => o.is_liquidated)
+        const unliqOrders = weekOrders.filter(o => !o.is_liquidated)
+        const liqComm     = liqOrders.reduce((s, o) => s + Number(o.total), 0) * rate / 100
+        const unliqComm   = unliqOrders.reduce((s, o) => s + Number(o.total), 0) * rate / 100
+
+        // What was actually paid in cash/transfer (excludes debt settlements)
+        const totalPaid   = transAmt + cashAmt
+
+        const estadoPago = hasAllLiquidated
           ? `<div style="border-top:2px solid #166534;background:#f0fdf4;padding:16px 18px;">
               <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:#166534;margin-bottom:12px;">Estado de pago — Liquidada</div>
               <div style="display:flex;gap:24px;flex-wrap:wrap;align-items:flex-start;">
@@ -587,7 +595,25 @@ export default function LiquidacionPage() {
                 </div>` : ''}
                 <div style="margin-left:auto;text-align:right;">
                   <div style="font-size:11px;color:#166534;font-weight:600;margin-bottom:2px;">Total pagado al operario</div>
-                  <div style="font-size:20px;font-weight:800;color:#166534;">${fmt(netAmt - pendingAmt)}</div>
+                  <div style="font-size:20px;font-weight:800;color:#166534;">${fmt(totalPaid - pendingAmt)}</div>
+                </div>
+              </div>
+            </div>`
+          : hasAnyLiquidated
+          ? `<div style="border-top:2px solid #854d0e;background:#fefce8;padding:16px 18px;">
+              <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:#854d0e;margin-bottom:12px;">Estado de pago — Parcialmente liquidada</div>
+              <div style="display:flex;gap:16px;flex-wrap:wrap;align-items:stretch;">
+                <div style="flex:1;min-width:180px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:10px 14px;">
+                  <div style="font-size:10px;font-weight:700;color:#166534;text-transform:uppercase;letter-spacing:0.4px;margin-bottom:6px;">Ya pagado (${liqOrders.length} servicio${liqOrders.length !== 1 ? 's' : ''})</div>
+                  <div style="font-size:11px;color:#6b7280;margin-bottom:1px;">Comisión liquidada</div>
+                  <div style="font-size:16px;font-weight:700;color:#166534;">${fmt(liqComm)}</div>
+                  <div style="margin-top:6px;font-size:11px;color:#6b7280;">Transferencia: <strong>${fmt(transAmt)}</strong></div>
+                  <div style="font-size:11px;color:#6b7280;">Efectivo: <strong>${fmt(cashAmt)}</strong></div>
+                </div>
+                <div style="flex:1;min-width:180px;background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:10px 14px;">
+                  <div style="font-size:10px;font-weight:700;color:#991b1b;text-transform:uppercase;letter-spacing:0.4px;margin-bottom:6px;">Sin liquidar (${unliqOrders.length} servicio${unliqOrders.length !== 1 ? 's' : ''})</div>
+                  <div style="font-size:11px;color:#6b7280;margin-bottom:1px;">Comisión pendiente</div>
+                  <div style="font-size:20px;font-weight:800;color:#dc2626;">${fmt(unliqComm)}</div>
                 </div>
               </div>
             </div>`
@@ -596,11 +622,11 @@ export default function LiquidacionPage() {
               <div style="display:flex;gap:24px;align-items:center;">
                 <div>
                   <div style="font-size:11px;color:#6b7280;margin-bottom:2px;">Comisión generada esta semana</div>
-                  <div style="font-size:24px;font-weight:800;color:#dc2626;">${fmt(w.week_commission)}</div>
+                  <div style="font-size:24px;font-weight:800;color:#dc2626;">${fmt(unliqComm)}</div>
                 </div>
                 <div style="margin-left:auto;background:#fee2e2;border:1px solid #fecaca;border-radius:8px;padding:10px 16px;text-align:right;">
                   <div style="font-size:12px;color:#991b1b;font-weight:600;">Pendiente de cobro por el operario</div>
-                  <div style="font-size:18px;font-weight:800;color:#991b1b;margin-top:2px;">${fmt(w.week_commission)}</div>
+                  <div style="font-size:18px;font-weight:800;color:#991b1b;margin-top:2px;">${fmt(unliqComm)}</div>
                 </div>
               </div>
             </div>`
