@@ -3,7 +3,7 @@ import { Outlet, Link, useLocation } from 'react-router'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   PlusCircle, CalendarDays, LayoutGrid, Package,
-  Sparkles, Wallet, TrendingUp, FolderOpen, History,
+  Sparkles, Wallet, TrendingUp, FolderOpen, History, Users,
   ChevronLeft, ChevronRight, Droplets, Menu, X,
 } from 'lucide-react'
 import { cn } from './ui/cn'
@@ -18,6 +18,7 @@ const navItems = [
   { to: '/ingresos-egresos',icon: TrendingUp,   label: 'Ingresos / Egresos' },
   { to: '/documentos',      icon: FolderOpen,   label: 'Documentos' },
   { to: '/historial',       icon: History,      label: 'Historial' },
+  { to: '/clientes',        icon: Users,        label: 'Clientes' },
 ]
 
 function NavLinks({ onClick }: { onClick?: () => void }) {

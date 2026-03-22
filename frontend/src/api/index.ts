@@ -381,6 +381,35 @@ export interface ExpenseCreatePayload {
   notes?:          string
 }
 
+export interface ApiClientVehicle {
+  id:     number
+  plate:  string
+  brand?: string
+  model?: string
+  type:   string
+  color?: string
+}
+
+export interface ApiClient {
+  id:           number
+  name:         string
+  phone?:       string
+  email?:       string
+  notes?:       string
+  created_at:   string
+  vehicles:     ApiClientVehicle[]
+  order_count:  number
+  total_spent:  string
+  last_service?: string
+}
+
+export interface ClientPatchPayload {
+  name?:  string
+  phone?: string
+  email?: string
+  notes?: string
+}
+
 // ── API methods ────────────────────────────────────────────────────────────────
 
 export const api = {
@@ -467,5 +496,13 @@ export const api = {
       apiFetch<ApiExpense>('/egresos', { method: 'POST', body: JSON.stringify(payload) }),
     delete: (id: number) =>
       apiFetch<void>(`/egresos/${id}`, { method: 'DELETE' }),
+  },
+  clients: {
+    list: (search?: string) => {
+      const qs = search ? `?search=${encodeURIComponent(search)}` : ''
+      return apiFetch<ApiClient[]>(`/clients${qs}`)
+    },
+    patch: (id: number, payload: ClientPatchPayload) =>
+      apiFetch<ApiClient>(`/clients/${id}`, { method: 'PATCH', body: JSON.stringify(payload) }),
   },
 }

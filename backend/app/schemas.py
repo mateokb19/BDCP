@@ -449,6 +449,37 @@ class ReportResponse(BaseModel):
     total_pending_owed:  Decimal
 
 
+# ── Clients ─────────────────────────────────────────────────────────────────────
+
+class ClientVehicleOut(OrmBase):
+    id:    int
+    plate: str
+    brand: Optional[str]
+    model: Optional[str]
+    type:  str
+    color: Optional[str]
+
+
+class ClientOut(OrmBase):
+    id:          int
+    name:        str
+    phone:       Optional[str]
+    email:       Optional[str]
+    notes:       Optional[str]
+    created_at:  datetime
+    vehicles:    List[ClientVehicleOut] = []
+    order_count: int                    = 0
+    total_spent: Decimal                = Decimal("0")
+    last_service: Optional[date]        = None
+
+
+class ClientPatch(BaseModel):
+    name:  Optional[str] = None
+    phone: Optional[str] = None
+    email: Optional[str] = None
+    notes: Optional[str] = None
+
+
 # ── Ingresos ────────────────────────────────────────────────────────────────────
 
 class IngresosDayTotal(BaseModel):
