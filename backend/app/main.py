@@ -16,6 +16,15 @@ with engine.connect() as _conn:
         "ALTER TABLE service_orders ADD COLUMN IF NOT EXISTS "
         "week_liquidation_id INTEGER REFERENCES week_liquidations(id) ON DELETE SET NULL"
     ))
+    _conn.execute(text(
+        "ALTER TABLE service_orders ADD COLUMN IF NOT EXISTS downpayment NUMERIC(12,2) NOT NULL DEFAULT 0"
+    ))
+    _conn.execute(text(
+        "ALTER TABLE service_orders ADD COLUMN IF NOT EXISTS is_warranty BOOLEAN NOT NULL DEFAULT FALSE"
+    ))
+    _conn.execute(text(
+        "ALTER TABLE patio ADD COLUMN IF NOT EXISTS scheduled_delivery_at TIMESTAMP"
+    ))
     _conn.commit()
 
 
