@@ -84,7 +84,7 @@ All routes are prefixed `/api/v1/`.
 | POST   | `/orders` | Create order → auto-creates patio entry + ceramic record if applicable |
 | GET    | `/patio` | List all patio entries with nested vehicle + order + items |
 | POST   | `/patio/{id}/advance` | Advance status: esperando→en_proceso→listo→entregado |
-| PATCH  | `/patio/{id}` | Assign operator, add/remove services (`service_ids: []` allowed — sets total to 0); syncs operator to ceramic_treatments |
+| PATCH  | `/patio/{id}` | Assign operator, add/remove services (`service_ids: []` allowed — sets total to 0), update `scheduled_delivery_at`; syncs operator to ceramic_treatments |
 | DELETE | `/patio/{id}` | Cancel entry (esperando or en_proceso only): deletes items, marks order cancelado, removes patio entry |
 | GET    | `/appointments?month=YYYY-MM` | List appointments for a month |
 | POST   | `/appointments` | Create appointment |
@@ -98,7 +98,8 @@ All routes are prefixed `/api/v1/`.
 | POST   | `/liquidation/{op_id}/debts` | Create a new debt |
 | PATCH  | `/liquidation/debts/{debt_id}/paid` | Mark debt as fully paid |
 | GET    | `/liquidation/{op_id}/report?period=week\|month&ref_date=YYYY-MM-DD` | Generate PDF-ready report |
-| GET    | `/ingresos?period=day\|week\|month\|year&ref_date=YYYY-MM-DD` | Income totals by payment method + daily breakdown |
+| GET    | `/ingresos?period=day\|week\|month\|year&ref_date=YYYY-MM-DD` | Income totals by payment method + daily breakdown (includes abonos) |
+| GET    | `/ingresos/breakdown?method=cash\|datafono\|nequi\|bancolombia&date_start=&date_end=` | Per-order breakdown for a payment method; includes abono rows (`is_abono: true`) |
 | GET    | `/egresos?date_start=&date_end=` | List expenses |
 | POST   | `/egresos` | Create expense |
 | DELETE | `/egresos/{id}` | Delete expense |
@@ -163,6 +164,7 @@ ALTER TABLE service_orders ADD COLUMN IF NOT EXISTS payment_datafono NUMERIC(12,
 ALTER TABLE service_orders ADD COLUMN IF NOT EXISTS payment_nequi NUMERIC(12,2) NOT NULL DEFAULT 0;
 ALTER TABLE service_orders ADD COLUMN IF NOT EXISTS payment_bancolombia NUMERIC(12,2) NOT NULL DEFAULT 0;
 ALTER TABLE expenses ADD COLUMN IF NOT EXISTS payment_method VARCHAR(50);
+ALTER TABLE service_orders ADD COLUMN IF NOT EXISTS downpayment_method VARCHAR(50);
 ```
 
 ## Service order flow
@@ -173,12 +175,14 @@ ALTER TABLE expenses ADD COLUMN IF NOT EXISTS payment_method VARCHAR(50);
      - **Type match**: autofills brand, model, color, client name, and phone.
      - **Type mismatch**: autofills client info only; shows warning toast; disables service selection and "Revisar Orden" button until user selects the correct vehicle type.
      - Plate cleared → all autofilled fields cleared immediately.
-   - Optional fields: delivery date/time, abono (partial payment), "Entrada por garantía" toggle.
+   - Optional fields: delivery date/time (hour picker shows 8:00–17:00), abono (partial payment with method selector), "Entrada por garantía" toggle.
+   - **Abono method selector**: when abono > 0, 4 checkbox buttons appear — Efectivo, Banco Caja Social, Nequi, Bancolombia. Selected method stored as `downpayment_method` and sent to backend.
+   - Number inputs (price edit, abono): `onWheel={e => e.currentTarget.blur()}` blocks accidental scroll-wheel changes.
    - **Step 3 (Revisar Orden)**: Read-only summary with:
      - Per-service price editing (pencil icon); discount shown as `−$X (Y%)`.
      - When "Garantía" is ON: ShieldCheck icon per service to toggle warranty coverage individually — warranty services display `$0` with strikethrough of original price; non-warranty services keep normal/custom price.
      - If abono > 0: shows Total / Abono / Restante breakdown.
-   - Confirm → `POST /api/v1/orders` with `item_overrides` (custom and warranty prices), `scheduled_delivery_at`, `downpayment`, `is_warranty`.
+   - Confirm → `POST /api/v1/orders` with `item_overrides` (custom and warranty prices), `scheduled_delivery_at`, `downpayment`, `downpayment_method`, `is_warranty`.
 2. Backend creates atomically: client (find or create by phone), vehicle (find or create by plate), order, order items (price snapshot via `item_overrides`), patio entry (`esperando`). If any item is `ceramico` category, also creates a `CeramicTreatment` record with `next_maintenance = application_date + 6 months`.
 3. **EstadoPatio**: fetches `GET /api/v1/patio` on mount. Kanban cards advance via `POST /patio/{id}/advance`. Services editable via `PATCH /patio/{id}`. Operator assigned via modal on first advance.
    - **Cards**: collapsed by default showing vehicle icon, brand/model, plate/color, operator, delivery date/time, elapsed time, and advance button. Clicking the card expands it to show client name/phone, service badges, financial breakdown (total / abono / resta), payment breakdown (if entregado), facturación electrónica panel (if requested), and "Editar orden" link.
@@ -191,9 +195,10 @@ ALTER TABLE expenses ADD COLUMN IF NOT EXISTS payment_method VARCHAR(50);
      - Confirming cancellation calls `DELETE /patio/{id}`: deletes order items, marks order as `cancelado`, removes patio entry. Vehicle disappears from kanban immediately.
      - No operator selector in edit modal — operator is only assigned via the advance-to-en_proceso flow.
    - **GET /patio** filters: returns all non-delivered entries + entries delivered today.
-   - Delivery date picker: `min` set to today — past dates not selectable. Hour picker is a `<select>` dropdown showing full hours only (6:00–18:00).
+   - **Inline delivery date editor**: pencil icon next to the delivery date in the card summary (independent of "Editar orden"). Click opens an inline animated panel with a dark-styled date picker + hour selector (8–17). Saves via `PATCH /patio/{id}` with `scheduled_delivery_at`. "Sin fecha de entrega" shown when no date set.
+   - Delivery date picker in the inline editor: dark-themed via `style={{ colorScheme: 'dark' }}` + `[&::-webkit-calendar-picker-indicator]:invert`. Hour selector shows 8:00–17:00.
    - **Advancing listo → entregado**: intercepts with a payment modal:
-     - **Method selection**: checkboxes for Efectivo, Banco Caja Social, Nequi (3118777229 / llave NEQUIJUL11739), Bancolombia Ahorros (60123354942 / llave @SaraP9810). One method checked → amount = full restante automatically. Multiple methods checked → inline amount input per method + balance indicator.
+     - **Method selection**: checkboxes (no default selection) for Efectivo, Banco Caja Social, Nequi (3118777229 / llave NEQUIJUL11739), Bancolombia Ahorros (60123354942 / llave @SaraP9810). Confirmar disabled until at least one method is checked. One method checked → amount = full restante automatically. Multiple methods checked → inline amount input per method + balance indicator.
      - **Facturación electrónica**: optional checkbox at the bottom. When checked, expands a form for Tipo (Persona Natural / Empresa), Tipo de identificación (CC/CE/PP/TI or NIT/CE), Número de identificación + Dv (NIT only), Nombre and Teléfono (pre-filled from order client), Correo electrónico.
      - On confirm: saves 4 payment amounts to order + marks `paid=True`. If factura checkbox was active and an ID was entered, saves factura data to `localStorage` keyed by order ID under `bdcpolo_facturas`.
    - **Facturación electrónica indicator**: delivered cards with saved factura data show a blue "FE" pill badge in the collapsed header. Expanded view shows a blue-tinted panel with Tipo, ID type+number+Dv, and email.
@@ -249,11 +254,19 @@ Key implementation details:
 
 ## Ingresos / Egresos
 
-- **`GET /ingresos`**: aggregates delivered `ServiceOrder` totals by 4 payment method columns. Returns `daily_totals` (no date gaps) for chart rendering + period totals.
+- **`GET /ingresos`**: aggregates delivered `ServiceOrder` totals by 4 payment method columns + abonos from non-cancelled orders with `downpayment > 0`. `_abono_bucket()` maps `downpayment_method` to the correct bucket. Returns `daily_totals` (no date gaps) + period totals.
+- **`GET /ingresos/breakdown`**: accepts `method` (cash|datafono|nequi|bancolombia), `date_start`, `date_end`. Returns list of `IngresoBreakdownItem` (order_number, date, plate, vehicle, client, amount, is_abono). Queries two sets: final payments (delivered orders where `col_attr > 0`) + abono payments (non-cancelled orders where `downpayment > 0 AND downpayment_method == label`). Sorted by date descending.
+- **Breakdown modal**: clicking any payment method card on the IngresosEgresos page opens a modal listing each order paid via that method. Abono rows tagged with an orange "Abono" badge. Footer shows count + total.
 - **`GET/POST/DELETE /egresos`**: full CRUD for manual expense records. `payment_method` field stores where money came from (Efectivo, Nequi, Bancolombia, Datáfono, Transferencia). "Banco Caja Social" is shown as label in the UI but stored as `"Datáfono"` in the DB for backward compatibility.
 - **Liquidation auto-expense**: confirming a weekly liquidation auto-creates `Expense` records (category "Salarios") for the amounts paid by each method.
 - **Chart granularity**: matches the active period tab — day shows a single bar, week/month show daily bars, year shows monthly bars. Both ingresos and egresos rendered side by side (yellow / red).
 - **Period sync**: changing the period tab recomputes `date_start`/`date_end` via `getPeriodDates()` and re-fetches both ingresos and egresos simultaneously.
+
+## Ceramicos section
+
+- **`GET /ceramics`**: loads treatments with nested `vehicle → client` via chained `joinedload`. `CeramicVehicleOut` now includes `client?: CeramicClientOut`.
+- **Page `/ceramicos`**: each treatment card shows client name (User icon) + tappable phone number (`tel:` link with Phone icon). Client block rendered between the card header and the info row, only when `vehicle.client` is present.
+- Filter tabs: Todos / Vigentes / Por Vencer (<30 days) / Vencidos. `AnimatePresence mode="popLayout"` animates card shuffles.
 
 ## Clientes section
 
@@ -289,6 +302,13 @@ Key implementation details:
 - **"Ingresar Vehículo" from calendar**: appointments in `programada` or `confirmada` status show a green LogIn icon button. Clicking navigates to `/` with `location.state.fromAppointment` containing vehicle/client data. IngresarServicio reads this on mount via `useEffect`, pre-fills the form, and jumps to step 2. State cleared via `window.history.replaceState({}, '')` to prevent re-apply on refresh.
 - **`AppointmentPatch.date` as `Optional[str]`**: Pydantic v2 name collision — field named `date` with type `Optional[date]` resolves incorrectly. Fixed by using `Optional[str]` and parsing manually in the router with `_date.fromisoformat(data['date'])`. The `date` stdlib import is aliased as `_date` in `appointments.py` to avoid the same collision.
 - **Clients are find-or-create by phone**: `POST /orders` looks up an existing client by phone; if found, updates the name; if not found, creates a new one. The `/clientes` page surfaces these records.
+- **Dark native date inputs**: `style={{ colorScheme: 'dark' }}` + Tailwind arbitrary variant `[&::-webkit-calendar-picker-indicator]:invert` applied to `<input type="date">` elements. Pure CSS solution — no third-party date picker needed.
+- **Blocking scroll-wheel on number inputs**: `onWheel={e => e.currentTarget.blur()}` prevents accidental value changes when scrolling over `<input type="number">` fields (price editor, abono field).
+- **`model_fields_set` for optional PATCH fields**: `PATCH /patio/{id}` uses `payload.model_fields_set` to detect whether `scheduled_delivery_at` was explicitly included (even as `null` to clear). Without this check, an absent field and a null field are indistinguishable.
+- **`_METHOD_MAP` in ingresos router**: maps frontend method keys (`cash`, `datafono`, `nequi`, `bancolombia`) to `(db_column_attr, downpayment_method_label)` tuples. Used by both `GET /ingresos/breakdown` and the abono aggregation in `GET /ingresos`.
+- **`downpayment_method` flow**: stored as VARCHAR(50) on `service_orders`. Frontend sends the UI label directly (`"Efectivo"`, `"Banco Caja Social"`, `"Nequi"`, `"Bancolombia"`). `_abono_bucket()` in `ingresos.py` maps these to the correct `payment_*` column bucket.
+- **Inventory mock data**: `mockInventoryCategories` and `mockInventoryItems` in `src/data/mock.ts` use real items from the shop inventory PDF — 23 items (Área de Detallado), 18 items (Área Latonería y Pintura), plus placeholder items for Área Administrativa and Área de Limpieza. Quantities from PDF: 0.25 = quarter unit, 0.5 = half unit.
+- **CalendarioCitas hour picker**: shows 6:00–18:00. IngresarServicio and patio inline delivery editor show 8:00–17:00 (operating hours).
 
 ## Common commands
 
