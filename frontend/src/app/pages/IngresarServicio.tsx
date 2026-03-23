@@ -28,6 +28,7 @@ interface OrderDraft {
   customPrices: Record<number, string>
   warrantyServiceIds: number[]
   downpayment: string
+  downpaymentMethod: string
   isWarranty: boolean
 }
 
@@ -116,7 +117,7 @@ export default function IngresarServicio() {
     clientName: '', clientPhone: '',
     selectedServices: [], notes: '',
     deliveryDate: '', deliveryTime: '',
-    customPrices: {}, warrantyServiceIds: [], downpayment: '', isWarranty: false,
+    customPrices: {}, warrantyServiceIds: [], downpayment: '', downpaymentMethod: '', isWarranty: false,
   })
 
   // Pre-fill from appointment (navigated from CalendarioCitas)
@@ -156,7 +157,7 @@ export default function IngresarServicio() {
 
   // Hour picker dropdown
   const [showHourPicker, setShowHourPicker] = useState(false)
-  const HOURS = Array.from({ length: 13 }, (_, i) => i + 6)
+  const HOURS = Array.from({ length: 10 }, (_, i) => i + 8)
 
   function goTo(next: Step) {
     setPrevStep(step)
@@ -306,15 +307,16 @@ export default function IngresarServicio() {
         serviceIds:   form.selectedServices,
         notes:        form.notes || undefined,
         scheduledDeliveryAt,
-        downpayment:  abonoAmt > 0 ? abonoAmt : undefined,
-        isWarranty:   form.isWarranty,
+        downpayment:       abonoAmt > 0 ? abonoAmt : undefined,
+        downpaymentMethod: abonoAmt > 0 && form.downpaymentMethod ? form.downpaymentMethod : undefined,
+        isWarranty:        form.isWarranty,
         itemOverrides: itemOverrides.length > 0 ? itemOverrides : undefined,
       })
       toast.success(`Orden ${orderNumber} creada`, {
         description: `${form.plate} · ${form.clientName} → Estado de Patio`,
       })
       setStep(1); setPrevStep(1); setVehicleType(null)
-      setForm({ plate: '', brand: '', model: '', color: '', clientName: '', clientPhone: '', selectedServices: [], notes: '', deliveryDate: '', deliveryTime: '', customPrices: {}, warrantyServiceIds: [], downpayment: '', isWarranty: false })
+      setForm({ plate: '', brand: '', model: '', color: '', clientName: '', clientPhone: '', selectedServices: [], notes: '', deliveryDate: '', deliveryTime: '', customPrices: {}, warrantyServiceIds: [], downpayment: '', downpaymentMethod: '', isWarranty: false })
       setBrandQuery('')
       navigate('/')
     } catch (err) {
@@ -774,6 +776,7 @@ export default function IngresarServicio() {
                                 onChange={e => setForm(f => ({ ...f, customPrices: { ...f.customPrices, [s.id]: e.target.value } }))}
                                 onBlur={() => setEditingPriceId(null)}
                                 onKeyDown={e => e.key === 'Enter' && setEditingPriceId(null)}
+                                onWheel={e => e.currentTarget.blur()}
                                 className="w-28 rounded-lg border border-yellow-500/40 bg-gray-900 px-2 py-1 text-sm text-yellow-400 text-right focus:outline-none"
                                 autoFocus
                               />
@@ -842,6 +845,7 @@ export default function IngresarServicio() {
                           placeholder="0"
                           value={form.downpayment}
                           onChange={e => setForm(f => ({ ...f, downpayment: e.target.value }))}
+                          onWheel={e => e.currentTarget.blur()}
                           className="w-full rounded-xl border border-white/10 bg-white/5 pl-7 pr-3 py-2 text-sm text-gray-100 focus:border-yellow-500/50 focus:outline-none focus:ring-2 focus:ring-yellow-500/20"
                         />
                       </div>
@@ -852,6 +856,36 @@ export default function IngresarServicio() {
                         </div>
                       )}
                     </div>
+                    {abonoAmt > 0 && (
+                      <div className="mt-2.5">
+                        <p className="text-xs text-gray-500 mb-1.5">Método de pago del abono</p>
+                        <div className="grid grid-cols-2 gap-1.5">
+                          {[
+                            { key: 'Efectivo',          label: 'Efectivo' },
+                            { key: 'Banco Caja Social', label: 'Banco Caja Social' },
+                            { key: 'Nequi',             label: 'Nequi' },
+                            { key: 'Bancolombia',       label: 'Bancolombia' },
+                          ].map(m => {
+                            const sel = form.downpaymentMethod === m.key
+                            return (
+                              <button
+                                key={m.key} type="button"
+                                onClick={() => setForm(f => ({ ...f, downpaymentMethod: sel ? '' : m.key }))}
+                                className={cn(
+                                  'flex items-center gap-2 rounded-xl border px-3 py-2 text-left text-xs transition-colors',
+                                  sel ? 'border-yellow-500/60 bg-yellow-500/10 text-yellow-300' : 'border-white/8 bg-white/[0.03] text-gray-400 hover:bg-white/[0.06]'
+                                )}
+                              >
+                                <div className={cn('w-3.5 h-3.5 rounded border-2 shrink-0 flex items-center justify-center', sel ? 'border-yellow-500 bg-yellow-500' : 'border-gray-600')}>
+                                  {sel && <svg viewBox="0 0 10 8" className="w-2 h-1.5 text-gray-900" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M1 4l2.5 2.5L9 1"/></svg>}
+                                </div>
+                                {m.label}
+                              </button>
+                            )
+                          })}
+                        </div>
+                      </div>
+                    )}
                     {abonoAmt > total && (
                       <p className="text-xs text-red-400 mt-1">El abono no puede superar el total</p>
                     )}

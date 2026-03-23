@@ -40,6 +40,9 @@ with engine.connect() as _conn:
     _conn.execute(text(
         "ALTER TABLE expenses ADD COLUMN IF NOT EXISTS payment_method VARCHAR(50)"
     ))
+    _conn.execute(text(
+        "ALTER TABLE service_orders ADD COLUMN IF NOT EXISTS downpayment_method VARCHAR(50)"
+    ))
     _conn.commit()
 
 

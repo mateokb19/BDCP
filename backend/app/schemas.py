@@ -86,6 +86,7 @@ class OrderCreate(BaseModel):
     item_overrides:         list[ItemOverride]  = []
     scheduled_delivery_at:  Optional[datetime]  = None
     downpayment:            Optional[Decimal]   = None
+    downpayment_method:     Optional[str]       = None
     is_warranty:            bool                = False
 
     @field_validator("plate")

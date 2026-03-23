@@ -94,6 +94,7 @@ export interface OrderCreatePayload {
   item_overrides?: { service_id: number; unit_price: number }[]
   scheduled_delivery_at?: string
   downpayment?: number
+  downpayment_method?: string
   is_warranty?: boolean
 }
 

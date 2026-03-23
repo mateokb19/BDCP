@@ -14,6 +14,7 @@ export interface NewOrderPayload {
   notes?: string
   scheduledDeliveryAt?: string
   downpayment?: number
+  downpaymentMethod?: string
   isWarranty?: boolean
   itemOverrides?: { service_id: number; unit_price: number }[]
 }
@@ -52,6 +53,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       notes:                  data.notes,
       scheduled_delivery_at:  data.scheduledDeliveryAt,
       downpayment:            data.downpayment,
+      downpayment_method:     data.downpaymentMethod,
       is_warranty:            data.isWarranty,
       item_overrides:         data.itemOverrides,
     })

@@ -120,6 +120,7 @@ def create_order(payload: schemas.OrderCreate, db: Session = Depends(get_db)):
         total=subtotal,            # full amount (before abono; abono is separate field)
         paid=False,
         downpayment=payload.downpayment or Decimal("0.00"),
+        downpayment_method=payload.downpayment_method,
         is_warranty=payload.is_warranty,
         notes=payload.notes,
     )
