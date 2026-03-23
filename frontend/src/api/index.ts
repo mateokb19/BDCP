@@ -105,12 +105,20 @@ export interface PatioPatchPayload {
   service_ids?: number[]
 }
 
+export interface ApiCeramicClient {
+  id:     number
+  name:   string
+  phone?: string
+  email?: string
+}
+
 export interface ApiCeramicVehicle {
-  plate: string
-  brand?: string
-  model?: string
-  color?: string
-  type:   string
+  plate:   string
+  brand?:  string
+  model?:  string
+  color?:  string
+  type:    string
+  client?: ApiCeramicClient
 }
 
 export interface ApiCeramicOperator {

@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Sparkles, ShieldCheck, ShieldAlert, ShieldOff } from 'lucide-react'
+import { Sparkles, ShieldCheck, ShieldAlert, ShieldOff, User, Phone } from 'lucide-react'
 import { format, parseISO, differenceInDays } from 'date-fns'
 import { es } from 'date-fns/locale'
 import { toast } from 'sonner'
@@ -180,6 +180,26 @@ export default function Ceramicos() {
                       </div>
                       <Badge variant={tVariant} className="shrink-0">{abbrev}</Badge>
                     </div>
+
+                    {/* Client */}
+                    {c.vehicle?.client && (
+                      <div className="flex items-center justify-between gap-3 rounded-xl bg-white/[0.03] border border-white/6 px-3 py-2">
+                        <div className="flex items-center gap-1.5 min-w-0">
+                          <User size={12} className="text-gray-600 shrink-0" />
+                          <span className="text-xs text-gray-300 truncate">{c.vehicle.client.name}</span>
+                        </div>
+                        {c.vehicle.client.phone && (
+                          <a
+                            href={`tel:${c.vehicle.client.phone}`}
+                            onClick={e => e.stopPropagation()}
+                            className="flex items-center gap-1 text-xs text-yellow-400 hover:text-yellow-300 transition-colors shrink-0"
+                          >
+                            <Phone size={11} />
+                            {c.vehicle.client.phone}
+                          </a>
+                        )}
+                      </div>
+                    )}
 
                     {/* Info row */}
                     <div className="grid grid-cols-2 gap-2 text-xs">

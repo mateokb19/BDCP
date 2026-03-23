@@ -196,12 +196,20 @@ class PatioPatch(BaseModel):
 
 # ── Ceramics ─────────────────────────────────────────────────────────────────
 
+class CeramicClientOut(OrmBase):
+    id:    int
+    name:  str
+    phone: Optional[str]
+    email: Optional[str]
+
+
 class CeramicVehicleOut(OrmBase):
-    plate: str
-    brand: Optional[str]
-    model: Optional[str]
-    color: Optional[str]
-    type:  str
+    plate:  str
+    brand:  Optional[str]
+    model:  Optional[str]
+    color:  Optional[str]
+    type:   str
+    client: Optional[CeramicClientOut]
 
 
 class CeramicOperatorOut(OrmBase):
