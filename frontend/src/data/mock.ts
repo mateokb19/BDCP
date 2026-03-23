@@ -152,6 +152,8 @@ export const mockPatioEntries: PatioEntry[] = [
 export const mockInventoryCategories: InventoryCategory[] = [
   { id: 1, name: 'Área de Detallado' },
   { id: 2, name: 'Área Latonería y Pintura' },
+  { id: 3, name: 'Área Administrativa' },
+  { id: 4, name: 'Área de Limpieza' },
 ]
 
 // ---- INVENTORY ITEMS ----
@@ -201,7 +203,28 @@ export const mockInventoryItems: InventoryItem[] = [
   { id: 38, category_id: 2, name: 'Tira de taco 320',      description: '',         quantity: 0,    unit: 'unidades', min_stock: 5, updated_at: '2026-03-23T00:00:00Z' },
   { id: 39, category_id: 2, name: 'Tira de taco 400',      description: '',         quantity: 0,    unit: 'unidades', min_stock: 5, updated_at: '2026-03-23T00:00:00Z' },
   { id: 40, category_id: 2, name: 'Trapos',                description: '',         quantity: 1000, unit: 'gramos',   min_stock: 500, updated_at: '2026-03-23T00:00:00Z' },
-  { id: 41, category_id: 2, name: 'Filtros',               description: '',         quantity: 0,    unit: 'unidades', min_stock: 2, updated_at: '2026-03-23T00:00:00Z' },
+  { id: 41, category_id: 2, name: 'Filtros',               description: '',         quantity: 0,    unit: 'unidades', min_stock: 2,   updated_at: '2026-03-23T00:00:00Z' },
+
+  // ── Área Administrativa ────────────────────────────────────────────
+  // Placeholder — inventariar y actualizar cantidades, unidades y costos
+  { id: 42, category_id: 3, name: 'Resmas de papel',       description: '',         quantity: 0,    unit: 'resmas',   min_stock: 2,   updated_at: '2026-03-23T00:00:00Z' },
+  { id: 43, category_id: 3, name: 'Lapiceros',             description: '',         quantity: 0,    unit: 'unidades', min_stock: 5,   updated_at: '2026-03-23T00:00:00Z' },
+  { id: 44, category_id: 3, name: 'Carpetas / Folders',    description: '',         quantity: 0,    unit: 'unidades', min_stock: 3,   updated_at: '2026-03-23T00:00:00Z' },
+  { id: 45, category_id: 3, name: 'Tóner / Cartucho',      description: '',         quantity: 0,    unit: 'unidades', min_stock: 1,   updated_at: '2026-03-23T00:00:00Z' },
+  { id: 46, category_id: 3, name: 'Papel higiénico',       description: '',         quantity: 0,    unit: 'unidades', min_stock: 6,   updated_at: '2026-03-23T00:00:00Z' },
+  { id: 47, category_id: 3, name: 'Jabón para manos',      description: '',         quantity: 0,    unit: 'unidades', min_stock: 2,   updated_at: '2026-03-23T00:00:00Z' },
+  { id: 48, category_id: 3, name: 'Bolsas de basura',      description: '',         quantity: 0,    unit: 'unidades', min_stock: 10,  updated_at: '2026-03-23T00:00:00Z' },
+
+  // ── Área de Limpieza ───────────────────────────────────────────────
+  // Placeholder — inventariar y actualizar cantidades, unidades y costos
+  { id: 49, category_id: 4, name: 'Escoba',                description: '',         quantity: 0,    unit: 'unidades', min_stock: 1,   updated_at: '2026-03-23T00:00:00Z' },
+  { id: 50, category_id: 4, name: 'Trapeador',             description: '',         quantity: 0,    unit: 'unidades', min_stock: 1,   updated_at: '2026-03-23T00:00:00Z' },
+  { id: 51, category_id: 4, name: 'Recogedor',             description: '',         quantity: 0,    unit: 'unidades', min_stock: 1,   updated_at: '2026-03-23T00:00:00Z' },
+  { id: 52, category_id: 4, name: 'Jabón desengrasante',   description: '',         quantity: 0,    unit: 'unidades', min_stock: 1,   updated_at: '2026-03-23T00:00:00Z' },
+  { id: 53, category_id: 4, name: 'Desinfectante',         description: '',         quantity: 0,    unit: 'litros',   min_stock: 1,   updated_at: '2026-03-23T00:00:00Z' },
+  { id: 54, category_id: 4, name: 'Hipoclorito',           description: '',         quantity: 0,    unit: 'litros',   min_stock: 1,   updated_at: '2026-03-23T00:00:00Z' },
+  { id: 55, category_id: 4, name: 'Esponja / Estropajo',   description: '',         quantity: 0,    unit: 'unidades', min_stock: 3,   updated_at: '2026-03-23T00:00:00Z' },
+  { id: 56, category_id: 4, name: 'Guantes de caucho',     description: '',         quantity: 0,    unit: 'pares',    min_stock: 2,   updated_at: '2026-03-23T00:00:00Z' },
 ]
 
 // ---- CERAMIC TREATMENTS ----
