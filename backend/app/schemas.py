@@ -188,10 +188,11 @@ class AdvancePayload(BaseModel):
 
 
 class PatioPatch(BaseModel):
-    color:       Optional[str] = None
-    operator_id: Optional[int] = None
-    notes:       Optional[str] = None
-    service_ids: Optional[list[int]] = None
+    color:                  Optional[str]      = None
+    operator_id:            Optional[int]      = None
+    notes:                  Optional[str]      = None
+    service_ids:            Optional[list[int]]= None
+    scheduled_delivery_at:  Optional[datetime] = None
 
 
 # ── Ceramics ─────────────────────────────────────────────────────────────────

@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { motion, AnimatePresence, LayoutGroup } from 'framer-motion'
-import { Clock, ArrowRight, Wrench, Pencil, X, ChevronDown, Calendar, Phone, User, ChevronUp, Banknote, CreditCard } from 'lucide-react'
+import { Clock, ArrowRight, Wrench, Pencil, X, ChevronDown, Calendar, Phone, User, ChevronUp, Banknote, CreditCard, Check } from 'lucide-react'
 import { toast } from 'sonner'
 import { PageHeader } from '@/app/components/ui/PageHeader'
 import { Badge } from '@/app/components/ui/Badge'
@@ -65,21 +65,63 @@ function useElapsed(startISO?: string): string {
   return elapsed
 }
 
-interface PatioCardProps {
-  entry:         ApiPatioEntry
-  opName?:       string
-  facturaRecord?: FacturaRecord
-  onAdvance:     (entry: ApiPatioEntry) => void
-  onEdit:        (entry: ApiPatioEntry) => void
+const DELIVERY_HOURS = Array.from({ length: 10 }, (_, i) => i + 8)
+const _today = () => {
+  const d = new Date()
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
 }
 
-function PatioCard({ entry, opName, facturaRecord, onAdvance, onEdit }: PatioCardProps) {
+interface PatioCardProps {
+  entry:          ApiPatioEntry
+  opName?:        string
+  facturaRecord?: FacturaRecord
+  onAdvance:      (entry: ApiPatioEntry) => void
+  onEdit:         (entry: ApiPatioEntry) => void
+  onUpdate:       (updated: ApiPatioEntry) => void
+}
+
+function PatioCard({ entry, opName, facturaRecord, onAdvance, onEdit, onUpdate }: PatioCardProps) {
   const elapsed  = useElapsed(entry.started_at ?? entry.entered_at)
   const next     = NEXT_STATUS[entry.status as PatioStatus]
   const vehicle  = entry.vehicle
   const items    = entry.order?.items ?? []
   const client   = vehicle?.client
-  const [expanded, setExpanded] = useState(false)
+  const [expanded,        setExpanded]        = useState(false)
+  const [editingDelivery, setEditingDelivery] = useState(false)
+  const [draftDate,       setDraftDate]       = useState('')
+  const [draftHour,       setDraftHour]       = useState('')
+  const [savingDelivery,  setSavingDelivery]  = useState(false)
+
+  function openDeliveryEdit(e: React.MouseEvent) {
+    e.stopPropagation()
+    if (entry.scheduled_delivery_at) {
+      const dt = new Date(entry.scheduled_delivery_at)
+      const y  = dt.getFullYear()
+      const mo = String(dt.getMonth()+1).padStart(2,'0')
+      const d  = String(dt.getDate()).padStart(2,'0')
+      setDraftDate(`${y}-${mo}-${d}`)
+      setDraftHour(`${String(dt.getHours()).padStart(2,'0')}:00`)
+    } else {
+      setDraftDate(_today())
+      setDraftHour('08:00')
+    }
+    setEditingDelivery(true)
+  }
+
+  async function saveDelivery(e: React.MouseEvent) {
+    e.stopPropagation()
+    setSavingDelivery(true)
+    try {
+      const iso = draftDate ? `${draftDate}T${draftHour || '08:00'}:00` : null
+      const updated = await api.patio.edit(entry.id, { scheduled_delivery_at: iso })
+      onUpdate(updated)
+      setEditingDelivery(false)
+    } catch {
+      toast.error('No se pudo actualizar la fecha')
+    } finally {
+      setSavingDelivery(false)
+    }
+  }
 
   const total    = Number(entry.order?.total ?? 0)
   const abono    = Number(entry.order?.downpayment ?? 0)
@@ -141,18 +183,89 @@ function PatioCard({ entry, opName, facturaRecord, onAdvance, onEdit }: PatioCar
           }
         </div>
 
-        {/* Delivery date */}
-        {entry.scheduled_delivery_at && (
-          <div className="flex items-center gap-1.5 text-xs text-blue-400/80">
-            <Calendar size={11} className="shrink-0" />
-            <span>
-              Entrega: {new Date(entry.scheduled_delivery_at).toLocaleString('es-CO', {
-                day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit',
-              })}
-            </span>
-          </div>
-        )}
+        {/* Delivery date + edit icon */}
+        <div className="flex items-center justify-between gap-2">
+          {entry.scheduled_delivery_at ? (
+            <div className="flex items-center gap-1.5 text-xs text-blue-400/80">
+              <Calendar size={11} className="shrink-0" />
+              <span>
+                Entrega: {new Date(entry.scheduled_delivery_at).toLocaleString('es-CO', {
+                  day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit',
+                })}
+              </span>
+            </div>
+          ) : (
+            <span className="text-xs text-gray-700 italic">Sin fecha de entrega</span>
+          )}
+          {entry.status !== 'entregado' && (
+            <button
+              type="button"
+              onClick={openDeliveryEdit}
+              className="shrink-0 rounded-lg p-1 text-gray-600 hover:text-blue-400 hover:bg-white/[0.06] transition-colors"
+              title="Editar fecha de entrega"
+            >
+              <Pencil size={11} />
+            </button>
+          )}
+        </div>
       </div>
+
+      {/* ── Inline delivery date editor ───────────────────── */}
+      <AnimatePresence initial={false}>
+        {editingDelivery && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.18, ease: 'easeInOut' }}
+            className="overflow-hidden"
+          >
+            <div
+              className="px-4 py-3 border-t border-white/6 bg-blue-500/[0.04] space-y-2.5"
+              onClick={e => e.stopPropagation()}
+            >
+              <p className="text-xs font-medium text-blue-300">Fecha de entrega acordada</p>
+              <div className="flex gap-2">
+                <input
+                  type="date"
+                  value={draftDate}
+                  min={_today()}
+                  onChange={e => setDraftDate(e.target.value)}
+                  className="flex-1 rounded-xl border border-white/10 bg-gray-900 px-3 py-2 text-sm text-gray-100 focus:border-blue-500/50 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                />
+                <select
+                  value={draftHour}
+                  onChange={e => setDraftHour(e.target.value)}
+                  className="w-24 rounded-xl border border-white/10 bg-gray-900 px-2 py-2 text-sm text-gray-100 focus:border-blue-500/50 focus:outline-none appearance-none text-center"
+                >
+                  {DELIVERY_HOURS.map(h => {
+                    const val = `${String(h).padStart(2,'0')}:00`
+                    return <option key={h} value={val} className="bg-gray-900">{val}</option>
+                  })}
+                </select>
+              </div>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={e => { e.stopPropagation(); setEditingDelivery(false) }}
+                  className="flex-1 rounded-xl border border-white/10 py-1.5 text-xs text-gray-400 hover:text-gray-200 transition-colors"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  onClick={saveDelivery}
+                  disabled={savingDelivery || !draftDate}
+                  className="flex-1 rounded-xl bg-blue-500/20 border border-blue-500/40 py-1.5 text-xs text-blue-300 hover:bg-blue-500/30 disabled:opacity-50 transition-colors flex items-center justify-center gap-1"
+                >
+                  <Check size={12} />
+                  {savingDelivery ? 'Guardando...' : 'Guardar'}
+                </button>
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* ── Expanded detail ───────────────────────────────── */}
       <AnimatePresence initial={false}>
@@ -561,6 +674,7 @@ export default function EstadoPatio() {
                           facturaRecord={entry.order?.id != null ? facturaRecords[entry.order.id] : undefined}
                           onAdvance={advanceStatus}
                           onEdit={openEdit}
+                          onUpdate={updated => setEntries(prev => prev.map(e => e.id === updated.id ? updated : e))}
                         />
                       )
                     })}

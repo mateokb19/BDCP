@@ -173,6 +173,9 @@ def edit_patio_entry(id: int, payload: schemas.PatioPatch, db: Session = Depends
     if payload.notes is not None:
         entry.notes = payload.notes
 
+    if "scheduled_delivery_at" in payload.model_fields_set:
+        entry.scheduled_delivery_at = payload.scheduled_delivery_at
+
     db.commit()
     db.refresh(entry)
     return entry
