@@ -1,9 +1,10 @@
 from calendar import monthrange
 from collections import defaultdict
 from datetime import date, timedelta
+from typing import List
 
-from fastapi import APIRouter, Depends
-from sqlalchemy.orm import Session
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.orm import Session, joinedload
 
 from app.database import get_db
 from app import models, schemas
@@ -138,3 +139,79 @@ def get_ingresos(
         payment_bancolombia=payment_bancolombia,
         daily_totals=daily_totals,
     )
+
+
+# Maps frontend method key → (payment column attr, downpayment_method label)
+_METHOD_MAP = {
+    "cash":        ("payment_cash",        "Efectivo"),
+    "datafono":    ("payment_datafono",    "Banco Caja Social"),
+    "nequi":       ("payment_nequi",       "Nequi"),
+    "bancolombia": ("payment_bancolombia", "Bancolombia"),
+}
+
+
+@router.get("/breakdown", response_model=List[schemas.IngresoBreakdownItem])
+def get_breakdown(
+    method: str,
+    date_start: str,
+    date_end: str,
+    db: Session = Depends(get_db),
+):
+    if method not in _METHOD_MAP:
+        raise HTTPException(status_code=422, detail=f"Método inválido: {method}")
+
+    try:
+        ds = date.fromisoformat(date_start)
+        de = date.fromisoformat(date_end)
+    except ValueError:
+        raise HTTPException(status_code=422, detail="Fechas inválidas")
+
+    col_attr, abono_label = _METHOD_MAP[method]
+
+    def _load(q):
+        return q.options(
+            joinedload(models.ServiceOrder.vehicle).joinedload(models.Vehicle.client)
+        ).filter(
+            models.ServiceOrder.date >= ds,
+            models.ServiceOrder.date <= de,
+        ).all()
+
+    def _item(o, amount, is_abono=False):
+        v = o.vehicle
+        brand_model = f"{v.brand or ''} {v.model or ''}".strip() if v else "—"
+        client_name = (v.client.name if v and v.client else None) or "—"
+        return schemas.IngresoBreakdownItem(
+            order_number=o.order_number or f"#{o.id}",
+            date=str(o.date),
+            plate=v.plate if v else "—",
+            vehicle=brand_model,
+            client=client_name,
+            amount=float(amount),
+            is_abono=is_abono,
+        )
+
+    results: list[schemas.IngresoBreakdownItem] = []
+
+    # Final payments (delivered orders)
+    delivered = _load(
+        db.query(models.ServiceOrder).filter(
+            models.ServiceOrder.status == models.OrderStatusEnum.entregado,
+            getattr(models.ServiceOrder, col_attr) > 0,
+        )
+    )
+    for o in delivered:
+        results.append(_item(o, getattr(o, col_attr)))
+
+    # Abono payments
+    abono_orders = _load(
+        db.query(models.ServiceOrder).filter(
+            models.ServiceOrder.status != models.OrderStatusEnum.cancelado,
+            models.ServiceOrder.downpayment > 0,
+            models.ServiceOrder.downpayment_method == abono_label,
+        )
+    )
+    for o in abono_orders:
+        results.append(_item(o, o.downpayment, is_abono=True))
+
+    results.sort(key=lambda x: x.date, reverse=True)
+    return results

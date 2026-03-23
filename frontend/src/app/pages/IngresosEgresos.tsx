@@ -6,13 +6,13 @@ import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend,
   PieChart, Pie, Cell,
 } from 'recharts'
-import { TrendingUp, TrendingDown, Minus, Banknote, CreditCard, Plus, Trash2 } from 'lucide-react'
+import { TrendingUp, TrendingDown, Minus, Banknote, CreditCard, Plus, Trash2, X, Car } from 'lucide-react'
 import { toast } from 'sonner'
 import { PageHeader } from '@/app/components/ui/PageHeader'
 import { GlassCard } from '@/app/components/ui/GlassCard'
 import { Button } from '@/app/components/ui/Button'
 import { cn } from '@/app/components/ui/cn'
-import { api, type ApiIngresosResponse, type ApiExpense } from '@/api'
+import { api, type ApiIngresosResponse, type ApiExpense, type ApiIngresoBreakdownItem } from '@/api'
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
@@ -91,6 +91,25 @@ export default function IngresosEgresos() {
   const [expenses,  setExpenses]  = useState<ApiExpense[]>([])
   const [dateStart, setDateStart] = useState(() => getPeriodDates('month').start)
   const [dateEnd,   setDateEnd]   = useState(() => getPeriodDates('month').end)
+
+  // Breakdown modal
+  const [breakdown,      setBreakdown]      = useState<ApiIngresoBreakdownItem[] | null>(null)
+  const [breakdownMethod,setBreakdownMethod]= useState<typeof PAY_METHODS[number] | null>(null)
+  const [loadingBreakdown,setLoadingBreakdown] = useState(false)
+
+  async function openBreakdown(m: typeof PAY_METHODS[number]) {
+    setBreakdownMethod(m)
+    setBreakdown(null)
+    setLoadingBreakdown(true)
+    try {
+      const items = await api.ingresos.breakdown(m.key.replace('payment_', ''), dateStart, dateEnd)
+      setBreakdown(items)
+    } catch {
+      toast.error('No se pudo cargar el desglose')
+    } finally {
+      setLoadingBreakdown(false)
+    }
+  }
 
   // New expense modal
   const [showModal,   setShowModal]   = useState(false)
@@ -235,10 +254,18 @@ export default function IngresosEgresos() {
             const val = Number(ingresosData?.[m.key] ?? 0)
             const pct = ingresosTotal > 0 ? Math.round((val / ingresosTotal) * 100) : 0
             return (
-              <div key={m.key} className="rounded-xl border border-white/8 bg-white/[0.03] px-3 py-2.5 space-y-1.5">
-                <div className="flex items-center gap-1.5">
-                  <span style={{ color: m.color }}>{m.icon}</span>
-                  <span className="text-xs text-gray-500">{m.label}</span>
+              <button
+                key={m.key}
+                type="button"
+                onClick={() => openBreakdown(m)}
+                className="rounded-xl border border-white/8 bg-white/[0.03] px-3 py-2.5 space-y-1.5 text-left hover:bg-white/[0.06] hover:border-white/15 transition-colors cursor-pointer group"
+              >
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-1.5">
+                    <span style={{ color: m.color }}>{m.icon}</span>
+                    <span className="text-xs text-gray-500">{m.label}</span>
+                  </div>
+                  <span className="text-[10px] text-gray-700 group-hover:text-gray-500 transition-colors">Ver desglose →</span>
                 </div>
                 <p className="text-base font-bold text-white">${val.toLocaleString('es-CO')}</p>
                 <div className="w-full h-1 rounded-full bg-white/8 overflow-hidden">
@@ -247,7 +274,7 @@ export default function IngresosEgresos() {
                     transition={{ duration: 0.5, ease: 'easeOut' }} />
                 </div>
                 <p className="text-[11px] text-gray-700">{pct}% del total</p>
-              </div>
+              </button>
             )
           })}
         </div>
@@ -447,6 +474,95 @@ export default function IngresosEgresos() {
                   {saving ? 'Guardando...' : 'Guardar Egreso'}
                 </Button>
               </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* ── Breakdown modal ───────────────────────────────── */}
+      <AnimatePresence>
+        {breakdownMethod && (
+          <motion.div
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/60 backdrop-blur-sm p-4"
+            onClick={() => { setBreakdownMethod(null); setBreakdown(null) }}
+          >
+            <motion.div
+              initial={{ opacity: 0, y: 24 }} animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: 24 }}
+              transition={{ type: 'spring', stiffness: 300, damping: 28 }}
+              className="w-full max-w-lg rounded-2xl border border-white/10 bg-gray-900 shadow-2xl overflow-hidden max-h-[80vh] flex flex-col"
+              onClick={e => e.stopPropagation()}
+            >
+              {/* Header */}
+              <div className="flex items-center justify-between px-5 py-4 border-b border-white/8">
+                <div className="flex items-center gap-2.5">
+                  <span style={{ color: breakdownMethod.color }}>{breakdownMethod.icon}</span>
+                  <div>
+                    <h3 className="text-sm font-semibold text-white">{breakdownMethod.label}</h3>
+                    <p className="text-xs text-gray-500">
+                      {dateStart === dateEnd ? dateStart : `${dateStart} · ${dateEnd}`}
+                    </p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => { setBreakdownMethod(null); setBreakdown(null) }}
+                  className="rounded-lg p-1.5 text-gray-500 hover:text-gray-200 hover:bg-white/8 transition-colors"
+                >
+                  <X size={16} />
+                </button>
+              </div>
+
+              {/* Body */}
+              <div className="overflow-y-auto flex-1">
+                {loadingBreakdown ? (
+                  <div className="flex items-center justify-center py-12">
+                    <p className="text-sm text-gray-500">Cargando...</p>
+                  </div>
+                ) : !breakdown || breakdown.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center py-12 gap-2">
+                    <Car size={28} className="text-gray-700" />
+                    <p className="text-sm text-gray-600">Sin pagos con este método en el período</p>
+                  </div>
+                ) : (
+                  <div className="divide-y divide-white/6">
+                    {breakdown.map((item, i) => (
+                      <div key={i} className="flex items-center justify-between gap-3 px-5 py-3 hover:bg-white/[0.02] transition-colors">
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="text-xs font-mono text-gray-500">{item.order_number}</span>
+                            {item.is_abono && (
+                              <span className="rounded-full bg-orange-500/15 border border-orange-500/25 px-1.5 py-0.5 text-[10px] text-orange-400">Abono</span>
+                            )}
+                          </div>
+                          <p className="text-sm font-medium text-gray-200 truncate mt-0.5">
+                            {item.plate} · {item.vehicle}
+                          </p>
+                          <div className="flex items-center gap-3 mt-0.5">
+                            <span className="text-xs text-gray-600">{item.client}</span>
+                            <span className="text-xs text-gray-700">
+                              {new Date(item.date + 'T12:00:00').toLocaleDateString('es-CO', { day: 'numeric', month: 'short', year: 'numeric' })}
+                            </span>
+                          </div>
+                        </div>
+                        <p className="text-sm font-bold shrink-0" style={{ color: breakdownMethod.color }}>
+                          ${Number(item.amount).toLocaleString('es-CO')}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Footer total */}
+              {breakdown && breakdown.length > 0 && (
+                <div className="border-t border-white/8 px-5 py-3 flex items-center justify-between bg-white/[0.02]">
+                  <span className="text-xs text-gray-500">{breakdown.length} {breakdown.length === 1 ? 'pago' : 'pagos'}</span>
+                  <span className="text-sm font-bold text-white">
+                    Total: ${breakdown.reduce((s, i) => s + Number(i.amount), 0).toLocaleString('es-CO')}
+                  </span>
+                </div>
+              )}
             </motion.div>
           </motion.div>
         )}

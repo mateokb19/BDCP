@@ -512,6 +512,16 @@ class IngresosResponse(BaseModel):
     daily_totals:        List[IngresosDayTotal]
 
 
+class IngresoBreakdownItem(BaseModel):
+    order_number: str
+    date:         str
+    plate:        str
+    vehicle:      str          # "brand model"
+    client:       str
+    amount:       float
+    is_abono:     bool = False
+
+
 # ── Expenses (Egresos) ──────────────────────────────────────────────────────────
 
 class ExpenseOut(OrmBase):

@@ -371,6 +371,16 @@ export interface ApiIngresosResponse {
   daily_totals:        ApiIngresosDayTotal[]
 }
 
+export interface ApiIngresoBreakdownItem {
+  order_number: string
+  date:         string
+  plate:        string
+  vehicle:      string
+  client:       string
+  amount:       number
+  is_abono:     boolean
+}
+
 export interface ApiExpense {
   id:              number
   date:            string
@@ -492,6 +502,10 @@ export const api = {
       const qs = new URLSearchParams({ period })
       if (refDate) qs.set('ref_date', refDate)
       return apiFetch<ApiIngresosResponse>(`/ingresos?${qs}`)
+    },
+    breakdown: (method: string, dateStart: string, dateEnd: string) => {
+      const qs = new URLSearchParams({ method, date_start: dateStart, date_end: dateEnd })
+      return apiFetch<ApiIngresoBreakdownItem[]>(`/ingresos/breakdown?${qs}`)
     },
   },
   egresos: {
