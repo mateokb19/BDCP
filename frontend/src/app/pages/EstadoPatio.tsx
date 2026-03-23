@@ -231,12 +231,14 @@ function PatioCard({ entry, opName, facturaRecord, onAdvance, onEdit, onUpdate }
                   value={draftDate}
                   min={_today()}
                   onChange={e => setDraftDate(e.target.value)}
-                  className="flex-1 rounded-xl border border-white/10 bg-gray-900 px-3 py-2 text-sm text-gray-100 focus:border-blue-500/50 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                  style={{ colorScheme: 'dark' }}
+                  className="flex-1 rounded-xl border border-blue-500/30 bg-gray-900 px-3 py-2 text-sm text-gray-100 focus:border-blue-500/60 focus:outline-none focus:ring-2 focus:ring-blue-500/20 [&::-webkit-calendar-picker-indicator]:opacity-50 [&::-webkit-calendar-picker-indicator]:invert"
                 />
                 <select
                   value={draftHour}
                   onChange={e => setDraftHour(e.target.value)}
-                  className="w-24 rounded-xl border border-white/10 bg-gray-900 px-2 py-2 text-sm text-gray-100 focus:border-blue-500/50 focus:outline-none appearance-none text-center"
+                  style={{ colorScheme: 'dark' }}
+                  className="w-24 rounded-xl border border-blue-500/30 bg-gray-900 px-2 py-2 text-sm text-gray-100 focus:border-blue-500/60 focus:outline-none appearance-none text-center"
                 >
                   {DELIVERY_HOURS.map(h => {
                     const val = `${String(h).padStart(2,'0')}:00`
