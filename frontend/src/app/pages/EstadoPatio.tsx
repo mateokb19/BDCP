@@ -330,7 +330,7 @@ export default function EstadoPatio() {
 
   // Payment modal state (delivery)
   const [paymentEntry, setPaymentEntry] = useState<ApiPatioEntry | null>(null)
-  const [payMethods,   setPayMethods]   = useState<Record<string, string>>({ cash: '' })
+  const [payMethods,   setPayMethods]   = useState<Record<string, string>>({})
   const [delivering,   setDelivering]   = useState(false)
   const [factura,      setFactura]      = useState(false)
   const [facturaData,  setFacturaData]  = useState({
@@ -347,7 +347,6 @@ export default function EstadoPatio() {
     setPayMethods(prev => {
       const next = { ...prev }
       if (key in next) {
-        if (Object.keys(next).length === 1) return prev // keep at least one
         delete next[key]
       } else {
         next[key] = ''
@@ -413,7 +412,7 @@ export default function EstadoPatio() {
     if (entry.status === 'listo') {
       const restante = Math.max(0, Number(entry.order?.total ?? 0) - Number(entry.order?.downpayment ?? 0))
       setPaymentEntry(entry)
-      setPayMethods({ cash: '' })
+      setPayMethods({})
       setFactura(false)
       setFacturaData({
         tipo:      'persona_natural',
@@ -1086,7 +1085,7 @@ export default function EstadoPatio() {
                   </Button>
                   <Button variant="primary" size="md" className="flex-1"
                     onClick={confirmDelivery}
-                    disabled={delivering}>
+                    disabled={delivering || Object.keys(payMethods).length === 0}>
                     {delivering ? 'Entregando...' : 'Confirmar Entrega'}
                   </Button>
                 </div>
