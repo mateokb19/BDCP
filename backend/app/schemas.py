@@ -373,11 +373,13 @@ class LiqWeekResponse(BaseModel):
     commission_amount:        Decimal
     is_liquidated:            bool
     unliquidated_count:       int
-    liquidated_at:            Optional[str]
-    net_amount:               Optional[Decimal]
-    payment_transfer_amount:  Optional[Decimal]
-    payment_cash_amount:      Optional[Decimal]
-    amount_pending:           Optional[Decimal]
+    liquidated_at:               Optional[str]
+    net_amount:                  Optional[Decimal]
+    payment_cash_amount:         Optional[Decimal]
+    payment_datafono_amount:     Optional[Decimal]
+    payment_nequi_amount:        Optional[Decimal]
+    payment_bancolombia_amount:  Optional[Decimal]
+    amount_pending:              Optional[Decimal]
 
 
 class DebtPaymentOut(OrmBase):
@@ -414,8 +416,10 @@ class AbonoItem(BaseModel):
 class LiquidatePayload(BaseModel):
     abonos:               List[AbonoItem] = []
     company_settlements:  List[AbonoItem] = []
-    payment_transfer:     Decimal = Decimal("0")
     payment_cash:         Decimal = Decimal("0")
+    payment_datafono:     Decimal = Decimal("0")
+    payment_nequi:        Decimal = Decimal("0")
+    payment_bancolombia:  Decimal = Decimal("0")
 
 
 # ── Report ─────────────────────────────────────────────────────────────────────
@@ -440,15 +444,17 @@ class ReportOrder(BaseModel):
 
 
 class ReportWeekStatus(BaseModel):
-    week_start:        str
-    week_end:          str
-    is_liquidated:     bool
-    week_gross:        Decimal
-    week_commission:   Decimal
-    net_amount:        Optional[Decimal] = None
-    payment_transfer:  Optional[Decimal] = None
-    payment_cash:      Optional[Decimal] = None
-    amount_pending:    Optional[Decimal] = None
+    week_start:           str
+    week_end:             str
+    is_liquidated:        bool
+    week_gross:           Decimal
+    week_commission:      Decimal
+    net_amount:           Optional[Decimal] = None
+    payment_cash:         Optional[Decimal] = None
+    payment_datafono:     Optional[Decimal] = None
+    payment_nequi:        Optional[Decimal] = None
+    payment_bancolombia:  Optional[Decimal] = None
+    amount_pending:       Optional[Decimal] = None
 
 
 class ReportPendingDebt(BaseModel):
@@ -486,23 +492,31 @@ class ClientVehicleOut(OrmBase):
 
 
 class ClientOut(OrmBase):
-    id:          int
-    name:        str
-    phone:       Optional[str]
-    email:       Optional[str]
-    notes:       Optional[str]
-    created_at:  datetime
-    vehicles:    List[ClientVehicleOut] = []
-    order_count: int                    = 0
-    total_spent: Decimal                = Decimal("0")
-    last_service: Optional[date]        = None
+    id:                   int
+    name:                 str
+    phone:                Optional[str]
+    email:                Optional[str]
+    tipo_persona:         Optional[str]
+    tipo_identificacion:  Optional[str]
+    identificacion:       Optional[str]
+    dv:                   Optional[str]
+    notes:                Optional[str]
+    created_at:           datetime
+    vehicles:             List[ClientVehicleOut] = []
+    order_count:          int                    = 0
+    total_spent:          Decimal                = Decimal("0")
+    last_service:         Optional[date]         = None
 
 
 class ClientPatch(BaseModel):
-    name:  Optional[str] = None
-    phone: Optional[str] = None
-    email: Optional[str] = None
-    notes: Optional[str] = None
+    name:                Optional[str] = None
+    phone:               Optional[str] = None
+    email:               Optional[str] = None
+    tipo_persona:        Optional[str] = None
+    tipo_identificacion: Optional[str] = None
+    identificacion:      Optional[str] = None
+    dv:                  Optional[str] = None
+    notes:               Optional[str] = None
 
 
 # ── Ingresos ────────────────────────────────────────────────────────────────────

@@ -87,8 +87,10 @@ def _build_week_response(
         unliquidated_count=unliquidated_count,
         liquidated_at=str(liq_record.liquidated_at) if liq_record else None,
         net_amount=liq_record.net_amount if liq_record else None,
-        payment_transfer_amount=liq_record.payment_transfer if liq_record else None,
         payment_cash_amount=liq_record.payment_cash if liq_record else None,
+        payment_datafono_amount=liq_record.payment_datafono if liq_record else None,
+        payment_nequi_amount=liq_record.payment_nequi if liq_record else None,
+        payment_bancolombia_amount=liq_record.payment_bancolombia if liq_record else None,
         amount_pending=liq_record.amount_pending if liq_record else None,
     )
 
@@ -189,17 +191,19 @@ def liquidate_week(
     db.flush()
 
     net_amount = (new_commission - total_abonos + total_settled).quantize(Decimal("0.01"))
-    total_paid = (body.payment_transfer + body.payment_cash).quantize(Decimal("0.01"))
+    total_paid = (body.payment_cash + body.payment_datafono + body.payment_nequi + body.payment_bancolombia).quantize(Decimal("0.01"))
     amount_pending = max(Decimal("0"), net_amount - total_paid).quantize(Decimal("0.01"))
 
     if existing:
         # Update the existing liquidation record with the incremental amounts
         existing.total_amount      = (existing.total_amount      or Decimal("0")) + new_gross
         existing.commission_amount = (existing.commission_amount or Decimal("0")) + new_commission
-        existing.net_amount        = (existing.net_amount        or Decimal("0")) + net_amount
-        existing.payment_transfer  = (existing.payment_transfer  or Decimal("0")) + body.payment_transfer
-        existing.payment_cash      = (existing.payment_cash      or Decimal("0")) + body.payment_cash
-        existing.amount_pending    = (existing.amount_pending    or Decimal("0")) + amount_pending
+        existing.net_amount           = (existing.net_amount           or Decimal("0")) + net_amount
+        existing.payment_cash         = (existing.payment_cash         or Decimal("0")) + body.payment_cash
+        existing.payment_datafono     = (existing.payment_datafono     or Decimal("0")) + body.payment_datafono
+        existing.payment_nequi        = (existing.payment_nequi        or Decimal("0")) + body.payment_nequi
+        existing.payment_bancolombia  = (existing.payment_bancolombia  or Decimal("0")) + body.payment_bancolombia
+        existing.amount_pending       = (existing.amount_pending       or Decimal("0")) + amount_pending
         liq = existing
     else:
         liq = models.WeekLiquidation(
@@ -208,8 +212,10 @@ def liquidate_week(
             total_amount=new_gross,
             commission_amount=new_commission,
             net_amount=net_amount,
-            payment_transfer=body.payment_transfer,
             payment_cash=body.payment_cash,
+            payment_datafono=body.payment_datafono,
+            payment_nequi=body.payment_nequi,
+            payment_bancolombia=body.payment_bancolombia,
             amount_pending=amount_pending,
         )
         db.add(liq)
@@ -237,25 +243,25 @@ def liquidate_week(
     db.commit()
     db.refresh(liq)
 
-    # Auto-create expense records for the actual cash-out to the operator
+    # Auto-create expense records for each payment method used
     liq_desc = f"Pago operario {operator.name} · semana {week_start}"
-    if body.payment_cash > 0:
-        db.add(models.Expense(
-            date=ws,
-            amount=body.payment_cash,
-            category="Salarios",
-            description=liq_desc,
-            payment_method="Efectivo",
-        ))
-    if body.payment_transfer > 0:
-        db.add(models.Expense(
-            date=ws,
-            amount=body.payment_transfer,
-            category="Salarios",
-            description=liq_desc,
-            payment_method="Transferencia",
-        ))
-    if body.payment_cash > 0 or body.payment_transfer > 0:
+    any_payment = False
+    for amt, method_label in [
+        (body.payment_cash,        "Efectivo"),
+        (body.payment_datafono,    "Datáfono"),
+        (body.payment_nequi,       "Nequi"),
+        (body.payment_bancolombia, "Bancolombia"),
+    ]:
+        if amt > 0:
+            db.add(models.Expense(
+                date=ws,
+                amount=amt,
+                category="Salarios",
+                description=liq_desc,
+                payment_method=method_label,
+            ))
+            any_payment = True
+    if any_payment:
         db.commit()
 
     # Link debt payments to this liquidation
@@ -374,8 +380,10 @@ def get_report(
             week_gross=wk_gross,
             week_commission=wk_comm,
             net_amount=liq.net_amount if liq else None,
-            payment_transfer=liq.payment_transfer if liq else None,
             payment_cash=liq.payment_cash if liq else None,
+            payment_datafono=liq.payment_datafono if liq else None,
+            payment_nequi=liq.payment_nequi if liq else None,
+            payment_bancolombia=liq.payment_bancolombia if liq else None,
             amount_pending=liq.amount_pending if liq else None,
         ))
         cur += timedelta(days=7)

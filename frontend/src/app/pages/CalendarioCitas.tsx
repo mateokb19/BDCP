@@ -5,9 +5,8 @@ import {
   isSameDay, isSameMonth, addMonths, subMonths, parseISO, startOfWeek, endOfWeek, eachDayOfInterval, isBefore, startOfDay,
 } from 'date-fns'
 import { es } from 'date-fns/locale'
-import { ChevronLeft, ChevronRight, Plus, Clock, Phone, MessageSquare, CalendarDays as EmptyCalIcon, Pencil, Trash2, LogIn } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Plus, Clock, Phone, MessageSquare, CalendarDays as EmptyCalIcon, Pencil, Trash2, Wrench } from 'lucide-react'
 import { toast } from 'sonner'
-import { useNavigate } from 'react-router'
 import { PageHeader } from '@/app/components/ui/PageHeader'
 import { Button } from '@/app/components/ui/Button'
 import { Modal } from '@/app/components/ui/Modal'
@@ -16,6 +15,7 @@ import { GlassCard } from '@/app/components/ui/GlassCard'
 import { VehicleTypeIcon, vehicleTypeLabel } from '@/app/components/ui/VehicleTypeIcon'
 import { EmptyState } from '@/app/components/ui/EmptyState'
 import { cn } from '@/app/components/ui/cn'
+import { useNavigate } from 'react-router'
 import { api, type ApiAppointment } from '@/api'
 import type { VehicleType } from '@/types'
 
@@ -90,6 +90,7 @@ const selectCls = 'w-full rounded-xl border border-white/10 bg-gray-900 px-3 py-
 export default function CalendarioCitas() {
   const navigate = useNavigate()
   const today = new Date()
+  const TODAY_STR = format(today, 'yyyy-MM-dd')
   const [currentMonth, setCurrentMonth] = useState(() => new Date(today.getFullYear(), today.getMonth(), 1))
   const [selectedDate, setSelectedDate] = useState(today)
   const [appointments, setAppointments] = useState<ApiAppointment[]>([])
@@ -98,6 +99,7 @@ export default function CalendarioCitas() {
   const [editAppt, setEditAppt] = useState<ApiAppointment | null>(null)
   const [form, setForm] = useState({ ...emptyForm })
   const [saving, setSaving] = useState(false)
+  const [confirmAppt, setConfirmAppt] = useState<ApiAppointment | null>(null)
 
   const monthStart = startOfMonth(currentMonth)
   const monthEnd   = endOfMonth(currentMonth)
@@ -190,6 +192,14 @@ export default function CalendarioCitas() {
       toast.success('Cita eliminada')
     } catch {
       toast.error('Error al eliminar la cita')
+    }
+  }
+
+  function handleAddService(appt: ApiAppointment) {
+    if (appt.date === TODAY_STR) {
+      navigate('/', { state: { fromAppointment: appt } })
+    } else {
+      setConfirmAppt(appt)
     }
   }
 
@@ -323,18 +333,11 @@ export default function CalendarioCitas() {
                               )}
                               {(appt.status === 'programada' || appt.status === 'confirmada') && (
                                 <button
-                                  onClick={() => navigate('/', { state: { fromAppointment: {
-                                    vehicleType: appt.vehicle_type,
-                                    plate:       appt.plate,
-                                    brand:       appt.brand,
-                                    model:       appt.model,
-                                    clientName:  appt.client_name,
-                                    clientPhone: appt.client_phone,
-                                  }}})}
+                                  onClick={() => handleAddService(appt)}
                                   className="p-1.5 rounded-lg text-gray-500 hover:text-green-400 hover:bg-green-500/10 transition-colors"
-                                  title="Ingresar vehículo"
+                                  title="Agregar servicio"
                                 >
-                                  <LogIn size={14} />
+                                  <Wrench size={14} />
                                 </button>
                               )}
                               <button
@@ -386,6 +389,37 @@ export default function CalendarioCitas() {
         </div>
       </div>
 
+      {/* Confirm add-service on future date */}
+      <Modal open={confirmAppt !== null} onClose={() => setConfirmAppt(null)} title="¿Agregar servicio?" size="sm">
+        <div className="p-6 space-y-4">
+          <p className="text-gray-300 text-sm leading-relaxed">
+            Esta cita está programada para el{' '}
+            <span className="text-white font-medium">
+              {confirmAppt && format(parseISO(confirmAppt.date), "d 'de' MMMM", { locale: es })}
+            </span>
+            , que no es hoy. ¿Deseas agregar el servicio de todos modos?
+          </p>
+          {confirmAppt?.client_name && (
+            <p className="text-xs text-gray-500">
+              {confirmAppt.client_name}{confirmAppt.plate ? ` · ${confirmAppt.plate}` : ''}
+            </p>
+          )}
+          <div className="flex gap-3 pt-1">
+            <Button variant="secondary" size="lg" className="flex-1" onClick={() => setConfirmAppt(null)}>
+              No, volver
+            </Button>
+            <Button variant="primary" size="lg" className="flex-1" onClick={() => {
+              if (confirmAppt) {
+                navigate('/', { state: { fromAppointment: confirmAppt } })
+                setConfirmAppt(null)
+              }
+            }}>
+              Sí, agregar
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
       {/* Create / Edit Modal */}
       <Modal open={showModal} onClose={() => setShowModal(false)} title={editAppt ? 'Editar Cita' : 'Nueva Cita'} size="lg">
         <div className="p-6 space-y-4">
@@ -397,21 +431,60 @@ export default function CalendarioCitas() {
                 onChange={e => setForm(p => ({ ...p, date: e.target.value }))}
                 className={cn(selectCls, '[color-scheme:dark]')} />
             </div>
-            <div className="flex flex-col gap-1.5">
-              <label className="text-sm font-medium text-gray-300">Hora</label>
-              <select
-                value={form.time}
-                onChange={e => setForm(p => ({ ...p, time: e.target.value }))}
-                className={selectCls}
-              >
-                <option value="">— Hora —</option>
-                {Array.from({ length: 13 }, (_, i) => i + 6).map(h => {
-                  const val = `${String(h).padStart(2, '0')}:00`
-                  return <option key={h} value={val}>{h}:00</option>
-                })}
-              </select>
-            </div>
           </div>
+          {/* Time picker: hour row + :00/:30 toggle */}
+          {(() => {
+            const selectedH = form.time ? parseInt(form.time.split(':')[0]) : null
+            const selectedM = form.time ? form.time.split(':')[1] : null
+            return (
+              <div className="flex flex-col gap-2">
+                <label className="text-sm font-medium text-gray-300">
+                  Hora
+                  {form.time && <span className="ml-2 text-yellow-400 font-semibold">{form.time}</span>}
+                </label>
+                {/* Hour row */}
+                <div className="grid grid-cols-5 gap-1.5">
+                  {Array.from({ length: 10 }, (_, i) => i + 8).map(h => {
+                    const active = selectedH === h
+                    return (
+                      <button key={h} type="button"
+                        onClick={() => {
+                          const m = (h === 17 || !selectedM) ? '00' : selectedM
+                          setForm(p => ({ ...p, time: `${String(h).padStart(2,'0')}:${m}` }))
+                        }}
+                        className={cn(
+                          'rounded-lg py-2 text-sm font-medium transition-colors border',
+                          active
+                            ? 'bg-yellow-500/20 border-yellow-500/50 text-yellow-400'
+                            : 'bg-white/5 border-white/8 text-gray-400 hover:bg-white/10 hover:text-gray-200'
+                        )}
+                      >
+                        {h}
+                      </button>
+                    )
+                  })}
+                </div>
+                {/* Minute toggle — only shown once an hour is picked */}
+                {selectedH !== null && (
+                  <div className="grid grid-cols-2 gap-1.5">
+                    {(['00', ...(selectedH < 17 ? ['30'] : [])] as string[]).map(m => (
+                      <button key={m} type="button"
+                        onClick={() => setForm(p => ({ ...p, time: `${String(selectedH).padStart(2,'0')}:${m}` }))}
+                        className={cn(
+                          'rounded-lg py-2 text-sm font-semibold transition-colors border',
+                          selectedM === m
+                            ? 'bg-yellow-500/20 border-yellow-500/50 text-yellow-400'
+                            : 'bg-white/5 border-white/8 text-gray-400 hover:bg-white/10 hover:text-gray-200'
+                        )}
+                      >
+                        :{m}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )
+          })()}
 
           <div className="flex flex-col gap-1.5">
             <label className="text-sm font-medium text-gray-300">Tipo de Vehículo</label>

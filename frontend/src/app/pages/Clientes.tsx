@@ -134,10 +134,14 @@ interface DrawerProps {
 function ClientDrawer({ client, onClose, onUpdated }: DrawerProps) {
   const [editing, setEditing] = useState(false)
   const [editForm, setEditForm] = useState({
-    name:  client.name,
-    phone: client.phone  ?? '',
-    email: client.email  ?? '',
-    notes: client.notes  ?? '',
+    name:                client.name,
+    phone:               client.phone               ?? '',
+    email:               client.email               ?? '',
+    tipo_persona:        client.tipo_persona        ?? 'natural',
+    tipo_identificacion: client.tipo_identificacion ?? '',
+    identificacion:      client.identificacion      ?? '',
+    dv:                  client.dv                  ?? '',
+    notes:               client.notes               ?? '',
   })
   const [saving, setSaving] = useState(false)
 
@@ -145,10 +149,14 @@ function ClientDrawer({ client, onClose, onUpdated }: DrawerProps) {
   useEffect(() => {
     setEditing(false)
     setEditForm({
-      name:  client.name,
-      phone: client.phone  ?? '',
-      email: client.email  ?? '',
-      notes: client.notes  ?? '',
+      name:                client.name,
+      phone:               client.phone               ?? '',
+      email:               client.email               ?? '',
+      tipo_persona:        client.tipo_persona        ?? 'natural',
+      tipo_identificacion: client.tipo_identificacion ?? '',
+      identificacion:      client.identificacion      ?? '',
+      dv:                  client.dv                  ?? '',
+      notes:               client.notes               ?? '',
     })
   }, [client.id])
 
@@ -160,10 +168,14 @@ function ClientDrawer({ client, onClose, onUpdated }: DrawerProps) {
     setSaving(true)
     try {
       const updated = await api.clients.patch(client.id, {
-        name:  editForm.name.trim()  || undefined,
-        phone: editForm.phone.trim() || undefined,
-        email: editForm.email.trim() || undefined,
-        notes: editForm.notes.trim() || undefined,
+        name:                editForm.name.trim()                || undefined,
+        phone:               editForm.phone.trim()               || undefined,
+        email:               editForm.email.trim()               || undefined,
+        tipo_persona:        editForm.tipo_persona               || undefined,
+        tipo_identificacion: editForm.tipo_identificacion.trim() || undefined,
+        identificacion:      editForm.identificacion.trim()      || undefined,
+        dv:                  editForm.dv.trim()                  || undefined,
+        notes:               editForm.notes.trim()               || undefined,
       })
       onUpdated(updated)
       setEditing(false)
@@ -225,7 +237,7 @@ function ClientDrawer({ client, onClose, onUpdated }: DrawerProps) {
                 <Button
                   size="sm"
                   variant="ghost"
-                  onClick={() => { setEditing(false); setEditForm({ name: client.name, phone: client.phone ?? '', email: client.email ?? '', notes: client.notes ?? '' }) }}
+                  onClick={() => { setEditing(false); setEditForm({ name: client.name, phone: client.phone ?? '', email: client.email ?? '', tipo_persona: client.tipo_persona ?? 'natural', tipo_identificacion: client.tipo_identificacion ?? '', identificacion: client.identificacion ?? '', dv: client.dv ?? '', notes: client.notes ?? '' }) }}
                   disabled={saving}
                 >
                   <X size={14} />
@@ -289,6 +301,74 @@ function ClientDrawer({ client, onClose, onUpdated }: DrawerProps) {
                   placeholder="Notas adicionales…"
                 />
               </div>
+              {/* Invoice fields */}
+              <p className="text-xs font-medium text-gray-400 uppercase tracking-wider pt-1">Datos de facturación electrónica</p>
+              {/* Tipo de persona toggle */}
+              <div className="flex rounded-xl overflow-hidden border border-white/10">
+                {(['natural', 'empresa'] as const).map(tp => (
+                  <button
+                    key={tp}
+                    type="button"
+                    onClick={() => setEditForm(f => ({ ...f, tipo_persona: tp, tipo_identificacion: '', dv: '' }))}
+                    className={cn(
+                      'flex-1 py-2 text-xs font-medium transition-colors',
+                      editForm.tipo_persona === tp
+                        ? 'bg-yellow-500/20 text-yellow-400'
+                        : 'bg-white/[0.03] text-gray-400 hover:bg-white/[0.06]',
+                    )}
+                  >
+                    {tp === 'natural' ? 'Persona Natural' : 'Empresa'}
+                  </button>
+                ))}
+              </div>
+              {/* Tipo de identificación */}
+              <div className="space-y-2">
+                <label className="block text-xs text-gray-400">Tipo de identificación</label>
+                <select
+                  className={cn(inputClass, 'appearance-none')}
+                  value={editForm.tipo_identificacion}
+                  onChange={e => setEditForm(f => ({ ...f, tipo_identificacion: e.target.value, dv: '' }))}
+                >
+                  <option value="">— Seleccionar —</option>
+                  {editForm.tipo_persona === 'natural' ? (
+                    <>
+                      <option value="Cédula de Ciudadanía">Cédula de Ciudadanía</option>
+                      <option value="Cédula de Extranjería">Cédula de Extranjería</option>
+                      <option value="Pasaporte">Pasaporte</option>
+                      <option value="Tarjeta de Identidad">Tarjeta de Identidad</option>
+                    </>
+                  ) : (
+                    <>
+                      <option value="NIT">NIT</option>
+                      <option value="NIT Extranjero">NIT Extranjero</option>
+                    </>
+                  )}
+                </select>
+              </div>
+              {/* Número de identificación + DV */}
+              <div className={cn('gap-2', editForm.tipo_identificacion === 'NIT' ? 'grid grid-cols-3' : 'block space-y-0')}>
+                <div className={cn('space-y-2', editForm.tipo_identificacion === 'NIT' ? 'col-span-2' : '')}>
+                  <label className="block text-xs text-gray-400">Número de identificación</label>
+                  <input
+                    className={inputClass}
+                    value={editForm.identificacion}
+                    onChange={e => setEditForm(f => ({ ...f, identificacion: e.target.value }))}
+                    placeholder="Ej: 900123456"
+                  />
+                </div>
+                {editForm.tipo_identificacion === 'NIT' && (
+                  <div className="space-y-2">
+                    <label className="block text-xs text-gray-400">DV</label>
+                    <input
+                      className={inputClass}
+                      value={editForm.dv}
+                      onChange={e => setEditForm(f => ({ ...f, dv: e.target.value.slice(0, 1) }))}
+                      placeholder="7"
+                      maxLength={1}
+                    />
+                  </div>
+                )}
+              </div>
             </div>
           )}
 
@@ -311,6 +391,35 @@ function ClientDrawer({ client, onClose, onUpdated }: DrawerProps) {
               {client.notes && (
                 <div className="rounded-xl bg-white/[0.03] border border-white/8 px-3 py-2 text-xs text-gray-400 italic">
                   {client.notes}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Invoice data display (not editing) */}
+          {!editing && (client.tipo_persona || client.identificacion) && (
+            <div className="space-y-2">
+              <p className="text-xs font-medium text-gray-400 uppercase tracking-wider">Facturación electrónica</p>
+              {client.tipo_persona && (
+                <div className="flex items-center gap-2 text-sm">
+                  <span className="text-gray-500 w-24 text-xs shrink-0">Persona</span>
+                  <span className="text-gray-200 capitalize">{client.tipo_persona === 'natural' ? 'Natural' : 'Empresa'}</span>
+                </div>
+              )}
+              {client.tipo_identificacion && (
+                <div className="flex items-center gap-2 text-sm">
+                  <span className="text-gray-500 w-24 text-xs shrink-0">Tipo ID</span>
+                  <span className="text-gray-200">{client.tipo_identificacion}</span>
+                </div>
+              )}
+              {client.identificacion && (
+                <div className="flex items-center gap-2 text-sm">
+                  <span className="text-gray-500 w-24 text-xs shrink-0">
+                    {client.tipo_identificacion === 'NIT' ? 'NIT' : 'Identificación'}
+                  </span>
+                  <span className="text-gray-200 font-mono">
+                    {client.identificacion}{client.dv ? `-${client.dv}` : ''}
+                  </span>
                 </div>
               )}
             </div>

@@ -1,4 +1,6 @@
-# BDCPolo — CLAUDE.md
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
 Car-wash management system for Bogotá Detailing Center. Full-stack: React/Vite frontend + FastAPI backend + PostgreSQL, all running in Docker.
 
@@ -93,7 +95,7 @@ All routes are prefixed `/api/v1/`.
 | PATCH  | `/appointments/{id}` | Edit appointment (date, time, vehicle, client, status) |
 | DELETE | `/appointments/{id}` | Delete appointment |
 | GET    | `/ceramics` | List all ceramic treatments with vehicle + operator |
-| GET    | `/history` | Order history with optional `date_filter` and `search` query params |
+| GET    | `/history` | Order history — `date_filter=YYYY-MM-DD` (single day, default today), OR `date_from`+`date_to` (range for PDF export), optional `search` (plate/client/order number) |
 | GET    | `/liquidation/{op_id}/week?week_start=YYYY-MM-DD` | Weekly liquidation data (7 days, qualifying orders) |
 | POST   | `/liquidation/{op_id}/liquidate?week_start=YYYY-MM-DD` | Confirm liquidation: process abonos, settlements, payment methods, auto-create pending debts + expense records |
 | GET    | `/liquidation/{op_id}/debts` | List all debts for an operator (with payment history) |
@@ -106,7 +108,7 @@ All routes are prefixed `/api/v1/`.
 | POST   | `/egresos` | Create expense |
 | DELETE | `/egresos/{id}` | Delete expense |
 | GET    | `/clients?search=` | List all clients with vehicles, order count, total spent, last service |
-| PATCH  | `/clients/{id}` | Update client name, phone, email, notes |
+| PATCH  | `/clients/{id}` | Update client name, phone, email, invoice fields (tipo_persona, tipo_identificacion, identificacion, dv), notes |
 
 ## Routes
 
@@ -151,23 +153,34 @@ DebtDirection:      empresa_operario | operario_empresa
 | `ceramic_treatments` | Auto-created when a ceramic service is ordered; operator synced via patio PATCH |
 | `debts` | Tracks money owed between company and operator; supports partial payments via `paid_amount` |
 | `debt_payments` | Individual installment records (abonos) linked to a debt and optionally to a week_liquidation |
-| `week_liquidations` | One record per operator per week when liquidated; stores net, transfer, cash, pending amounts |
-| `expenses` | Manual expense records; also auto-created by liquidation for operator payouts |
+| `week_liquidations` | One record per operator per week when liquidated; stores net, cash/datafono/nequi/bancolombia breakdown, pending amount |
+| `expenses` | Manual expense records; also auto-created by liquidation for operator payouts (one row per payment method used) |
 
 ### Extra columns added via ALTER TABLE (not in original schema.sql)
 
+All migrations run idempotently at backend startup in `main.py`. If starting from a fresh DB they run automatically. If adding to an existing DB:
+
 ```sql
--- Run once if DB was created before these were added:
 ALTER TABLE service_orders ADD COLUMN IF NOT EXISTS downpayment NUMERIC(12,2) NOT NULL DEFAULT 0;
 ALTER TABLE service_orders ADD COLUMN IF NOT EXISTS is_warranty BOOLEAN NOT NULL DEFAULT FALSE;
 ALTER TABLE patio ADD COLUMN IF NOT EXISTS scheduled_delivery_at TIMESTAMP;
+ALTER TABLE clients ADD COLUMN IF NOT EXISTS tipo_persona VARCHAR(20);
+ALTER TABLE clients ADD COLUMN IF NOT EXISTS tipo_identificacion VARCHAR(50);
+ALTER TABLE clients ADD COLUMN IF NOT EXISTS identificacion VARCHAR(30);
+ALTER TABLE clients ADD COLUMN IF NOT EXISTS dv VARCHAR(2);
 ALTER TABLE service_orders ADD COLUMN IF NOT EXISTS payment_cash NUMERIC(12,2) NOT NULL DEFAULT 0;
 ALTER TABLE service_orders ADD COLUMN IF NOT EXISTS payment_datafono NUMERIC(12,2) NOT NULL DEFAULT 0;
 ALTER TABLE service_orders ADD COLUMN IF NOT EXISTS payment_nequi NUMERIC(12,2) NOT NULL DEFAULT 0;
 ALTER TABLE service_orders ADD COLUMN IF NOT EXISTS payment_bancolombia NUMERIC(12,2) NOT NULL DEFAULT 0;
 ALTER TABLE expenses ADD COLUMN IF NOT EXISTS payment_method VARCHAR(50);
 ALTER TABLE service_orders ADD COLUMN IF NOT EXISTS downpayment_method VARCHAR(50);
+ALTER TABLE week_liquidations ALTER COLUMN payment_transfer SET DEFAULT 0;  -- legacy column, no longer written
+ALTER TABLE week_liquidations ADD COLUMN IF NOT EXISTS payment_datafono NUMERIC(12,2) NOT NULL DEFAULT 0;
+ALTER TABLE week_liquidations ADD COLUMN IF NOT EXISTS payment_nequi NUMERIC(12,2) NOT NULL DEFAULT 0;
+ALTER TABLE week_liquidations ADD COLUMN IF NOT EXISTS payment_bancolombia NUMERIC(12,2) NOT NULL DEFAULT 0;
 ```
+
+> **`week_liquidations.payment_transfer`**: legacy column — still in DB (NOT NULL, now has `DEFAULT 0`) but no longer written to or read by the model. New liquidations only populate `payment_cash`, `payment_datafono`, `payment_nequi`, `payment_bancolombia`. If you ever remove `payment_transfer` from the DB you must first drop the NOT NULL constraint or set a default, because SQLAlchemy's INSERT omits unmapped columns.
 
 ## Service order flow
 
@@ -224,9 +237,9 @@ ALTER TABLE service_orders ADD COLUMN IF NOT EXISTS downpayment_method VARCHAR(5
 6. **Liquidar semana** opens a modal with:
    - Abonos: input per unpaid `operario_empresa` debt — deducted from payout and recorded as `DebtPayment`
    - Settlements: toggle per unpaid `empresa_operario` debt to include in payout
-   - Payment methods: Transferencia + Efectivo fields; if sum < net → auto-creates `empresa_operario` debt for the pending amount
-   - On confirm: creates `WeekLiquidation` record, links `DebtPayment` records to it; **also auto-creates `Expense` records** (category: "Salarios") for each payment method used — `payment_method` set to "Efectivo" or "Transferencia"
-7. Post-liquidation shows payment breakdown (neto, transferencia, efectivo, pendiente).
+   - Payment methods: 4 checkboxes (Efectivo, Banco Caja Social, Nequi, Bancolombia). One selected → auto-fills full net amount. Multiple selected → inline amount input per method, each capped so total ≤ net. If total < net → auto-creates `empresa_operario` debt for the pending amount.
+   - On confirm: creates `WeekLiquidation` record, links `DebtPayment` records to it; **also auto-creates one `Expense` record per non-zero payment method** (category: "Salarios", `payment_method` = "Efectivo" | "Datáfono" | "Nequi" | "Bancolombia").
+7. Post-liquidation shows payment breakdown (neto, per-method amounts, pendiente).
 8. **Descargar** button opens a period picker modal:
    - "Esta semana" → calls `GET /api/v1/liquidation/{op_id}/report?period=week&ref_date=<weekStart>`
    - "Mes de X" → calls `GET /api/v1/liquidation/{op_id}/report?period=month&ref_date=<weekStart>`
@@ -287,8 +300,9 @@ Key implementation details:
 ## Clientes section
 
 - **`GET /clients?search=`**: returns all clients ordered by name. Each record includes nested vehicles list + computed stats (`order_count`, `total_spent`, `last_service`) aggregated from all non-cancelled orders across all client vehicles.
-- **`PATCH /clients/{id}`**: updates name, phone, email, notes.
-- **Page `/clientes`**: KPI cards (total clients, vehicles, services), searchable list with debounced API calls, animated right drawer per client showing vehicles (with type icon), stats, and inline edit mode.
+- **`PATCH /clients/{id}`**: updates name, phone, email, invoice fields, notes.
+- **Invoice fields on client**: `tipo_persona` ("natural" | "empresa"), `tipo_identificacion` (e.g. "Cédula de Ciudadanía", "NIT"), `identificacion` (ID number), `dv` (verification digit, NIT only). Stored in DB; shown/edited in the client drawer under "Datos de facturación electrónica".
+- **Page `/clientes`**: KPI cards (total clients, vehicles, services), searchable list with debounced API calls, animated right drawer per client showing vehicles (with type icon), stats, invoice data, and inline edit mode.
 - Clients are created implicitly by `POST /orders` (find-or-create by phone number). The `/clientes` page is read/edit only — no explicit client creation.
 - **Long names**: client name uses `break-all` in both the list row and the drawer header to prevent overflow on mobile.
 
@@ -316,7 +330,7 @@ Key implementation details:
 - **Payment methods on delivery**: 4 accepted methods stored as separate columns on `service_orders`: `payment_cash`, `payment_datafono`, `payment_nequi`, `payment_bancolombia`. All `Numeric(12,2) DEFAULT 0`. "Banco Caja Social" in the UI maps to `payment_datafono` in the DB. Sub-account info shown for Nequi and Bancolombia.
 - **Facturación electrónica**: captured at delivery time only. Stored in `localStorage` under key `bdcpolo_facturas` as `Record<orderId, FacturaRecord>`. Not sent to the backend. `FacturaRecord` = `{ tipo, id_type, id_number, dv, name, phone, email }`. Shown as a blue "FE" badge on delivered cards and a detail panel when expanded.
 - **CalendarioCitas UX**: past days in month grid are dimmed (`text-gray-700`). New appointment date picker has `min=today`; edit mode has no minimum (allows changing to any date). Time picker is a `<select>` with full hours 6:00–18:00. Appointments within a day are sorted by time ascending. Field order in form: Marca → Modelo → Placa.
-- **"Ingresar Vehículo" from calendar**: appointments in `programada` or `confirmada` status show a green LogIn icon button. Clicking navigates to `/` with `location.state.fromAppointment` containing vehicle/client data. IngresarServicio reads this on mount via `useEffect`, pre-fills the form, and jumps to step 2. State cleared via `window.history.replaceState({}, '')` to prevent re-apply on refresh.
+- **"Agregar servicio" from calendar**: appointments in `programada` or `confirmada` status show a Wrench icon button. If the appointment date ≠ today, shows a "¿Estás seguro?" confirmation modal first. Clicking (and confirming) navigates to `/` with `location.state.fromAppointment` containing vehicle/client data. IngresarServicio reads this on mount, pre-fills the form, and jumps to step 2. After `POST /orders` succeeds, `DELETE /appointments/{id}` is called automatically to remove the appointment. State cleared via `window.history.replaceState({}, '')` to prevent re-apply on refresh.
 - **`AppointmentPatch.date` as `Optional[str]`**: Pydantic v2 name collision — field named `date` with type `Optional[date]` resolves incorrectly. Fixed by using `Optional[str]` and parsing manually in the router with `_date.fromisoformat(data['date'])`. The `date` stdlib import is aliased as `_date` in `appointments.py` to avoid the same collision.
 - **Clients are find-or-create by phone**: `POST /orders` looks up an existing client by phone; if found, updates the name; if not found, creates a new one. The `/clientes` page surfaces these records.
 - **Dark native date inputs**: `style={{ colorScheme: 'dark' }}` + Tailwind arbitrary variant `[&::-webkit-calendar-picker-indicator]:invert` applied to `<input type="date">` elements. Pure CSS solution — no third-party date picker needed.
@@ -329,6 +343,8 @@ Key implementation details:
 - **CalendarioCitas hour picker**: shows 6:00–18:00. IngresarServicio and patio inline delivery editor show 8:00–17:00 (operating hours).
 - **`operators.py`** router: `include_inactive` query param, `POST /operators` (create), `PATCH /operators/{id}` (update fields + toggle `active`). Schemas `OperatorCreate` and `OperatorPatch` in `schemas.py`.
 - **`orders.py`** duplicate check: queries for an existing non-delivered `PatioEntry` for the same vehicle before creating the order; raises HTTP 409 if found.
+- **Historial PDF export**: "Descargar" button in `/historial` opens a modal with Hoy / Ayer / Elegir semana / Elegir mes options. Week/month pickers use hidden `<input type="week/month">` triggered via `useRef` + `.showPicker()`. Sends `date_from`+`date_to` to `GET /history`. PDF generated client-side as a Blob URL (same pattern as liquidation report): one row per order, services joined with `<br>`.
+- **`week_liquidations.payment_transfer` trap**: this column has no DB-level DEFAULT in older DBs (was populated via SQLAlchemy Python-side `default=0`). After removing it from the model, INSERTs omit it and fail with `NotNullViolation` — silently caught by the `IntegrityError` handler, making liquidation appear to succeed but save nothing. Fix: `ALTER COLUMN payment_transfer SET DEFAULT 0` (already in `main.py` migrations).
 
 ## Common commands
 
@@ -340,11 +356,14 @@ docker compose up --build
 docker compose logs -f backend
 docker compose logs -f frontend
 
-# Restart just the backend (after Python code changes)
+# Restart just the backend (after Python code changes — migrations re-run on startup)
 docker compose restart backend
 
 # Open psql inside the DB container
 docker compose exec db psql -U postgres -d bdcpolo
+
+# Run a one-off Python snippet inside the backend container (useful for debugging DB state)
+docker compose exec backend python -c "from app.database import SessionLocal; from app import models; db = SessionLocal(); print(db.query(models.WeekLiquidation).all()); db.close()"
 
 # Run backend outside Docker (needs local PostgreSQL)
 cd backend && python -m uvicorn app.main:app --reload --port 8000

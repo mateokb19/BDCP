@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Car, Truck, Check, ChevronRight, Search, User, Phone, Palette, Hash, Calendar, Pencil, AlertTriangle, ShieldCheck } from 'lucide-react'
 import { useNavigate, useLocation } from 'react-router'
@@ -8,7 +8,7 @@ import { Input } from '@/app/components/ui/Input'
 import { GlassCard } from '@/app/components/ui/GlassCard'
 import { Badge } from '@/app/components/ui/Badge'
 import { cn } from '@/app/components/ui/cn'
-import { api } from '@/api'
+import { api, type ApiAppointment } from '@/api'
 import { useAppContext } from '@/app/context/AppContext'
 import type { VehicleType, Service } from '@/types'
 
@@ -115,42 +115,30 @@ export default function IngresarServicio() {
   const location = useLocation()
   const { services, createOrder } = useAppContext()
 
-  const [step, setStep]               = useState<Step>(1)
+  // Pre-fill from appointment if navigated from CalendarioCitas
+  const fromAppt = (location.state as { fromAppointment?: ApiAppointment } | null)?.fromAppointment
+
+  const [step, setStep]               = useState<Step>(fromAppt?.vehicle_type ? 2 : 1)
   const [prevStep, setPrevStep]       = useState<Step>(1)
-  const [vehicleType, setVehicleType] = useState<VehicleType | null>(null)
+  const [vehicleType, setVehicleType] = useState<VehicleType | null>(
+    fromAppt?.vehicle_type as VehicleType ?? null
+  )
   const [submitting, setSubmitting]   = useState(false)
   const [plateTypeMismatch, setPlateTypeMismatch] = useState(false)
   const [form, setForm] = useState<OrderDraft>({
-    plate: '', brand: '', model: '', color: '',
-    clientName: '', clientPhone: '',
+    plate:       fromAppt?.plate?.toUpperCase() ?? '',
+    brand:       fromAppt?.brand ?? '',
+    model:       fromAppt?.model ?? '',
+    color:       '',
+    clientName:  fromAppt?.client_name ?? '',
+    clientPhone: fromAppt?.client_phone ?? '',
     selectedServices: [], notes: '',
     deliveryDate: '', deliveryTime: '',
     customPrices: {}, warrantyServiceIds: [], downpayment: '', downpaymentMethod: '', isWarranty: false,
   })
 
-  // Pre-fill from appointment (navigated from CalendarioCitas)
-  useEffect(() => {
-    const appt = (location.state as any)?.fromAppointment
-    if (!appt) return
-    const vt: VehicleType = appt.vehicleType ?? 'automovil'
-    setVehicleType(vt)
-    setForm(f => ({
-      ...f,
-      plate:       appt.plate       ?? '',
-      brand:       appt.brand       ?? '',
-      model:       appt.model       ?? '',
-      clientName:  appt.clientName  ?? '',
-      clientPhone: appt.clientPhone ?? '',
-    }))
-    if (appt.brand) setBrandQuery(appt.brand)
-    setPrevStep(1)
-    setStep(2)
-    // Clear state so a refresh doesn't re-apply it
-    window.history.replaceState({}, '')
-  }, []) // eslint-disable-line react-hooks/exhaustive-deps
-
   // Brand autocomplete
-  const [brandQuery, setBrandQuery]     = useState('')
+  const [brandQuery, setBrandQuery]     = useState(fromAppt?.brand ?? '')
   const [showBrandSug, setShowBrandSug] = useState(false)
   const brandRef = useRef<HTMLDivElement>(null)
   const filteredBrands = BRANDS.filter(b => b.toLowerCase().includes(brandQuery.toLowerCase()))
@@ -323,6 +311,10 @@ export default function IngresarServicio() {
       toast.success(`Orden ${orderNumber} creada`, {
         description: `${form.plate} · ${form.clientName} → Estado de Patio`,
       })
+      // Auto-delete appointment if this order came from one
+      if (fromAppt?.id) {
+        api.appointments.delete(fromAppt.id).catch(() => {})
+      }
       setStep(1); setPrevStep(1); setVehicleType(null)
       setForm({ plate: '', brand: '', model: '', color: '', clientName: '', clientPhone: '', selectedServices: [], notes: '', deliveryDate: '', deliveryTime: '', customPrices: {}, warrantyServiceIds: [], downpayment: '', downpaymentMethod: '', isWarranty: false })
       setBrandQuery('')

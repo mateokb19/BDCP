@@ -79,11 +79,18 @@ function LiquidarModal({ open, onClose, operator, weekData, debts, onConfirm }: 
   const unpaidOpOwes      = debts.filter(d => d.direction === 'operario_empresa' && !d.paid)
   const unpaidCompanyOwes = debts.filter(d => d.direction === 'empresa_operario' && !d.paid)
 
-  const [abonoInputs,    setAbonoInputs]    = useState<Record<number, string>>({})
-  const [settleInputs,   setSettleInputs]   = useState<Record<number, { include: boolean; amount: string }>>({})
-  const [payTransfer,    setPayTransfer]    = useState('')
-  const [payCash,        setPayCash]        = useState('')
-  const [submitting,     setSubmitting]     = useState(false)
+  const PAY_METHODS = [
+    { key: 'payment_cash',        label: 'Efectivo',          icon: <Banknote size={14} /> },
+    { key: 'payment_datafono',    label: 'Banco Caja Social', icon: <CreditCard size={14} /> },
+    { key: 'payment_nequi',       label: 'Nequi',             icon: <Phone size={14} /> },
+    { key: 'payment_bancolombia', label: 'Bancolombia',       icon: <CreditCard size={14} /> },
+  ] as const
+
+  const [abonoInputs,   setAbonoInputs]   = useState<Record<number, string>>({})
+  const [settleInputs,  setSettleInputs]  = useState<Record<number, { include: boolean; amount: string }>>({})
+  const [paySelected,   setPaySelected]   = useState<Set<string>>(new Set())
+  const [payAmounts,    setPayAmounts]    = useState<Record<string, string>>({})
+  const [submitting,    setSubmitting]    = useState(false)
 
   // Reset when modal opens
   useEffect(() => {
@@ -97,16 +104,33 @@ function LiquidarModal({ open, onClose, operator, weekData, debts, onConfirm }: 
       si[d.id] = { include: false, amount: String(Number(d.amount) - Number(d.paid_amount)) }
     })
     setSettleInputs(si)
-    setPayTransfer('')
-    setPayCash('')
+    setPaySelected(new Set())
+    setPayAmounts({})
   }, [open])
 
-  const totalAbonos    = unpaidOpOwes.reduce((s, d) => s + (Number(abonoInputs[d.id]) || 0), 0)
-  const totalSettled   = unpaidCompanyOwes.reduce((s, d) =>
+  const totalAbonos  = unpaidOpOwes.reduce((s, d) => s + (Number(abonoInputs[d.id]) || 0), 0)
+  const totalSettled = unpaidCompanyOwes.reduce((s, d) =>
     s + (settleInputs[d.id]?.include ? (Number(settleInputs[d.id]?.amount) || 0) : 0), 0)
-  const netAmount      = commission - totalAbonos + totalSettled
-  const totalPaid      = (Number(payTransfer) || 0) + (Number(payCash) || 0)
-  const pending        = Math.max(0, netAmount - totalPaid)
+  const netAmount    = commission - totalAbonos + totalSettled
+
+  function getPayAmount(key: string): number {
+    if (!paySelected.has(key)) return 0
+    if (paySelected.size === 1) return Math.max(0, netAmount)
+    return Number(payAmounts[key]) || 0
+  }
+
+  const totalPaid = PAY_METHODS.reduce((s, m) => s + getPayAmount(m.key), 0)
+  const pending   = Math.max(0, netAmount - totalPaid)
+
+  function togglePayMethod(key: string) {
+    setPaySelected(prev => {
+      const next = new Set(prev)
+      if (next.has(key)) next.delete(key)
+      else next.add(key)
+      return next
+    })
+    setPayAmounts({})
+  }
 
   async function handleConfirm() {
     setSubmitting(true)
@@ -117,8 +141,10 @@ function LiquidarModal({ open, onClose, operator, weekData, debts, onConfirm }: 
       company_settlements: unpaidCompanyOwes
         .filter(d => settleInputs[d.id]?.include && Number(settleInputs[d.id]?.amount) > 0)
         .map(d => ({ debt_id: d.id, amount: Number(settleInputs[d.id].amount) })),
-      payment_transfer: Number(payTransfer) || 0,
-      payment_cash:     Number(payCash)     || 0,
+      payment_cash:        getPayAmount('payment_cash'),
+      payment_datafono:    getPayAmount('payment_datafono'),
+      payment_nequi:       getPayAmount('payment_nequi'),
+      payment_bancolombia: getPayAmount('payment_bancolombia'),
     }
     try {
       await onConfirm(payload)
@@ -302,59 +328,62 @@ function LiquidarModal({ open, onClose, operator, weekData, debts, onConfirm }: 
               <div className="space-y-3">
                 <p className="text-xs font-semibold text-gray-300 uppercase tracking-wider">Método de pago</p>
 
-                {/* Quick-fill buttons */}
+                {/* Method checkboxes */}
                 <div className="grid grid-cols-2 gap-2">
-                  <button
-                    type="button"
-                    onClick={() => { setPayTransfer(String(netAmount > 0 ? netAmount : 0)); setPayCash('0') }}
-                    className="flex items-center justify-center gap-1.5 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs text-gray-300 hover:border-yellow-500/40 hover:text-yellow-300 transition-colors"
-                  >
-                    <CreditCard size={13} />
-                    Todo transferencia
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => { setPayCash(String(netAmount > 0 ? netAmount : 0)); setPayTransfer('0') }}
-                    className="flex items-center justify-center gap-1.5 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs text-gray-300 hover:border-yellow-500/40 hover:text-yellow-300 transition-colors"
-                  >
-                    <Banknote size={13} />
-                    Todo efectivo
-                  </button>
+                  {PAY_METHODS.map(m => {
+                    const active = paySelected.has(m.key)
+                    return (
+                      <button
+                        key={m.key}
+                        type="button"
+                        onClick={() => togglePayMethod(m.key)}
+                        className={cn(
+                          'flex items-center gap-2 rounded-xl border px-3 py-2.5 text-sm transition-all',
+                          active
+                            ? 'border-yellow-500/40 bg-yellow-500/10 text-yellow-300'
+                            : 'border-white/10 bg-white/5 text-gray-400 hover:border-white/20 hover:text-gray-200'
+                        )}
+                      >
+                        {m.icon}
+                        <span className="text-xs font-medium">{m.label}</span>
+                        {active && <Check size={12} className="ml-auto shrink-0" />}
+                      </button>
+                    )
+                  })}
                 </div>
 
-                <div className="grid grid-cols-2 gap-2">
-                  <div>
-                    <label className="text-xs text-gray-500 mb-1 block">Transferencia</label>
-                    <input
-                      type="text" inputMode="numeric" placeholder="0"
-                      value={fmtCOP(payTransfer)}
-                      onChange={e => {
-                        const raw = parseCOP(e.target.value)
-                        const capped = raw === '' ? '' : String(Math.min(Number(raw), Math.max(0, netAmount - (Number(payCash) || 0))))
-                        setPayTransfer(capped)
-                      }}
-                      className="w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-gray-100 placeholder:text-gray-600 focus:border-yellow-500/50 focus:outline-none"
-                    />
+                {/* Multi-method amount inputs */}
+                {paySelected.size > 1 && (
+                  <div className="space-y-2">
+                    {PAY_METHODS.filter(m => paySelected.has(m.key)).map(m => (
+                      <div key={m.key} className="flex items-center gap-2">
+                        <span className="text-xs text-gray-400 w-28 shrink-0">{m.label}</span>
+                        <input
+                          type="number"
+                          min={0}
+                          placeholder="0"
+                          value={payAmounts[m.key] ?? ''}
+                          onChange={e => {
+                            const raw = Math.max(0, Number(e.target.value) || 0)
+                            const otherTotal = PAY_METHODS
+                              .filter(o => paySelected.has(o.key) && o.key !== m.key)
+                              .reduce((s, o) => s + (Number(payAmounts[o.key]) || 0), 0)
+                            const capped = Math.min(raw, Math.max(0, netAmount - otherTotal))
+                            setPayAmounts(p => ({ ...p, [m.key]: String(capped) }))
+                          }}
+                          onWheel={e => e.currentTarget.blur()}
+                          className="flex-1 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-gray-100 placeholder:text-gray-600 focus:border-yellow-500/50 focus:outline-none"
+                        />
+                      </div>
+                    ))}
                   </div>
-                  <div>
-                    <label className="text-xs text-gray-500 mb-1 block">Efectivo</label>
-                    <input
-                      type="text" inputMode="numeric" placeholder="0"
-                      value={fmtCOP(payCash)}
-                      onChange={e => {
-                        const raw = parseCOP(e.target.value)
-                        const capped = raw === '' ? '' : String(Math.min(Number(raw), Math.max(0, netAmount - (Number(payTransfer) || 0))))
-                        setPayCash(capped)
-                      }}
-                      className="w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-gray-100 placeholder:text-gray-600 focus:border-yellow-500/50 focus:outline-none"
-                    />
-                  </div>
-                </div>
+                )}
 
+                {/* Balance */}
                 <div className="rounded-xl border border-white/8 bg-white/[0.02] px-4 py-2.5 space-y-1.5 text-sm">
                   <div className="flex justify-between text-gray-400">
                     <span>Total pagado</span>
-                    <span className={cn(totalPaid >= netAmount ? 'text-green-400' : 'text-gray-200')}>${cop(totalPaid)}</span>
+                    <span className={cn(totalPaid >= netAmount && totalPaid > 0 ? 'text-green-400' : 'text-gray-200')}>${cop(totalPaid)}</span>
                   </div>
                   {pending > 0 && (
                     <div className="flex justify-between text-orange-400">
@@ -638,9 +667,11 @@ export default function LiquidacionPage() {
           : `<span style="background:#fee2e2;color:#991b1b;font-size:11px;font-weight:700;padding:3px 10px;border-radius:999px;letter-spacing:0.3px;">&#10005; SIN LIQUIDAR</span>`
 
         // Estado de pago section — split by liquidation state
-        const pendingAmt  = Number(w.amount_pending ?? 0)
-        const transAmt    = Number(w.payment_transfer ?? 0)
-        const cashAmt     = Number(w.payment_cash ?? 0)
+        const pendingAmt     = Number(w.amount_pending     ?? 0)
+        const cashAmt        = Number(w.payment_cash        ?? 0)
+        const datafonoAmt    = Number(w.payment_datafono    ?? 0)
+        const nequiAmt       = Number(w.payment_nequi       ?? 0)
+        const bancolombiaAmt = Number(w.payment_bancolombia ?? 0)
 
         // Compute per-state commission from orders (more accurate than w.week_commission for partial)
         const liqOrders   = weekOrders.filter(o => o.is_liquidated)
@@ -648,8 +679,26 @@ export default function LiquidacionPage() {
         const liqComm     = liqOrders.reduce((s, o) => s + Number(o.total), 0) * rate / 100
         const unliqComm   = unliqOrders.reduce((s, o) => s + Number(o.total), 0) * rate / 100
 
-        // What was actually paid in cash/transfer (excludes debt settlements)
-        const totalPaid   = transAmt + cashAmt
+        const totalPaid = cashAmt + datafonoAmt + nequiAmt + bancolombiaAmt
+
+        // Build payment breakdown rows for non-zero methods
+        const payRows = [
+          ['Efectivo', cashAmt],
+          ['Banco Caja Social', datafonoAmt],
+          ['Nequi', nequiAmt],
+          ['Bancolombia', bancolombiaAmt],
+        ].filter(([, v]) => (v as number) > 0).map(([label, v]) =>
+          `<div><div style="font-size:11px;color:#6b7280;margin-bottom:2px;">${label}</div><div style="font-size:16px;font-weight:600;color:#1a1a1a;">${fmt(v as number)}</div></div>`
+        ).join('<div style="width:1px;background:#d1d5db;align-self:stretch;"></div>')
+
+        const payRowsCompact = [
+          ['Efectivo', cashAmt],
+          ['Banco Caja Social', datafonoAmt],
+          ['Nequi', nequiAmt],
+          ['Bancolombia', bancolombiaAmt],
+        ].filter(([, v]) => (v as number) > 0).map(([label, v]) =>
+          `<div style="font-size:11px;color:#6b7280;">${label}: <strong>${fmt(v as number)}</strong></div>`
+        ).join('')
 
         const estadoPago = hasAllLiquidated
           ? `<div style="border-top:2px solid #166534;background:#f0fdf4;padding:16px 18px;">
@@ -659,15 +708,7 @@ export default function LiquidacionPage() {
                   <div style="font-size:11px;color:#6b7280;margin-bottom:2px;">Comisión semana</div>
                   <div style="font-size:18px;font-weight:700;color:#1a1a1a;">${fmt(w.week_commission)}</div>
                 </div>
-                <div style="width:1px;background:#d1d5db;align-self:stretch;"></div>
-                <div>
-                  <div style="font-size:11px;color:#6b7280;margin-bottom:2px;">Transferencia</div>
-                  <div style="font-size:16px;font-weight:600;color:#1a1a1a;">${fmt(transAmt)}</div>
-                </div>
-                <div>
-                  <div style="font-size:11px;color:#6b7280;margin-bottom:2px;">Efectivo</div>
-                  <div style="font-size:16px;font-weight:600;color:#1a1a1a;">${fmt(cashAmt)}</div>
-                </div>
+                ${payRows ? `<div style="width:1px;background:#d1d5db;align-self:stretch;"></div>${payRows}` : ''}
                 ${pendingAmt > 0 ? `<div style="width:1px;background:#d1d5db;align-self:stretch;"></div>
                 <div>
                   <div style="font-size:11px;color:#dc2626;font-weight:600;margin-bottom:2px;">Pendiente por pagar</div>
@@ -687,8 +728,7 @@ export default function LiquidacionPage() {
                   <div style="font-size:10px;font-weight:700;color:#166534;text-transform:uppercase;letter-spacing:0.4px;margin-bottom:6px;">Ya pagado (${liqOrders.length} servicio${liqOrders.length !== 1 ? 's' : ''})</div>
                   <div style="font-size:11px;color:#6b7280;margin-bottom:1px;">Comisión liquidada</div>
                   <div style="font-size:16px;font-weight:700;color:#166534;">${fmt(liqComm)}</div>
-                  <div style="margin-top:6px;font-size:11px;color:#6b7280;">Transferencia: <strong>${fmt(transAmt)}</strong></div>
-                  <div style="font-size:11px;color:#6b7280;">Efectivo: <strong>${fmt(cashAmt)}</strong></div>
+                  <div style="margin-top:6px;">${payRowsCompact}</div>
                 </div>
                 <div style="flex:1;min-width:180px;background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:10px 14px;">
                   <div style="font-size:10px;font-weight:700;color:#991b1b;text-transform:uppercase;letter-spacing:0.4px;margin-bottom:6px;">Sin liquidar (${unliqOrders.length} servicio${unliqOrders.length !== 1 ? 's' : ''})</div>
@@ -1217,16 +1257,28 @@ ${r.pending_debts.length > 0 ? `
                         <p className="text-gray-200 font-semibold">${cop(weekData.net_amount)}</p>
                       </div>
                     )}
-                    {Number(weekData.payment_transfer_amount) > 0 && (
-                      <div className="rounded-lg border border-white/6 bg-white/[0.02] px-3 py-2 text-center">
-                        <p className="text-gray-600">Transferencia</p>
-                        <p className="text-gray-200 font-semibold">${cop(weekData.payment_transfer_amount!)}</p>
-                      </div>
-                    )}
                     {Number(weekData.payment_cash_amount) > 0 && (
                       <div className="rounded-lg border border-white/6 bg-white/[0.02] px-3 py-2 text-center">
                         <p className="text-gray-600">Efectivo</p>
                         <p className="text-gray-200 font-semibold">${cop(weekData.payment_cash_amount!)}</p>
+                      </div>
+                    )}
+                    {Number(weekData.payment_datafono_amount) > 0 && (
+                      <div className="rounded-lg border border-white/6 bg-white/[0.02] px-3 py-2 text-center">
+                        <p className="text-gray-600">Banco Caja Social</p>
+                        <p className="text-gray-200 font-semibold">${cop(weekData.payment_datafono_amount!)}</p>
+                      </div>
+                    )}
+                    {Number(weekData.payment_nequi_amount) > 0 && (
+                      <div className="rounded-lg border border-white/6 bg-white/[0.02] px-3 py-2 text-center">
+                        <p className="text-gray-600">Nequi</p>
+                        <p className="text-gray-200 font-semibold">${cop(weekData.payment_nequi_amount!)}</p>
+                      </div>
+                    )}
+                    {Number(weekData.payment_bancolombia_amount) > 0 && (
+                      <div className="rounded-lg border border-white/6 bg-white/[0.02] px-3 py-2 text-center">
+                        <p className="text-gray-600">Bancolombia</p>
+                        <p className="text-gray-200 font-semibold">${cop(weekData.payment_bancolombia_amount!)}</p>
                       </div>
                     )}
                     {Number(weekData.amount_pending) > 0 && (

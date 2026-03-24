@@ -1,18 +1,98 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Search, ChevronDown, ChevronUp, Clock, User, Wrench, Hash } from 'lucide-react'
-import { format, parseISO } from 'date-fns'
+import { Search, ChevronDown, ChevronUp, Clock, User, Wrench, Download } from 'lucide-react'
+import { format, parseISO, startOfWeek, startOfMonth, endOfMonth, subMonths } from 'date-fns'
 import { es } from 'date-fns/locale'
 import { toast } from 'sonner'
 import { PageHeader } from '@/app/components/ui/PageHeader'
 import { Badge } from '@/app/components/ui/Badge'
+import { Button } from '@/app/components/ui/Button'
+import { Modal } from '@/app/components/ui/Modal'
 import { StatusBadge } from '@/app/components/ui/StatusBadge'
-import { GlassCard } from '@/app/components/ui/GlassCard'
 import { EmptyState } from '@/app/components/ui/EmptyState'
 import { cn } from '@/app/components/ui/cn'
 import { api, type ApiHistorialEntry } from '@/api'
 
 const TODAY = format(new Date(), 'yyyy-MM-dd')
+
+const VEHICLE_TYPE_LABEL: Record<string, string> = {
+  automovil:       'Automóvil',
+  camion_estandar: 'C. Estándar',
+  camion_xl:       'C. XL',
+}
+
+function esc(s: string) {
+  return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
+}
+
+function printHistorialReport(entries: ApiHistorialEntry[], dateFrom: string, dateTo: string) {
+  // One row per order — services joined in a single cell
+  const sorted = [...entries].sort((a, b) => a.date.localeCompare(b.date) || a.id - b.id)
+
+  const tableRows = sorted.map(entry => {
+    const vt        = VEHICLE_TYPE_LABEL[entry.vehicle?.type ?? ''] ?? (entry.vehicle?.type ?? '—')
+    const plate     = entry.vehicle?.plate ?? '—'
+    const op        = entry.operator?.name ?? '—'
+    const dateLabel = format(parseISO(`${entry.date}T00:00:00`), 'dd/MM/yyyy')
+    const services  = entry.items.map(i => esc(i.service_name)).join('<br>')
+    const total     = Number(entry.total ?? 0)
+    return `
+    <tr>
+      <td>${esc(dateLabel)}</td>
+      <td>${esc(vt)}</td>
+      <td class="plate">${esc(plate)}</td>
+      <td>${services}</td>
+      <td>${esc(op)}</td>
+      <td class="price">$${total.toLocaleString('es-CO')}</td>
+      <td></td>
+    </tr>`
+  }).join('')
+
+  const grandTotal = sorted.reduce((s, e) => s + Number(e.total ?? 0), 0)
+
+  const fromLabel = format(parseISO(`${dateFrom}T00:00:00`), "d 'de' MMMM yyyy", { locale: es })
+  const toLabel   = format(parseISO(`${dateTo}T00:00:00`),   "d 'de' MMMM yyyy", { locale: es })
+
+  const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Reporte BDCPolo</title>
+  <style>
+    *{margin:0;padding:0;box-sizing:border-box}
+    body{font-family:Arial,sans-serif;font-size:10px;padding:20px;color:#000}
+    h1{text-align:center;font-size:14px;font-weight:bold;letter-spacing:1px;margin-bottom:3px}
+    .period{text-align:center;font-size:10px;color:#555;margin-bottom:14px}
+    table{width:100%;border-collapse:collapse}
+    th{background:#e8e8e8;font-weight:bold;text-transform:uppercase;font-size:9px;padding:6px 5px;border:1px solid #aaa;text-align:center}
+    td{padding:4px 5px;border:1px solid #ccc;vertical-align:middle}
+    .plate{font-family:monospace;font-weight:bold;text-align:center}
+    .price{text-align:right;white-space:nowrap}
+    .total-row td{font-weight:bold;background:#f5f5f5;border-top:2px solid #888}
+  </style>
+  </head>
+  <body onload="window.print()">
+    <h1>BOGOTA DETAILING CENTER</h1>
+    <p class="period">Reporte de servicios: ${esc(fromLabel)} — ${esc(toLabel)}</p>
+    <table>
+      <thead>
+        <tr>
+          <th>Fecha</th><th>Tipo de Vehículo</th><th>Placa</th>
+          <th>Servicio</th><th>Operario</th><th>Valor del Servicio</th><th>Método de Pago</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${tableRows}
+        <tr class="total-row">
+          <td colspan="5" style="text-align:right">TOTAL</td>
+          <td class="price">$${grandTotal.toLocaleString('es-CO')}</td>
+          <td></td>
+        </tr>
+      </tbody>
+    </table>
+  </body></html>`
+
+  const blob = new Blob([html], { type: 'text/html' })
+  const url  = URL.createObjectURL(blob)
+  window.open(url, '_blank')
+  setTimeout(() => URL.revokeObjectURL(url), 60_000)
+}
 
 const categoryColors: Record<string, string> = {
   exterior: 'yellow',
@@ -27,123 +107,104 @@ function OrderCard({ entry }: { entry: ApiHistorialEntry }) {
 
   return (
     <motion.div
-      initial={{ opacity: 0, y: 8 }}
+      initial={{ opacity: 0, y: 6 }}
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: -4 }}
-      transition={{ duration: 0.2 }}
-      style={{ width: '100%', maxWidth: '100%', overflow: 'hidden' }}
+      transition={{ duration: 0.18 }}
     >
-      <div className="rounded-2xl border border-white/8 bg-white/[0.03] p-4 space-y-2.5 w-full overflow-hidden">
-
-        {/* Fila 1: número de orden + estado + total */}
-        <div className="flex items-center justify-between gap-2">
-          <div className="flex items-center gap-2 min-w-0 overflow-hidden">
-            <span className="font-mono text-xs font-semibold text-yellow-400 shrink-0">
-              {entry.order_number}
-            </span>
-            <div className="shrink-0">
-              <StatusBadge status={entry.status as any} />
-            </div>
-          </div>
-          <span className="text-sm font-bold text-yellow-400 shrink-0 ml-2">
-            ${Number(entry.total ?? 0).toLocaleString('es-CO')}
-          </span>
-        </div>
-
-        {/* Fila 2: vehículo */}
-        <div className="overflow-hidden">
+      {/* Collapsed row */}
+      <button
+        onClick={() => setExpanded(e => !e)}
+        className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl border border-white/8 bg-white/[0.02] hover:bg-white/[0.04] transition-colors text-left"
+      >
+        {/* Brand + model */}
+        <div className="flex-1 min-w-0">
           <p className="text-sm font-medium text-white truncate">
             {vehicle?.brand ?? '—'}{vehicle?.model ? ` ${vehicle.model}` : ''}
           </p>
-          <p className="text-xs text-gray-500 truncate">
-            {vehicle?.plate}{vehicle?.color ? ` · ${vehicle.color}` : ''}
-          </p>
         </div>
+        {/* Plate */}
+        <span className="font-mono text-xs font-semibold text-gray-400 shrink-0">
+          {vehicle?.plate ?? '—'}
+        </span>
+        {/* Date */}
+        <span className="text-xs text-gray-600 shrink-0">
+          {format(parseISO(`${entry.date}T00:00:00`), "d MMM", { locale: es })}
+        </span>
+        {/* Chevron */}
+        <span className="text-gray-600 shrink-0">
+          {expanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+        </span>
+      </button>
 
-        {/* Fila 3: cliente + operario */}
-        {(client || entry.operator) && (
-          <div className="space-y-0.5 overflow-hidden">
-            {client && (
-              <div className="flex items-center gap-1.5 text-xs text-gray-400 overflow-hidden">
-                <User size={10} className="shrink-0" />
-                <span className="truncate">{client.name}</span>
-                {client.phone && <span className="text-gray-600 shrink-0">· {client.phone}</span>}
-              </div>
-            )}
-            {entry.operator && (
-              <div className="flex items-center gap-1.5 text-xs text-gray-400 overflow-hidden">
-                <Wrench size={10} className="shrink-0" />
-                <span className="truncate">{entry.operator.name}</span>
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* Fila 4: badges de servicios */}
-        {entry.items.length > 0 && (
-          <div className="flex flex-wrap gap-1">
-            {entry.items.map((item, i) => (
-              <Badge
-                key={i}
-                variant={(categoryColors[item.service_category] ?? 'default') as any}
-                className="text-[10px] py-0.5 max-w-[calc(50%-2px)] shrink-0"
-              >
-                <span className="truncate block">{item.service_name}</span>
-              </Badge>
-            ))}
-          </div>
-        )}
-
-        {/* Fila 5: toggle + fecha */}
-        <div className="flex items-center justify-between pt-1 border-t border-white/6">
-          <button
-            onClick={() => setExpanded(e => !e)}
-            className="flex items-center gap-1 text-xs text-gray-500 hover:text-gray-300 transition-colors"
+      {/* Expandable detail */}
+      <AnimatePresence>
+        {expanded && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            exit={{ opacity: 0, height: 0 }}
+            transition={{ duration: 0.2 }}
+            className="overflow-hidden"
           >
-            {expanded ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
-            {expanded ? 'Ocultar detalle' : 'Ver detalle'}
-          </button>
-          <span className="text-xs text-gray-600">
-            {format(parseISO(`${entry.date}T00:00:00`), "d MMM", { locale: es })}
-          </span>
-        </div>
+            <div className="mx-1 px-3 py-3 rounded-b-xl border border-t-0 border-white/8 bg-white/[0.02] space-y-2.5">
 
-        {/* Detalle expandible */}
-        <AnimatePresence>
-          {expanded && (
-            <motion.div
-              initial={{ opacity: 0, height: 0 }}
-              animate={{ opacity: 1, height: 'auto' }}
-              exit={{ opacity: 0, height: 0 }}
-              transition={{ duration: 0.2 }}
-              className="overflow-hidden"
-            >
-              <div className="space-y-1.5 pt-1">
-                {entry.items.map((item, i) => (
-                  <div key={i} className="flex items-center gap-2 text-xs">
-                    <Badge
-                      variant={(categoryColors[item.service_category] ?? 'default') as any}
-                      className="text-[9px] shrink-0"
-                    >
-                      {item.service_category}
-                    </Badge>
-                    <span className="text-gray-300 truncate flex-1 min-w-0">{item.service_name}</span>
-                    <span className="text-yellow-400 font-medium shrink-0">
-                      ${Number(item.subtotal).toLocaleString('es-CO')}
-                    </span>
-                  </div>
-                ))}
-                <div className="flex justify-between items-center pt-2 border-t border-white/8">
-                  <span className="text-gray-400 text-xs">Total</span>
-                  <span className="text-yellow-400 font-bold text-sm">
-                    ${Number(entry.total ?? 0).toLocaleString('es-CO')}
-                  </span>
+              {/* Order + status + total */}
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <span className="font-mono text-xs font-semibold text-yellow-400">{entry.order_number}</span>
+                  <StatusBadge status={entry.status as any} />
                 </div>
+                <span className="text-sm font-bold text-yellow-400">
+                  ${Number(entry.total ?? 0).toLocaleString('es-CO')}
+                </span>
               </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
-      </div>
+
+              {/* Color */}
+              {vehicle?.color && (
+                <p className="text-xs text-gray-500">{vehicle.color}</p>
+              )}
+
+              {/* Client + operator */}
+              <div className="space-y-0.5">
+                {client && (
+                  <div className="flex items-center gap-1.5 text-xs text-gray-400">
+                    <User size={10} className="shrink-0" />
+                    <span className="truncate">{client.name}</span>
+                    {client.phone && <span className="text-gray-600 shrink-0">· {client.phone}</span>}
+                  </div>
+                )}
+                {entry.operator && (
+                  <div className="flex items-center gap-1.5 text-xs text-gray-400">
+                    <Wrench size={10} className="shrink-0" />
+                    <span className="truncate">{entry.operator.name}</span>
+                  </div>
+                )}
+              </div>
+
+              {/* Services */}
+              {entry.items.length > 0 && (
+                <div className="space-y-1 pt-1 border-t border-white/6">
+                  {entry.items.map((item, i) => (
+                    <div key={i} className="flex items-center gap-2 text-xs">
+                      <Badge
+                        variant={(categoryColors[item.service_category] ?? 'default') as any}
+                        className="text-[9px] shrink-0"
+                      >
+                        {item.service_category}
+                      </Badge>
+                      <span className="text-gray-300 truncate flex-1 min-w-0">{item.service_name}</span>
+                      <span className="text-yellow-400 font-medium shrink-0">
+                        ${Number(item.subtotal).toLocaleString('es-CO')}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </motion.div>
   )
 }
@@ -154,6 +215,30 @@ export default function Historial() {
   const [dateFilter, setDateFilter] = useState(TODAY)
   const [search, setSearch]       = useState('')
   const [debouncedSearch, setDebouncedSearch] = useState('')
+
+  // Download modal
+  const [showDlModal, setShowDlModal] = useState(false)
+  const [dlFrom, setDlFrom] = useState(TODAY)
+  const [dlTo,   setDlTo]   = useState(TODAY)
+  const [dlLoading, setDlLoading] = useState(false)
+  const weekInputRef  = useRef<HTMLInputElement>(null)
+  const monthInputRef = useRef<HTMLInputElement>(null)
+
+  async function handleDownload() {
+    if (!dlFrom || !dlTo) { toast.error('Selecciona el rango de fechas'); return }
+    if (dlFrom > dlTo)    { toast.error('La fecha inicial no puede ser mayor a la final'); return }
+    setDlLoading(true)
+    try {
+      const data = await api.history.list({ date_from: dlFrom, date_to: dlTo })
+      if (data.length === 0) { toast.error('No hay servicios en ese período'); return }
+      printHistorialReport(data, dlFrom, dlTo)
+      setShowDlModal(false)
+    } catch {
+      toast.error('Error al generar el reporte')
+    } finally {
+      setDlLoading(false)
+    }
+  }
 
   // Debounce search input 350ms
   useEffect(() => {
@@ -184,7 +269,12 @@ export default function Historial() {
     <div className="max-w-xl mx-auto">
       <PageHeader
         title="Historial"
-        subtitle={`${entries.length} servicio${entries.length !== 1 ? 's' : ''} · $${totalDay.toLocaleString('es-CO')}`}
+        subtitle={`${entries.length} servicio${entries.length !== 1 ? 's' : ''}`}
+        actions={
+          <Button variant="secondary" size="md" onClick={() => setShowDlModal(true)}>
+            <Download size={15} /> Descargar
+          </Button>
+        }
       />
 
       {/* Filters */}
@@ -228,6 +318,93 @@ export default function Historial() {
           </AnimatePresence>
         </div>
       )}
+
+      {/* Download modal */}
+      <Modal open={showDlModal} onClose={() => setShowDlModal(false)} title="Descargar reporte" size="sm">
+        <div className="p-6 space-y-4">
+          {/* Quick-select buttons */}
+          {(() => {
+            const now  = new Date()
+            const yesterday = new Date(now); yesterday.setDate(now.getDate() - 1)
+            const YESTERDAY = format(yesterday, 'yyyy-MM-dd')
+            const isToday     = dlFrom === TODAY     && dlTo === TODAY
+            const isYesterday = dlFrom === YESTERDAY && dlTo === YESTERDAY
+            const isCustomWeek  = !isToday && !isYesterday && dlFrom !== dlTo &&
+              dlFrom === format(startOfWeek(parseISO(dlFrom), { weekStartsOn: 0 }), 'yyyy-MM-dd')
+            const isCustomMonth = !isToday && !isYesterday && dlFrom !== dlTo && !isCustomWeek
+            const btnCls = (active: boolean) => cn(
+              'rounded-xl border py-2.5 px-3 text-sm font-medium transition-colors',
+              active
+                ? 'bg-yellow-500/20 border-yellow-500/50 text-yellow-400'
+                : 'bg-white/5 border-white/8 text-gray-400 hover:bg-white/10 hover:text-gray-200'
+            )
+            return (
+              <div className="grid grid-cols-2 gap-2">
+                <button type="button" className={btnCls(isToday)}
+                  onClick={() => { setDlFrom(TODAY); setDlTo(TODAY) }}>
+                  Hoy
+                </button>
+                <button type="button" className={btnCls(isYesterday)}
+                  onClick={() => { setDlFrom(YESTERDAY); setDlTo(YESTERDAY) }}>
+                  Ayer
+                </button>
+                <button type="button" className={btnCls(isCustomWeek)}
+                  onClick={() => weekInputRef.current?.showPicker()}>
+                  Elegir semana
+                </button>
+                <button type="button" className={btnCls(isCustomMonth)}
+                  onClick={() => monthInputRef.current?.showPicker()}>
+                  Elegir mes
+                </button>
+              </div>
+            )
+          })()}
+
+          {/* Hidden pickers */}
+          <input ref={weekInputRef} type="date" className="sr-only" tabIndex={-1}
+            onChange={e => {
+              if (!e.target.value) return
+              const d   = parseISO(e.target.value)
+              const sun = startOfWeek(d, { weekStartsOn: 0 })
+              const sat = new Date(sun.getTime() + 6 * 24 * 60 * 60 * 1000)
+              setDlFrom(format(sun, 'yyyy-MM-dd'))
+              setDlTo(format(sat, 'yyyy-MM-dd'))
+            }}
+          />
+          <input ref={monthInputRef} type="month" className="sr-only" tabIndex={-1}
+            onChange={e => {
+              if (!e.target.value) return
+              const [y, m] = e.target.value.split('-').map(Number)
+              const d = new Date(y, m - 1, 1)
+              setDlFrom(format(startOfMonth(d), 'yyyy-MM-dd'))
+              setDlTo(format(endOfMonth(d), 'yyyy-MM-dd'))
+            }}
+          />
+
+          {/* Manual date range */}
+          <div className="grid grid-cols-2 gap-3">
+            <div className="flex flex-col gap-1.5">
+              <label className="text-xs font-medium text-gray-400">Desde</label>
+              <input type="date" value={dlFrom} onChange={e => setDlFrom(e.target.value)}
+                className="w-full rounded-xl border border-white/10 bg-gray-900 px-3 py-2 text-sm text-gray-100 focus:border-yellow-500/50 focus:outline-none [color-scheme:dark]" />
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <label className="text-xs font-medium text-gray-400">Hasta</label>
+              <input type="date" value={dlTo} onChange={e => setDlTo(e.target.value)}
+                className="w-full rounded-xl border border-white/10 bg-gray-900 px-3 py-2 text-sm text-gray-100 focus:border-yellow-500/50 focus:outline-none [color-scheme:dark]" />
+            </div>
+          </div>
+
+          <div className="flex gap-3 pt-1">
+            <Button variant="secondary" size="lg" className="flex-1" onClick={() => setShowDlModal(false)}>
+              Cancelar
+            </Button>
+            <Button variant="primary" size="lg" className="flex-1" onClick={handleDownload} disabled={dlLoading}>
+              {dlLoading ? 'Generando...' : <><Download size={15} /> Descargar PDF</>}
+            </Button>
+          </div>
+        </div>
+      </Modal>
     </div>
   )
 }
