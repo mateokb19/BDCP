@@ -9,7 +9,15 @@ async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   })
   if (!res.ok) {
     const data = await res.json().catch(() => ({}))
-    throw new Error(data.detail ?? `HTTP ${res.status}`)
+    const detail = Array.isArray(data.detail)
+      ? data.detail.map((e: any) => e.msg ?? JSON.stringify(e)).join(', ')
+      : typeof data.detail === 'string'
+        ? data.detail
+        : `HTTP ${res.status}`
+    throw new Error(detail)
+  }
+  if (res.status === 204 || res.headers.get('content-length') === '0') {
+    return undefined as T
   }
   return res.json() as Promise<T>
 }
@@ -49,6 +57,10 @@ export interface ApiOrder {
   paid: boolean
   downpayment: string
   is_warranty: boolean
+  payment_cash: string
+  payment_datafono: string
+  payment_nequi: string
+  payment_bancolombia: string
   items: ApiOrderItem[]
 }
 
@@ -82,6 +94,7 @@ export interface OrderCreatePayload {
   item_overrides?: { service_id: number; unit_price: number }[]
   scheduled_delivery_at?: string
   downpayment?: number
+  downpayment_method?: string
   is_warranty?: boolean
 }
 
@@ -90,14 +103,23 @@ export interface PatioPatchPayload {
   operator_id?: number | null
   notes?: string | null
   service_ids?: number[]
+  scheduled_delivery_at?: string | null
+}
+
+export interface ApiCeramicClient {
+  id:     number
+  name:   string
+  phone?: string
+  email?: string
 }
 
 export interface ApiCeramicVehicle {
-  plate: string
-  brand?: string
-  model?: string
-  color?: string
-  type:   string
+  plate:   string
+  brand?:  string
+  model?:  string
+  color?:  string
+  type:    string
+  client?: ApiCeramicClient
 }
 
 export interface ApiCeramicOperator {
@@ -328,6 +350,86 @@ export interface ApiReportResponse {
   total_pending_owed: string
 }
 
+export interface ApiIngresosDayTotal {
+  date:                string
+  total:               string
+  payment_cash:        string
+  payment_datafono:    string
+  payment_nequi:       string
+  payment_bancolombia: string
+}
+
+export interface ApiIngresosResponse {
+  date_start:          string
+  date_end:            string
+  total:               string
+  order_count:         number
+  payment_cash:        string
+  payment_datafono:    string
+  payment_nequi:       string
+  payment_bancolombia: string
+  daily_totals:        ApiIngresosDayTotal[]
+}
+
+export interface ApiIngresoBreakdownItem {
+  order_number: string
+  date:         string
+  plate:        string
+  vehicle:      string
+  client:       string
+  amount:       number
+  is_abono:     boolean
+}
+
+export interface ApiExpense {
+  id:              number
+  date:            string
+  amount:          string
+  category?:       string
+  description?:    string
+  payment_method?: string
+  notes?:          string
+  created_at:      string
+}
+
+export interface ExpenseCreatePayload {
+  date:            string
+  amount:          number
+  category?:       string
+  description?:    string
+  payment_method?: string
+  notes?:          string
+}
+
+export interface ApiClientVehicle {
+  id:     number
+  plate:  string
+  brand?: string
+  model?: string
+  type:   string
+  color?: string
+}
+
+export interface ApiClient {
+  id:           number
+  name:         string
+  phone?:       string
+  email?:       string
+  notes?:       string
+  created_at:   string
+  vehicles:     ApiClientVehicle[]
+  order_count:  number
+  total_spent:  string
+  last_service?: string
+}
+
+export interface ClientPatchPayload {
+  name?:  string
+  phone?: string
+  email?: string
+  notes?: string
+}
+
 // ── API methods ────────────────────────────────────────────────────────────────
 
 export const api = {
@@ -347,10 +449,12 @@ export const api = {
   },
   patio: {
     list: () => apiFetch<ApiPatioEntry[]>('/patio'),
-    advance: (id: number) =>
-      apiFetch<ApiPatioEntry>(`/patio/${id}/advance`, { method: 'POST' }),
+    advance: (id: number, payment?: { payment_cash: number; payment_datafono: number; payment_nequi: number; payment_bancolombia: number }) =>
+      apiFetch<ApiPatioEntry>(`/patio/${id}/advance`, { method: 'POST', body: JSON.stringify(payment ?? {}) }),
     edit: (id: number, payload: PatioPatchPayload) =>
       apiFetch<ApiPatioEntry>(`/patio/${id}`, { method: 'PATCH', body: JSON.stringify(payload) }),
+    cancel: (id: number) =>
+      apiFetch<void>(`/patio/${id}`, { method: 'DELETE' }),
   },
   ceramics: {
     list: () => apiFetch<ApiCeramicTreatment[]>('/ceramics'),
@@ -392,5 +496,37 @@ export const api = {
       if (refDate) qs.set('ref_date', refDate)
       return apiFetch<ApiReportResponse>(`/liquidation/${opId}/report?${qs}`)
     },
+  },
+  ingresos: {
+    get: (period: 'day' | 'week' | 'month' | 'year', refDate?: string) => {
+      const qs = new URLSearchParams({ period })
+      if (refDate) qs.set('ref_date', refDate)
+      return apiFetch<ApiIngresosResponse>(`/ingresos?${qs}`)
+    },
+    breakdown: (method: string, dateStart: string, dateEnd: string) => {
+      const qs = new URLSearchParams({ method, date_start: dateStart, date_end: dateEnd })
+      return apiFetch<ApiIngresoBreakdownItem[]>(`/ingresos/breakdown?${qs}`)
+    },
+  },
+  egresos: {
+    list: (params?: { date_start?: string; date_end?: string }) => {
+      const qs = new URLSearchParams()
+      if (params?.date_start) qs.set('date_start', params.date_start)
+      if (params?.date_end)   qs.set('date_end',   params.date_end)
+      const query = qs.toString() ? `?${qs}` : ''
+      return apiFetch<ApiExpense[]>(`/egresos${query}`)
+    },
+    create: (payload: ExpenseCreatePayload) =>
+      apiFetch<ApiExpense>('/egresos', { method: 'POST', body: JSON.stringify(payload) }),
+    delete: (id: number) =>
+      apiFetch<void>(`/egresos/${id}`, { method: 'DELETE' }),
+  },
+  clients: {
+    list: (search?: string) => {
+      const qs = search ? `?search=${encodeURIComponent(search)}` : ''
+      return apiFetch<ApiClient[]>(`/clients${qs}`)
+    },
+    patch: (id: number, payload: ClientPatchPayload) =>
+      apiFetch<ApiClient>(`/clients/${id}`, { method: 'PATCH', body: JSON.stringify(payload) }),
   },
 }

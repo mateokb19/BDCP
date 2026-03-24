@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date as _date
 from typing import Optional
 from calendar import monthrange
 
@@ -17,8 +17,8 @@ def list_appointments(month: Optional[str] = Query(None), db: Session = Depends(
     q = db.query(models.Appointment)
     if month:
         year, mon = int(month[:4]), int(month[5:7])
-        ds = date(year, mon, 1)
-        de = date(year, mon, monthrange(year, mon)[1])
+        ds = _date(year, mon, 1)
+        de = _date(year, mon, monthrange(year, mon)[1])
         q = q.filter(models.Appointment.date >= ds, models.Appointment.date <= de)
     return q.order_by(models.Appointment.date, models.Appointment.time).all()
 
@@ -37,7 +37,10 @@ def patch_appointment(appt_id: int, body: schemas.AppointmentPatch, db: Session 
     appt = db.query(models.Appointment).filter_by(id=appt_id).first()
     if not appt:
         raise HTTPException(404, "Cita no encontrada")
-    for field, value in body.model_dump(exclude_none=True).items():
+    data = body.model_dump(exclude_none=True)
+    if 'date' in data:
+        data['date'] = _date.fromisoformat(data['date'])
+    for field, value in data.items():
         setattr(appt, field, value)
     db.commit()
     db.refresh(appt)

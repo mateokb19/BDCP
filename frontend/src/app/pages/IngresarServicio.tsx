@@ -28,6 +28,7 @@ interface OrderDraft {
   customPrices: Record<number, string>
   warrantyServiceIds: number[]
   downpayment: string
+  downpaymentMethod: string
   isWarranty: boolean
 }
 
@@ -50,7 +51,7 @@ const categoryLabels: Record<string, string> = {
   exterior:           'Exterior',
   interior:           'Interior',
   ceramico:           'Cerámico',
-  correccion_pintura: 'Corrección de Pintura',
+  correccion_pintura: 'Corrección',
 }
 
 const BRANDS = [
@@ -125,7 +126,7 @@ export default function IngresarServicio() {
     clientPhone: fromAppt?.client_phone ?? '',
     selectedServices: [], notes: '',
     deliveryDate: '', deliveryTime: '',
-    customPrices: {}, warrantyServiceIds: [], downpayment: '', isWarranty: false,
+    customPrices: {}, warrantyServiceIds: [], downpayment: '', downpaymentMethod: '', isWarranty: false,
   })
 
   // Brand autocomplete
@@ -141,6 +142,10 @@ export default function IngresarServicio() {
 
   // Price editing
   const [editingPriceId, setEditingPriceId] = useState<number | null>(null)
+
+  // Hour picker dropdown
+  const [showHourPicker, setShowHourPicker] = useState(false)
+  const HOURS = Array.from({ length: 10 }, (_, i) => i + 8)
 
   function goTo(next: Step) {
     setPrevStep(step)
@@ -290,8 +295,9 @@ export default function IngresarServicio() {
         serviceIds:   form.selectedServices,
         notes:        form.notes || undefined,
         scheduledDeliveryAt,
-        downpayment:  abonoAmt > 0 ? abonoAmt : undefined,
-        isWarranty:   form.isWarranty,
+        downpayment:       abonoAmt > 0 ? abonoAmt : undefined,
+        downpaymentMethod: abonoAmt > 0 && form.downpaymentMethod ? form.downpaymentMethod : undefined,
+        isWarranty:        form.isWarranty,
         itemOverrides: itemOverrides.length > 0 ? itemOverrides : undefined,
       })
       toast.success(`Orden ${orderNumber} creada`, {
@@ -302,7 +308,7 @@ export default function IngresarServicio() {
         api.appointments.delete(fromAppt.id).catch(() => {})
       }
       setStep(1); setPrevStep(1); setVehicleType(null)
-      setForm({ plate: '', brand: '', model: '', color: '', clientName: '', clientPhone: '', selectedServices: [], notes: '', deliveryDate: '', deliveryTime: '', customPrices: {}, warrantyServiceIds: [], downpayment: '', isWarranty: false })
+      setForm({ plate: '', brand: '', model: '', color: '', clientName: '', clientPhone: '', selectedServices: [], notes: '', deliveryDate: '', deliveryTime: '', customPrices: {}, warrantyServiceIds: [], downpayment: '', downpaymentMethod: '', isWarranty: false })
       setBrandQuery('')
       navigate('/')
     } catch (err) {
@@ -640,15 +646,61 @@ export default function IngresarServicio() {
                     <div>
                       <label className="text-sm text-gray-400 block mb-1.5">Fecha</label>
                       <input type="date" value={form.deliveryDate}
+                        min={TODAY}
                         onChange={e => setForm(f => ({ ...f, deliveryDate: e.target.value }))}
                         className="w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-gray-100 focus:border-yellow-500/50 focus:outline-none focus:ring-2 focus:ring-yellow-500/20 [color-scheme:dark]" />
                     </div>
-                    <div>
+                    <div className="relative">
                       <label className="text-sm text-gray-400 block mb-1.5">Hora</label>
-                      <input type="time" value={form.deliveryTime}
-                        onChange={e => setForm(f => ({ ...f, deliveryTime: e.target.value }))}
+                      <button
+                        type="button"
                         disabled={!form.deliveryDate}
-                        className="w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-gray-100 focus:border-yellow-500/50 focus:outline-none focus:ring-2 focus:ring-yellow-500/20 [color-scheme:dark] disabled:opacity-40" />
+                        onClick={() => setShowHourPicker(v => !v)}
+                        className={cn(
+                          'w-full rounded-xl border px-3 py-2 text-sm text-left flex items-center justify-between transition-colors',
+                          'bg-white/5 border-white/10 text-gray-100',
+                          showHourPicker && 'border-yellow-500/50 ring-2 ring-yellow-500/20',
+                          !form.deliveryDate && 'opacity-40 cursor-not-allowed',
+                        )}
+                      >
+                        <span className={form.deliveryTime ? 'text-gray-100' : 'text-gray-500'}>
+                          {form.deliveryTime ? `${Number(form.deliveryTime.split(':')[0])}:00` : '— Hora —'}
+                        </span>
+                        <ChevronRight size={14} className={cn('text-gray-500 transition-transform', showHourPicker && 'rotate-90')} />
+                      </button>
+                      <AnimatePresence>
+                        {showHourPicker && form.deliveryDate && (
+                          <motion.ul
+                            initial={{ opacity: 0, y: -6, scaleY: 0.95 }}
+                            animate={{ opacity: 1, y: 0, scaleY: 1 }}
+                            exit={{ opacity: 0, y: -6, scaleY: 0.95 }}
+                            transition={{ duration: 0.15 }}
+                            style={{ transformOrigin: 'top' }}
+                            className="absolute z-50 mt-1 w-full rounded-xl border border-white/10 bg-gray-900 shadow-xl shadow-black/40 overflow-hidden max-h-52 overflow-y-auto"
+                          >
+                            {HOURS.map(h => {
+                              const val = `${String(h).padStart(2, '0')}:00`
+                              const selected = form.deliveryTime === val
+                              return (
+                                <li key={h}>
+                                  <button
+                                    type="button"
+                                    onClick={() => { setForm(f => ({ ...f, deliveryTime: val })); setShowHourPicker(false) }}
+                                    className={cn(
+                                      'w-full text-left px-4 py-2 text-sm transition-colors',
+                                      selected
+                                        ? 'bg-yellow-500/15 text-yellow-400 font-medium'
+                                        : 'text-gray-300 hover:bg-white/5 hover:text-white'
+                                    )}
+                                  >
+                                    {h}:00
+                                  </button>
+                                </li>
+                              )
+                            })}
+                          </motion.ul>
+                        )}
+                      </AnimatePresence>
                     </div>
                   </div>
                 </div>
@@ -681,64 +733,65 @@ export default function IngresarServicio() {
                           'rounded-xl border px-3 py-2.5 transition-colors',
                           isWarrantySvc ? 'border-orange-500/25 bg-orange-500/5' : 'border-white/6 bg-white/[0.02]'
                         )}>
-                          <div className="flex items-center justify-between gap-2">
-                            <div className="flex items-center gap-2 flex-1 min-w-0">
-                              <Badge variant={s.category === 'exterior' ? 'yellow' : s.category === 'interior' ? 'blue' : s.category === 'correccion_pintura' ? 'orange' : 'purple'}>
-                                {categoryLabels[s.category]}
-                              </Badge>
-                              <span className="text-sm text-gray-200 truncate">{s.name}</span>
-                            </div>
-                            <div className="flex items-center gap-2 shrink-0">
-                              {/* Warranty toggle — only when isWarranty flag is on */}
-                              {form.isWarranty && (
-                                <button onClick={toggleWarrantySvc}
-                                  title={isWarrantySvc ? 'Quitar garantía' : 'Marcar como garantía'}
-                                  className={cn(
-                                    'p-1 rounded-lg transition-colors',
-                                    isWarrantySvc
-                                      ? 'text-orange-400 bg-orange-500/15'
-                                      : 'text-gray-600 hover:text-orange-400 hover:bg-orange-500/10'
-                                  )}>
-                                  <ShieldCheck size={14} />
-                                </button>
-                              )}
-                              {/* Price section */}
-                              {isWarrantySvc ? (
-                                <>
+                          {/* Row 1: badge + service name */}
+                          <div className="flex items-center gap-2 min-w-0">
+                            <Badge variant={s.category === 'exterior' ? 'yellow' : s.category === 'interior' ? 'blue' : s.category === 'correccion_pintura' ? 'orange' : 'purple'} className="shrink-0">
+                              {categoryLabels[s.category]}
+                            </Badge>
+                            <span className="text-sm text-gray-200 truncate">{s.name}</span>
+                          </div>
+                          {/* Row 2: price + actions (right-aligned) */}
+                          <div className="flex items-center justify-end gap-2 mt-1.5">
+                            {/* Warranty toggle — only when isWarranty flag is on */}
+                            {form.isWarranty && (
+                              <button onClick={toggleWarrantySvc}
+                                title={isWarrantySvc ? 'Quitar garantía' : 'Marcar como garantía'}
+                                className={cn(
+                                  'p-1 rounded-lg transition-colors',
+                                  isWarrantySvc
+                                    ? 'text-orange-400 bg-orange-500/15'
+                                    : 'text-gray-600 hover:text-orange-400 hover:bg-orange-500/10'
+                                )}>
+                                <ShieldCheck size={14} />
+                              </button>
+                            )}
+                            {/* Price section */}
+                            {isWarrantySvc ? (
+                              <>
+                                <span className="text-xs text-gray-500 line-through">${stdPrice.toLocaleString('es-CO')}</span>
+                                <span className="text-sm font-medium text-orange-400">$0</span>
+                              </>
+                            ) : isEditingThis ? (
+                              <input
+                                type="number" min="0"
+                                value={form.customPrices[s.id] ?? String(stdPrice)}
+                                onChange={e => setForm(f => ({ ...f, customPrices: { ...f.customPrices, [s.id]: e.target.value } }))}
+                                onBlur={() => setEditingPriceId(null)}
+                                onKeyDown={e => e.key === 'Enter' && setEditingPriceId(null)}
+                                onWheel={e => e.currentTarget.blur()}
+                                className="w-28 rounded-lg border border-yellow-500/40 bg-gray-900 px-2 py-1 text-sm text-yellow-400 text-right focus:outline-none"
+                                autoFocus
+                              />
+                            ) : (
+                              <>
+                                {discAmt > 0 && (
                                   <span className="text-xs text-gray-500 line-through">${stdPrice.toLocaleString('es-CO')}</span>
-                                  <span className="text-sm font-medium text-orange-400">$0</span>
-                                </>
-                              ) : isEditingThis ? (
-                                <input
-                                  type="number" min="0"
-                                  value={form.customPrices[s.id] ?? String(stdPrice)}
-                                  onChange={e => setForm(f => ({ ...f, customPrices: { ...f.customPrices, [s.id]: e.target.value } }))}
-                                  onBlur={() => setEditingPriceId(null)}
-                                  onKeyDown={e => e.key === 'Enter' && setEditingPriceId(null)}
-                                  className="w-28 rounded-lg border border-yellow-500/40 bg-gray-900 px-2 py-1 text-sm text-yellow-400 text-right focus:outline-none"
-                                  autoFocus
-                                />
-                              ) : (
-                                <>
-                                  {discAmt > 0 && (
-                                    <span className="text-xs text-gray-500 line-through">${stdPrice.toLocaleString('es-CO')}</span>
-                                  )}
-                                  <span className={cn('text-sm font-medium', discAmt > 0 ? 'text-green-400' : 'text-yellow-400')}>
-                                    ${effPrice.toLocaleString('es-CO')}
-                                  </span>
-                                  <button onClick={() => setEditingPriceId(s.id)}
-                                    className="p-1 rounded-lg hover:bg-white/10 text-gray-600 hover:text-gray-300 transition-colors" title="Editar precio">
-                                    <Pencil size={12} />
-                                  </button>
-                                </>
-                              )}
-                            </div>
+                                )}
+                                <span className={cn('text-sm font-medium', discAmt > 0 ? 'text-green-400' : 'text-yellow-400')}>
+                                  ${effPrice.toLocaleString('es-CO')}
+                                </span>
+                                <button onClick={() => setEditingPriceId(s.id)}
+                                  className="p-1 rounded-lg hover:bg-white/10 text-gray-600 hover:text-gray-300 transition-colors" title="Editar precio">
+                                  <Pencil size={12} />
+                                </button>
+                              </>
+                            )}
                           </div>
                           {isWarrantySvc && (
-                            <p className="text-xs text-orange-400/60 mt-1 text-right">Servicio en garantía · sin cobro</p>
+                            <p className="text-xs text-orange-400/60 mt-0.5 text-right">Servicio en garantía · sin cobro</p>
                           )}
                           {!isWarrantySvc && discAmt > 0 && (
-                            <p className="text-xs text-green-400/70 mt-1 text-right">
+                            <p className="text-xs text-green-400/70 mt-0.5 text-right">
                               Descuento: −${discAmt.toLocaleString('es-CO')} ({Math.round((discAmt / stdPrice) * 100)}%)
                             </p>
                           )}
@@ -784,6 +837,7 @@ export default function IngresarServicio() {
                           placeholder="0"
                           value={form.downpayment}
                           onChange={e => setForm(f => ({ ...f, downpayment: e.target.value }))}
+                          onWheel={e => e.currentTarget.blur()}
                           className="w-full rounded-xl border border-white/10 bg-white/5 pl-7 pr-3 py-2 text-sm text-gray-100 focus:border-yellow-500/50 focus:outline-none focus:ring-2 focus:ring-yellow-500/20"
                         />
                       </div>
@@ -794,6 +848,36 @@ export default function IngresarServicio() {
                         </div>
                       )}
                     </div>
+                    {abonoAmt > 0 && (
+                      <div className="mt-2.5">
+                        <p className="text-xs text-gray-500 mb-1.5">Método de pago del abono</p>
+                        <div className="grid grid-cols-2 gap-1.5">
+                          {[
+                            { key: 'Efectivo',          label: 'Efectivo' },
+                            { key: 'Banco Caja Social', label: 'Banco Caja Social' },
+                            { key: 'Nequi',             label: 'Nequi' },
+                            { key: 'Bancolombia',       label: 'Bancolombia' },
+                          ].map(m => {
+                            const sel = form.downpaymentMethod === m.key
+                            return (
+                              <button
+                                key={m.key} type="button"
+                                onClick={() => setForm(f => ({ ...f, downpaymentMethod: sel ? '' : m.key }))}
+                                className={cn(
+                                  'flex items-center gap-2 rounded-xl border px-3 py-2 text-left text-xs transition-colors',
+                                  sel ? 'border-yellow-500/60 bg-yellow-500/10 text-yellow-300' : 'border-white/8 bg-white/[0.03] text-gray-400 hover:bg-white/[0.06]'
+                                )}
+                              >
+                                <div className={cn('w-3.5 h-3.5 rounded border-2 shrink-0 flex items-center justify-center', sel ? 'border-yellow-500 bg-yellow-500' : 'border-gray-600')}>
+                                  {sel && <svg viewBox="0 0 10 8" className="w-2 h-1.5 text-gray-900" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M1 4l2.5 2.5L9 1"/></svg>}
+                                </div>
+                                {m.label}
+                              </button>
+                            )
+                          })}
+                        </div>
+                      </div>
+                    )}
                     {abonoAmt > total && (
                       <p className="text-xs text-red-400 mt-1">El abono no puede superar el total</p>
                     )}

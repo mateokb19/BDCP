@@ -150,22 +150,81 @@ export const mockPatioEntries: PatioEntry[] = [
 
 // ---- INVENTORY CATEGORIES ----
 export const mockInventoryCategories: InventoryCategory[] = [
-  { id: 1, name: 'Productos de Limpieza' },
-  { id: 2, name: 'Ceras y Pulimentos' },
-  { id: 3, name: 'Productos Cerámicos' },
-  { id: 4, name: 'Materiales y Herramientas' },
+  { id: 1, name: 'Área de Detallado' },
+  { id: 2, name: 'Área Latonería y Pintura' },
+  { id: 3, name: 'Área Administrativa' },
+  { id: 4, name: 'Área de Limpieza' },
 ]
 
 // ---- INVENTORY ITEMS ----
+// Quantities taken from stock sheet (0.25 = 1/4, 0.5 = 1/2).
+// Unit, min_stock and cost_per_unit are assumed — update once info is available.
 export const mockInventoryItems: InventoryItem[] = [
-  { id: 1, category_id: 1, name: 'Shampoo para autos',   description: 'pH neutro, alta espuma',  quantity: 2.5,  unit: 'litros',   min_stock: 3,  cost_per_unit: 8.50,  updated_at: '2026-03-15T00:00:00Z' },
-  { id: 2, category_id: 1, name: 'Desengrasante',        description: 'Uso profesional',         quantity: 5.0,  unit: 'litros',   min_stock: 2,  cost_per_unit: 6.00,  updated_at: '2026-03-14T00:00:00Z' },
-  { id: 3, category_id: 1, name: 'Ambientador',          description: 'Aroma cítrico',           quantity: 20,   unit: 'unidades', min_stock: 5,  cost_per_unit: 2.50,  updated_at: '2026-03-12T00:00:00Z' },
-  { id: 4, category_id: 2, name: 'Cera de carnauba',     description: 'Acabado espejo',          quantity: 0.8,  unit: 'kg',       min_stock: 1,  cost_per_unit: 25.00, updated_at: '2026-03-10T00:00:00Z' },
-  { id: 5, category_id: 2, name: 'Pulidor compuesto',    description: 'Corte medio',             quantity: 3.0,  unit: 'litros',   min_stock: 1,  cost_per_unit: 30.00, updated_at: '2026-03-13T00:00:00Z' },
-  { id: 6, category_id: 3, name: 'Kit cerámico básico',  description: 'Protección 12 meses',     quantity: 1,    unit: 'unidades', min_stock: 2,  cost_per_unit: 80.00, updated_at: '2026-03-16T00:00:00Z' },
-  { id: 7, category_id: 4, name: 'Microfibra 40x40',     description: '350 GSM',                 quantity: 28,   unit: 'unidades', min_stock: 10, cost_per_unit: 1.50,  updated_at: '2026-03-11T00:00:00Z' },
-  { id: 8, category_id: 4, name: 'Esponja aplicación',   description: 'Para ceras y cerámicos',  quantity: 4,    unit: 'unidades', min_stock: 5,  cost_per_unit: 1.00,  updated_at: '2026-03-17T00:00:00Z' },
+  // ── Área de Detallado ──────────────────────────────────────────────
+  { id:  1, category_id: 1, name: 'C2',                    description: 'Líquido',  quantity: 0.5,  unit: 'unidades', min_stock: 1, updated_at: '2026-03-23T00:00:00Z' },
+  { id:  2, category_id: 1, name: 'Hydrophobic',           description: '',         quantity: 0.5,  unit: 'unidades', min_stock: 1, updated_at: '2026-03-23T00:00:00Z' },
+  { id:  3, category_id: 1, name: 'Panel Wipe (vidrios)',  description: '',         quantity: 0,    unit: 'unidades', min_stock: 1, updated_at: '2026-03-23T00:00:00Z' },
+  { id:  4, category_id: 1, name: 'Cerámico tapicería',    description: '',         quantity: 0.25, unit: 'unidades', min_stock: 1, updated_at: '2026-03-23T00:00:00Z' },
+  { id:  5, category_id: 1, name: 'Leather Guard',         description: '',         quantity: 0.5,  unit: 'unidades', min_stock: 1, updated_at: '2026-03-23T00:00:00Z' },
+  { id:  6, category_id: 1, name: 'G5 cerámico Vidrios',   description: '',         quantity: 0,    unit: 'unidades', min_stock: 1, updated_at: '2026-03-23T00:00:00Z' },
+  { id:  7, category_id: 1, name: 'I1 smart fabric',       description: '',         quantity: 0.25, unit: 'unidades', min_stock: 1, updated_at: '2026-03-23T00:00:00Z' },
+  { id:  8, category_id: 1, name: 'C1',                    description: '',         quantity: 1,    unit: 'unidades', min_stock: 1, updated_at: '2026-03-23T00:00:00Z' },
+  { id:  9, category_id: 1, name: 'C5 (Rines)',            description: '',         quantity: 0.5,  unit: 'unidades', min_stock: 1, updated_at: '2026-03-23T00:00:00Z' },
+  { id: 10, category_id: 1, name: 'Cerámico 9 años',       description: '',         quantity: 0.25, unit: 'unidades', min_stock: 1, updated_at: '2026-03-23T00:00:00Z' },
+  { id: 11, category_id: 1, name: '505',                   description: '',         quantity: 1,    unit: 'unidades', min_stock: 1, updated_at: '2026-03-23T00:00:00Z' },
+  { id: 12, category_id: 1, name: '510',                   description: '',         quantity: 1,    unit: 'unidades', min_stock: 1, updated_at: '2026-03-23T00:00:00Z' },
+  { id: 13, category_id: 1, name: '520',                   description: '',         quantity: 0.5,  unit: 'unidades', min_stock: 1, updated_at: '2026-03-23T00:00:00Z' },
+  { id: 14, category_id: 1, name: 'F4',                    description: '',         quantity: 1,    unit: 'unidades', min_stock: 1, updated_at: '2026-03-23T00:00:00Z' },
+  { id: 15, category_id: 1, name: 'Cinta amarilla',        description: 'Rollo',   quantity: 4,    unit: 'rollos',   min_stock: 2, updated_at: '2026-03-23T00:00:00Z' },
+  { id: 16, category_id: 1, name: 'Pomo 2° paso',          description: '6 inch',  quantity: 1,    unit: 'unidades', min_stock: 1, updated_at: '2026-03-23T00:00:00Z' },
+  { id: 17, category_id: 1, name: 'Alcohol isopropílico',  description: '',         quantity: 0,    unit: 'unidades', min_stock: 1, updated_at: '2026-03-23T00:00:00Z' },
+  { id: 18, category_id: 1, name: 'Shampoo azul',          description: '',         quantity: 0.5,  unit: 'unidades', min_stock: 1, updated_at: '2026-03-23T00:00:00Z' },
+  { id: 19, category_id: 1, name: 'Shampoo rojo',          description: '',         quantity: 0.5,  unit: 'unidades', min_stock: 1, updated_at: '2026-03-23T00:00:00Z' },
+  { id: 20, category_id: 1, name: 'Active',                description: '',         quantity: 0,    unit: 'unidades', min_stock: 1, updated_at: '2026-03-23T00:00:00Z' },
+  { id: 21, category_id: 1, name: 'Morita',                description: '',         quantity: 1,    unit: 'unidades', min_stock: 1, updated_at: '2026-03-23T00:00:00Z' },
+  { id: 22, category_id: 1, name: 'Partes negras',         description: '',         quantity: 0.5,  unit: 'unidades', min_stock: 1, updated_at: '2026-03-23T00:00:00Z' },
+  { id: 23, category_id: 1, name: 'Gel (llantas)',         description: '',         quantity: 0,    unit: 'unidades', min_stock: 1, updated_at: '2026-03-23T00:00:00Z' },
+
+  // ── Área Latonería y Pintura ───────────────────────────────────────
+  { id: 24, category_id: 2, name: 'Fondo',                 description: '',         quantity: 0,    unit: 'unidades', min_stock: 1, updated_at: '2026-03-23T00:00:00Z' },
+  { id: 25, category_id: 2, name: 'Barniz',                description: '',         quantity: 0,    unit: 'unidades', min_stock: 1, updated_at: '2026-03-23T00:00:00Z' },
+  { id: 26, category_id: 2, name: 'Lija de brillado 200',  description: '6 inch',  quantity: 0,    unit: 'unidades', min_stock: 5, updated_at: '2026-03-23T00:00:00Z' },
+  { id: 27, category_id: 2, name: 'Lija de brillado 1500', description: '6 inch',  quantity: 0,    unit: 'unidades', min_stock: 5, updated_at: '2026-03-23T00:00:00Z' },
+  { id: 28, category_id: 2, name: 'Lija de brillado 2000', description: '6 inch',  quantity: 0,    unit: 'unidades', min_stock: 5, updated_at: '2026-03-23T00:00:00Z' },
+  { id: 29, category_id: 2, name: 'Lija de brillado 3000', description: '6 inch',  quantity: 0,    unit: 'unidades', min_stock: 5, updated_at: '2026-03-23T00:00:00Z' },
+  { id: 30, category_id: 2, name: 'Lija 100',              description: '6 inch',  quantity: 0,    unit: 'unidades', min_stock: 5, updated_at: '2026-03-23T00:00:00Z' },
+  { id: 31, category_id: 2, name: 'Lija 150',              description: '6 inch',  quantity: 0,    unit: 'unidades', min_stock: 5, updated_at: '2026-03-23T00:00:00Z' },
+  { id: 32, category_id: 2, name: 'Lija 220',              description: '6 inch',  quantity: 0,    unit: 'unidades', min_stock: 5, updated_at: '2026-03-23T00:00:00Z' },
+  { id: 33, category_id: 2, name: 'Lija 320',              description: '6 inch',  quantity: 0,    unit: 'unidades', min_stock: 5, updated_at: '2026-03-23T00:00:00Z' },
+  { id: 34, category_id: 2, name: 'Lija 400',              description: '6 inch',  quantity: 0,    unit: 'unidades', min_stock: 5, updated_at: '2026-03-23T00:00:00Z' },
+  { id: 35, category_id: 2, name: 'Lija 600',              description: '6 inch',  quantity: 0,    unit: 'unidades', min_stock: 5, updated_at: '2026-03-23T00:00:00Z' },
+  { id: 36, category_id: 2, name: 'Tira de taco 100',      description: '',         quantity: 0,    unit: 'unidades', min_stock: 5, updated_at: '2026-03-23T00:00:00Z' },
+  { id: 37, category_id: 2, name: 'Tira de taco 150',      description: '',         quantity: 0,    unit: 'unidades', min_stock: 5, updated_at: '2026-03-23T00:00:00Z' },
+  { id: 38, category_id: 2, name: 'Tira de taco 320',      description: '',         quantity: 0,    unit: 'unidades', min_stock: 5, updated_at: '2026-03-23T00:00:00Z' },
+  { id: 39, category_id: 2, name: 'Tira de taco 400',      description: '',         quantity: 0,    unit: 'unidades', min_stock: 5, updated_at: '2026-03-23T00:00:00Z' },
+  { id: 40, category_id: 2, name: 'Trapos',                description: '',         quantity: 1000, unit: 'gramos',   min_stock: 500, updated_at: '2026-03-23T00:00:00Z' },
+  { id: 41, category_id: 2, name: 'Filtros',               description: '',         quantity: 0,    unit: 'unidades', min_stock: 2,   updated_at: '2026-03-23T00:00:00Z' },
+
+  // ── Área Administrativa ────────────────────────────────────────────
+  // Placeholder — inventariar y actualizar cantidades, unidades y costos
+  { id: 42, category_id: 3, name: 'Resmas de papel',       description: '',         quantity: 0,    unit: 'resmas',   min_stock: 2,   updated_at: '2026-03-23T00:00:00Z' },
+  { id: 43, category_id: 3, name: 'Lapiceros',             description: '',         quantity: 0,    unit: 'unidades', min_stock: 5,   updated_at: '2026-03-23T00:00:00Z' },
+  { id: 44, category_id: 3, name: 'Carpetas / Folders',    description: '',         quantity: 0,    unit: 'unidades', min_stock: 3,   updated_at: '2026-03-23T00:00:00Z' },
+  { id: 45, category_id: 3, name: 'Tóner / Cartucho',      description: '',         quantity: 0,    unit: 'unidades', min_stock: 1,   updated_at: '2026-03-23T00:00:00Z' },
+  { id: 46, category_id: 3, name: 'Papel higiénico',       description: '',         quantity: 0,    unit: 'unidades', min_stock: 6,   updated_at: '2026-03-23T00:00:00Z' },
+  { id: 47, category_id: 3, name: 'Jabón para manos',      description: '',         quantity: 0,    unit: 'unidades', min_stock: 2,   updated_at: '2026-03-23T00:00:00Z' },
+  { id: 48, category_id: 3, name: 'Bolsas de basura',      description: '',         quantity: 0,    unit: 'unidades', min_stock: 10,  updated_at: '2026-03-23T00:00:00Z' },
+
+  // ── Área de Limpieza ───────────────────────────────────────────────
+  // Placeholder — inventariar y actualizar cantidades, unidades y costos
+  { id: 49, category_id: 4, name: 'Escoba',                description: '',         quantity: 0,    unit: 'unidades', min_stock: 1,   updated_at: '2026-03-23T00:00:00Z' },
+  { id: 50, category_id: 4, name: 'Trapeador',             description: '',         quantity: 0,    unit: 'unidades', min_stock: 1,   updated_at: '2026-03-23T00:00:00Z' },
+  { id: 51, category_id: 4, name: 'Recogedor',             description: '',         quantity: 0,    unit: 'unidades', min_stock: 1,   updated_at: '2026-03-23T00:00:00Z' },
+  { id: 52, category_id: 4, name: 'Jabón desengrasante',   description: '',         quantity: 0,    unit: 'unidades', min_stock: 1,   updated_at: '2026-03-23T00:00:00Z' },
+  { id: 53, category_id: 4, name: 'Desinfectante',         description: '',         quantity: 0,    unit: 'litros',   min_stock: 1,   updated_at: '2026-03-23T00:00:00Z' },
+  { id: 54, category_id: 4, name: 'Hipoclorito',           description: '',         quantity: 0,    unit: 'litros',   min_stock: 1,   updated_at: '2026-03-23T00:00:00Z' },
+  { id: 55, category_id: 4, name: 'Esponja / Estropajo',   description: '',         quantity: 0,    unit: 'unidades', min_stock: 3,   updated_at: '2026-03-23T00:00:00Z' },
+  { id: 56, category_id: 4, name: 'Guantes de caucho',     description: '',         quantity: 0,    unit: 'pares',    min_stock: 2,   updated_at: '2026-03-23T00:00:00Z' },
 ]
 
 // ---- CERAMIC TREATMENTS ----

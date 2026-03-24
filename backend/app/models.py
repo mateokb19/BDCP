@@ -129,11 +129,16 @@ class ServiceOrder(Base):
     subtotal       = Column(Numeric(10, 2), nullable=False, default=0)
     discount       = Column(Numeric(10, 2), nullable=False, default=0)
     total          = Column(Numeric(10, 2), nullable=False, default=0)
-    paid           = Column(Boolean, nullable=False, default=False)
-    payment_method = Column(String(50))
-    notes          = Column(Text)
-    downpayment    = Column(Numeric(12, 2), nullable=False, default=0)
-    is_warranty    = Column(Boolean, nullable=False, default=False)
+    paid             = Column(Boolean, nullable=False, default=False)
+    payment_method   = Column(String(50))
+    payment_cash        = Column(Numeric(12, 2), nullable=False, default=0)
+    payment_datafono    = Column(Numeric(12, 2), nullable=False, default=0)
+    payment_nequi       = Column(Numeric(12, 2), nullable=False, default=0)
+    payment_bancolombia = Column(Numeric(12, 2), nullable=False, default=0)
+    notes            = Column(Text)
+    downpayment        = Column(Numeric(12, 2), nullable=False, default=0)
+    downpayment_method = Column(String(50))
+    is_warranty        = Column(Boolean, nullable=False, default=False)
     appointment_id       = Column(Integer, ForeignKey("appointments.id", ondelete="SET NULL"))
     week_liquidation_id  = Column(Integer, ForeignKey("week_liquidations.id", ondelete="SET NULL"), nullable=True)
     created_at           = Column(DateTime, server_default=func.now(), nullable=False)
@@ -268,3 +273,16 @@ class Appointment(Base):
     order_id     = Column(Integer, ForeignKey("service_orders.id", ondelete="SET NULL"))
     created_at   = Column(DateTime, server_default=func.now(), nullable=False)
     updated_at   = Column(DateTime, server_default=func.now(), onupdate=func.now(), nullable=False)
+
+
+class Expense(Base):
+    __tablename__ = "expenses"
+
+    id             = Column(Integer, primary_key=True)
+    date           = Column(Date, nullable=False, server_default=func.current_date())
+    amount         = Column(Numeric(12, 2), nullable=False)
+    category       = Column(String(100))
+    description    = Column(String(300))
+    payment_method = Column(String(50))
+    notes          = Column(Text)
+    created_at     = Column(DateTime, server_default=func.now(), nullable=False)

@@ -86,6 +86,7 @@ class OrderCreate(BaseModel):
     item_overrides:         list[ItemOverride]  = []
     scheduled_delivery_at:  Optional[datetime]  = None
     downpayment:            Optional[Decimal]   = None
+    downpayment_method:     Optional[str]       = None
     is_warranty:            bool                = False
 
     @field_validator("plate")
@@ -150,10 +151,14 @@ class OrderOut(OrmBase):
     status:       str
     subtotal:     Decimal
     total:        Decimal
-    paid:         bool
-    downpayment:  Decimal
-    is_warranty:  bool
-    items:        list[OrderItemOut]
+    paid:                bool
+    downpayment:         Decimal
+    is_warranty:         bool
+    payment_cash:        Decimal
+    payment_datafono:    Decimal
+    payment_nequi:       Decimal
+    payment_bancolombia: Decimal
+    items:               list[OrderItemOut]
 
 
 # ── Patio ────────────────────────────────────────────────────────────────────────
@@ -175,21 +180,37 @@ class PatioEntryOut(OrmBase):
     order:    Optional[OrderOut]
 
 
+class AdvancePayload(BaseModel):
+    payment_cash:        Decimal = Decimal("0")
+    payment_datafono:    Decimal = Decimal("0")
+    payment_nequi:       Decimal = Decimal("0")
+    payment_bancolombia: Decimal = Decimal("0")
+
+
 class PatioPatch(BaseModel):
-    color:       Optional[str] = None
-    operator_id: Optional[int] = None
-    notes:       Optional[str] = None
-    service_ids: Optional[list[int]] = None
+    color:                  Optional[str]      = None
+    operator_id:            Optional[int]      = None
+    notes:                  Optional[str]      = None
+    service_ids:            Optional[list[int]]= None
+    scheduled_delivery_at:  Optional[datetime] = None
 
 
 # ── Ceramics ─────────────────────────────────────────────────────────────────
 
+class CeramicClientOut(OrmBase):
+    id:    int
+    name:  str
+    phone: Optional[str]
+    email: Optional[str]
+
+
 class CeramicVehicleOut(OrmBase):
-    plate: str
-    brand: Optional[str]
-    model: Optional[str]
-    color: Optional[str]
-    type:  str
+    plate:  str
+    brand:  Optional[str]
+    model:  Optional[str]
+    color:  Optional[str]
+    type:   str
+    client: Optional[CeramicClientOut]
 
 
 class CeramicOperatorOut(OrmBase):
@@ -284,7 +305,7 @@ class AppointmentCreate(BaseModel):
 
 
 class AppointmentPatch(BaseModel):
-    date:         Optional[date] = None
+    date:         Optional[str]  = None   # "YYYY-MM-DD" string; router converts to date
     time:         Optional[str]  = None
     vehicle_type: Optional[str]  = None
     brand:        Optional[str]  = None
@@ -436,3 +457,88 @@ class ReportResponse(BaseModel):
     week_statuses:       List[ReportWeekStatus]
     pending_debts:       List[ReportPendingDebt]
     total_pending_owed:  Decimal
+
+
+# ── Clients ─────────────────────────────────────────────────────────────────────
+
+class ClientVehicleOut(OrmBase):
+    id:    int
+    plate: str
+    brand: Optional[str]
+    model: Optional[str]
+    type:  str
+    color: Optional[str]
+
+
+class ClientOut(OrmBase):
+    id:          int
+    name:        str
+    phone:       Optional[str]
+    email:       Optional[str]
+    notes:       Optional[str]
+    created_at:  datetime
+    vehicles:    List[ClientVehicleOut] = []
+    order_count: int                    = 0
+    total_spent: Decimal                = Decimal("0")
+    last_service: Optional[date]        = None
+
+
+class ClientPatch(BaseModel):
+    name:  Optional[str] = None
+    phone: Optional[str] = None
+    email: Optional[str] = None
+    notes: Optional[str] = None
+
+
+# ── Ingresos ────────────────────────────────────────────────────────────────────
+
+class IngresosDayTotal(BaseModel):
+    date:                str
+    total:               Decimal
+    payment_cash:        Decimal
+    payment_datafono:    Decimal
+    payment_nequi:       Decimal
+    payment_bancolombia: Decimal
+
+class IngresosResponse(BaseModel):
+    date_start:          str
+    date_end:            str
+    total:               Decimal
+    order_count:         int
+    payment_cash:        Decimal
+    payment_datafono:    Decimal
+    payment_nequi:       Decimal
+    payment_bancolombia: Decimal
+    daily_totals:        List[IngresosDayTotal]
+
+
+class IngresoBreakdownItem(BaseModel):
+    order_number: str
+    date:         str
+    plate:        str
+    vehicle:      str          # "brand model"
+    client:       str
+    amount:       float
+    is_abono:     bool = False
+
+
+# ── Expenses (Egresos) ──────────────────────────────────────────────────────────
+
+class ExpenseOut(OrmBase):
+    id:             int
+    date:           date
+    amount:         Decimal
+    category:       Optional[str]
+    description:    Optional[str]
+    payment_method: Optional[str]
+    notes:          Optional[str]
+    created_at:     datetime
+
+
+class ExpenseCreate(BaseModel):
+    date:           date
+    amount:         Decimal
+    category:       Optional[str] = None
+    description:    Optional[str] = None
+    payment_method: Optional[str] = None
+    notes:          Optional[str] = None

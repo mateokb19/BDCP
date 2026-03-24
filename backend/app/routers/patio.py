@@ -60,8 +60,9 @@ def list_patio(
 
 
 @router.post("/{id}/advance", response_model=schemas.PatioEntryOut)
-def advance_status(id: int, db: Session = Depends(get_db)):
-    """Advance patio entry to the next status."""
+def advance_status(id: int, payload: schemas.AdvancePayload = schemas.AdvancePayload(), db: Session = Depends(get_db)):
+    """Advance patio entry to the next status. When advancing to 'entregado',
+    optionally include payment_cash and payment_transfer amounts."""
     entry = _get_entry_or_404(id, db)
     next_status = NEXT_STATUS.get(entry.status)
     if next_status is None:
@@ -76,8 +77,13 @@ def advance_status(id: int, db: Session = Depends(get_db)):
         entry.completed_at = now
         entry.order.status = models.OrderStatusEnum.listo
     elif next_status == models.PatioStatusEnum.entregado:
-        entry.delivered_at = now
-        entry.order.status = models.OrderStatusEnum.entregado
+        entry.delivered_at           = now
+        entry.order.status           = models.OrderStatusEnum.entregado
+        entry.order.payment_cash        = payload.payment_cash
+        entry.order.payment_datafono    = payload.payment_datafono
+        entry.order.payment_nequi       = payload.payment_nequi
+        entry.order.payment_bancolombia = payload.payment_bancolombia
+        entry.order.paid                = True
 
     db.commit()
     db.refresh(entry)
@@ -122,51 +128,75 @@ def edit_patio_entry(id: int, payload: schemas.PatioPatch, db: Session = Depends
 
     # Replace order items if service_ids provided
     if payload.service_ids is not None:
-        if not payload.service_ids:
-            raise HTTPException(status_code=422, detail="Debe seleccionar al menos un servicio")
-
-        services = db.query(models.Service).filter(
-            models.Service.id.in_(payload.service_ids),
-            models.Service.active == True,
-        ).all()
-        if len(services) != len(set(payload.service_ids)):
-            raise HTTPException(status_code=404, detail="Uno o más servicios no encontrados")
-
-        vehicle_type = entry.vehicle.type
-        def _price(svc):
-            if vehicle_type == "camion_estandar":
-                return svc.price_camion_estandar or svc.price_automovil
-            if vehicle_type == "camion_xl":
-                return svc.price_camion_xl or svc.price_automovil
-            return svc.price_automovil
-
-        # Delete old items
+        # Delete old items unconditionally
         db.query(models.ServiceOrderItem).filter(
             models.ServiceOrderItem.order_id == entry.order_id
         ).delete()
 
-        # Insert new items
-        new_items = []
-        for svc in services:
-            p = _price(svc)
-            new_items.append(models.ServiceOrderItem(
-                order_id=entry.order_id,
-                service_id=svc.id,
-                service_name=svc.name,
-                service_category=svc.category,
-                unit_price=p,
-                quantity=1,
-                subtotal=p,
-            ))
-        db.add_all(new_items)
+        if payload.service_ids:
+            services = db.query(models.Service).filter(
+                models.Service.id.in_(payload.service_ids),
+                models.Service.active == True,
+            ).all()
+            if len(services) != len(set(payload.service_ids)):
+                raise HTTPException(status_code=404, detail="Uno o más servicios no encontrados")
 
-        total = sum(_price(s) for s in services)
+            vehicle_type = entry.vehicle.type
+            def _price(svc):
+                if vehicle_type == "camion_estandar":
+                    return svc.price_camion_estandar or svc.price_automovil
+                if vehicle_type == "camion_xl":
+                    return svc.price_camion_xl or svc.price_automovil
+                return svc.price_automovil
+
+            new_items = []
+            for svc in services:
+                p = _price(svc)
+                new_items.append(models.ServiceOrderItem(
+                    order_id=entry.order_id,
+                    service_id=svc.id,
+                    service_name=svc.name,
+                    service_category=svc.category,
+                    unit_price=p,
+                    quantity=1,
+                    subtotal=p,
+                ))
+            db.add_all(new_items)
+            total = sum(_price(s) for s in services)
+        else:
+            # All services removed — client left without service, total = 0
+            total = 0
+
         entry.order.subtotal = total
         entry.order.total    = total
 
     if payload.notes is not None:
         entry.notes = payload.notes
 
+    if "scheduled_delivery_at" in payload.model_fields_set:
+        entry.scheduled_delivery_at = payload.scheduled_delivery_at
+
     db.commit()
     db.refresh(entry)
     return entry
+
+
+@router.delete("/{id}", status_code=204)
+def cancel_patio_entry(id: int, db: Session = Depends(get_db)):
+    """Cancel a patio entry: delete all order items and the patio entry itself,
+    and mark the order as cancelled. Only allowed while in 'esperando' status."""
+    entry = _get_entry_or_404(id, db)
+    if entry.status not in (models.PatioStatusEnum.esperando, models.PatioStatusEnum.en_proceso):
+        raise HTTPException(status_code=400, detail="Solo se pueden cancelar vehículos en espera o en proceso")
+
+    # Delete order items
+    db.query(models.ServiceOrderItem).filter(
+        models.ServiceOrderItem.order_id == entry.order_id
+    ).delete()
+
+    # Cancel the order
+    entry.order.status = models.OrderStatusEnum.cancelado
+
+    # Remove patio entry
+    db.delete(entry)
+    db.commit()

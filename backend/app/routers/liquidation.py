@@ -237,6 +237,27 @@ def liquidate_week(
     db.commit()
     db.refresh(liq)
 
+    # Auto-create expense records for the actual cash-out to the operator
+    liq_desc = f"Pago operario {operator.name} · semana {week_start}"
+    if body.payment_cash > 0:
+        db.add(models.Expense(
+            date=ws,
+            amount=body.payment_cash,
+            category="Salarios",
+            description=liq_desc,
+            payment_method="Efectivo",
+        ))
+    if body.payment_transfer > 0:
+        db.add(models.Expense(
+            date=ws,
+            amount=body.payment_transfer,
+            category="Salarios",
+            description=liq_desc,
+            payment_method="Transferencia",
+        ))
+    if body.payment_cash > 0 or body.payment_transfer > 0:
+        db.commit()
+
     # Link debt payments to this liquidation
     all_debt_ids = [a.debt_id for a in body.abonos] + [s.debt_id for s in body.company_settlements]
     if all_debt_ids:
