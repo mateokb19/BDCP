@@ -475,6 +475,9 @@ class ClientOut(OrmBase):
     name:        str
     phone:       Optional[str]
     email:       Optional[str]
+    nit:         Optional[str]
+    direccion:   Optional[str]
+    regimen:     Optional[str]
     notes:       Optional[str]
     created_at:  datetime
     vehicles:    List[ClientVehicleOut] = []
@@ -484,10 +487,13 @@ class ClientOut(OrmBase):
 
 
 class ClientPatch(BaseModel):
-    name:  Optional[str] = None
-    phone: Optional[str] = None
-    email: Optional[str] = None
-    notes: Optional[str] = None
+    name:      Optional[str] = None
+    phone:     Optional[str] = None
+    email:     Optional[str] = None
+    nit:       Optional[str] = None
+    direccion: Optional[str] = None
+    regimen:   Optional[str] = None
+    notes:     Optional[str] = None
 
 
 # ── Ingresos ────────────────────────────────────────────────────────────────────

@@ -415,6 +415,9 @@ export interface ApiClient {
   name:         string
   phone?:       string
   email?:       string
+  nit?:         string
+  direccion?:   string
+  regimen?:     string
   notes?:       string
   created_at:   string
   vehicles:     ApiClientVehicle[]
@@ -424,10 +427,13 @@ export interface ApiClient {
 }
 
 export interface ClientPatchPayload {
-  name?:  string
-  phone?: string
-  email?: string
-  notes?: string
+  name?:      string
+  phone?:     string
+  email?:     string
+  nit?:       string
+  direccion?: string
+  regimen?:   string
+  notes?:     string
 }
 
 // ── API methods ────────────────────────────────────────────────────────────────

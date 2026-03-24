@@ -25,6 +25,9 @@ with engine.connect() as _conn:
     _conn.execute(text(
         "ALTER TABLE patio ADD COLUMN IF NOT EXISTS scheduled_delivery_at TIMESTAMP"
     ))
+    _conn.execute(text("ALTER TABLE clients ADD COLUMN IF NOT EXISTS nit VARCHAR(30)"))
+    _conn.execute(text("ALTER TABLE clients ADD COLUMN IF NOT EXISTS direccion VARCHAR(200)"))
+    _conn.execute(text("ALTER TABLE clients ADD COLUMN IF NOT EXISTS regimen VARCHAR(50)"))
     _conn.execute(text(
         "ALTER TABLE service_orders ADD COLUMN IF NOT EXISTS payment_cash NUMERIC(12,2) NOT NULL DEFAULT 0"
     ))

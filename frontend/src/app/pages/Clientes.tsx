@@ -134,10 +134,13 @@ interface DrawerProps {
 function ClientDrawer({ client, onClose, onUpdated }: DrawerProps) {
   const [editing, setEditing] = useState(false)
   const [editForm, setEditForm] = useState({
-    name:  client.name,
-    phone: client.phone  ?? '',
-    email: client.email  ?? '',
-    notes: client.notes  ?? '',
+    name:      client.name,
+    phone:     client.phone     ?? '',
+    email:     client.email     ?? '',
+    nit:       client.nit       ?? '',
+    direccion: client.direccion ?? '',
+    regimen:   client.regimen   ?? '',
+    notes:     client.notes     ?? '',
   })
   const [saving, setSaving] = useState(false)
 
@@ -145,10 +148,13 @@ function ClientDrawer({ client, onClose, onUpdated }: DrawerProps) {
   useEffect(() => {
     setEditing(false)
     setEditForm({
-      name:  client.name,
-      phone: client.phone  ?? '',
-      email: client.email  ?? '',
-      notes: client.notes  ?? '',
+      name:      client.name,
+      phone:     client.phone     ?? '',
+      email:     client.email     ?? '',
+      nit:       client.nit       ?? '',
+      direccion: client.direccion ?? '',
+      regimen:   client.regimen   ?? '',
+      notes:     client.notes     ?? '',
     })
   }, [client.id])
 
@@ -160,10 +166,13 @@ function ClientDrawer({ client, onClose, onUpdated }: DrawerProps) {
     setSaving(true)
     try {
       const updated = await api.clients.patch(client.id, {
-        name:  editForm.name.trim()  || undefined,
-        phone: editForm.phone.trim() || undefined,
-        email: editForm.email.trim() || undefined,
-        notes: editForm.notes.trim() || undefined,
+        name:      editForm.name.trim()      || undefined,
+        phone:     editForm.phone.trim()     || undefined,
+        email:     editForm.email.trim()     || undefined,
+        nit:       editForm.nit.trim()       || undefined,
+        direccion: editForm.direccion.trim() || undefined,
+        regimen:   editForm.regimen.trim()   || undefined,
+        notes:     editForm.notes.trim()     || undefined,
       })
       onUpdated(updated)
       setEditing(false)
@@ -225,7 +234,7 @@ function ClientDrawer({ client, onClose, onUpdated }: DrawerProps) {
                 <Button
                   size="sm"
                   variant="ghost"
-                  onClick={() => { setEditing(false); setEditForm({ name: client.name, phone: client.phone ?? '', email: client.email ?? '', notes: client.notes ?? '' }) }}
+                  onClick={() => { setEditing(false); setEditForm({ name: client.name, phone: client.phone ?? '', email: client.email ?? '', nit: client.nit ?? '', direccion: client.direccion ?? '', regimen: client.regimen ?? '', notes: client.notes ?? '' }) }}
                   disabled={saving}
                 >
                   <X size={14} />
@@ -289,6 +298,40 @@ function ClientDrawer({ client, onClose, onUpdated }: DrawerProps) {
                   placeholder="Notas adicionales…"
                 />
               </div>
+              {/* Invoice fields */}
+              <p className="text-xs font-medium text-gray-400 uppercase tracking-wider pt-1">Datos de facturación</p>
+              <div className="space-y-2">
+                <label className="block text-xs text-gray-400">NIT / Cédula</label>
+                <input
+                  className={inputClass}
+                  value={editForm.nit}
+                  onChange={e => setEditForm(f => ({ ...f, nit: e.target.value }))}
+                  placeholder="900123456-7"
+                />
+              </div>
+              <div className="space-y-2">
+                <label className="block text-xs text-gray-400">Dirección</label>
+                <input
+                  className={inputClass}
+                  value={editForm.direccion}
+                  onChange={e => setEditForm(f => ({ ...f, direccion: e.target.value }))}
+                  placeholder="Calle 123 # 45-67, Bogotá"
+                />
+              </div>
+              <div className="space-y-2">
+                <label className="block text-xs text-gray-400">Régimen tributario</label>
+                <select
+                  className={cn(inputClass, 'appearance-none')}
+                  value={editForm.regimen}
+                  onChange={e => setEditForm(f => ({ ...f, regimen: e.target.value }))}
+                >
+                  <option value="">— Seleccionar —</option>
+                  <option value="No Responsable de IVA">No Responsable de IVA</option>
+                  <option value="Responsable de IVA">Responsable de IVA</option>
+                  <option value="Gran Contribuyente">Gran Contribuyente</option>
+                  <option value="Régimen Simple">Régimen Simple</option>
+                </select>
+              </div>
             </div>
           )}
 
@@ -311,6 +354,31 @@ function ClientDrawer({ client, onClose, onUpdated }: DrawerProps) {
               {client.notes && (
                 <div className="rounded-xl bg-white/[0.03] border border-white/8 px-3 py-2 text-xs text-gray-400 italic">
                   {client.notes}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Invoice data display (not editing) */}
+          {!editing && (client.nit || client.direccion || client.regimen) && (
+            <div className="space-y-2">
+              <p className="text-xs font-medium text-gray-400 uppercase tracking-wider">Facturación electrónica</p>
+              {client.nit && (
+                <div className="flex items-center gap-2 text-sm">
+                  <span className="text-gray-500 w-20 text-xs shrink-0">NIT / CC</span>
+                  <span className="text-gray-200 font-mono">{client.nit}</span>
+                </div>
+              )}
+              {client.direccion && (
+                <div className="flex items-start gap-2 text-sm">
+                  <span className="text-gray-500 w-20 text-xs shrink-0 mt-0.5">Dirección</span>
+                  <span className="text-gray-200">{client.direccion}</span>
+                </div>
+              )}
+              {client.regimen && (
+                <div className="flex items-center gap-2 text-sm">
+                  <span className="text-gray-500 w-20 text-xs shrink-0">Régimen</span>
+                  <span className="text-gray-200">{client.regimen}</span>
                 </div>
               )}
             </div>
