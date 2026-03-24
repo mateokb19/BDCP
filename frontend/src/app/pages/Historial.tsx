@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Search, ChevronDown, ChevronUp, Clock, User, Wrench, Download } from 'lucide-react'
-import { format, parseISO } from 'date-fns'
+import { format, parseISO, startOfWeek, startOfMonth, endOfMonth, subMonths } from 'date-fns'
 import { es } from 'date-fns/locale'
 import { toast } from 'sonner'
 import { PageHeader } from '@/app/components/ui/PageHeader'
@@ -26,46 +26,32 @@ function esc(s: string) {
 }
 
 function printHistorialReport(entries: ApiHistorialEntry[], dateFrom: string, dateTo: string) {
-  // Flatten: one row per service item
-  const rows: {
-    date: string; vehicleType: string; plate: string
-    service: string; operator: string; price: number
-  }[] = []
+  // One row per order — services joined in a single cell
+  const sorted = [...entries].sort((a, b) => a.date.localeCompare(b.date) || a.id - b.id)
 
-  const sorted = [...entries].sort((a, b) => a.date.localeCompare(b.date))
-
-  for (const entry of sorted) {
-    const vt   = VEHICLE_TYPE_LABEL[entry.vehicle?.type ?? ''] ?? (entry.vehicle?.type ?? '—')
-    const plate = entry.vehicle?.plate ?? '—'
-    const op    = entry.operator?.name ?? '—'
+  const tableRows = sorted.map(entry => {
+    const vt        = VEHICLE_TYPE_LABEL[entry.vehicle?.type ?? ''] ?? (entry.vehicle?.type ?? '—')
+    const plate     = entry.vehicle?.plate ?? '—'
+    const op        = entry.operator?.name ?? '—'
     const dateLabel = format(parseISO(`${entry.date}T00:00:00`), 'dd/MM/yyyy')
-    for (const item of entry.items) {
-      rows.push({
-        date:        dateLabel,
-        vehicleType: vt,
-        plate,
-        service:     item.service_name,
-        operator:    op,
-        price:       Number(item.subtotal),
-      })
-    }
-  }
+    const services  = entry.items.map(i => esc(i.service_name)).join('<br>')
+    const total     = Number(entry.total ?? 0)
+    return `
+    <tr>
+      <td>${esc(dateLabel)}</td>
+      <td>${esc(vt)}</td>
+      <td class="plate">${esc(plate)}</td>
+      <td>${services}</td>
+      <td>${esc(op)}</td>
+      <td class="price">$${total.toLocaleString('es-CO')}</td>
+      <td></td>
+    </tr>`
+  }).join('')
 
-  const total = rows.reduce((s, r) => s + r.price, 0)
+  const grandTotal = sorted.reduce((s, e) => s + Number(e.total ?? 0), 0)
 
   const fromLabel = format(parseISO(`${dateFrom}T00:00:00`), "d 'de' MMMM yyyy", { locale: es })
   const toLabel   = format(parseISO(`${dateTo}T00:00:00`),   "d 'de' MMMM yyyy", { locale: es })
-
-  const tableRows = rows.map(r => `
-    <tr>
-      <td>${esc(r.date)}</td>
-      <td>${esc(r.vehicleType)}</td>
-      <td class="plate">${esc(r.plate)}</td>
-      <td>${esc(r.service)}</td>
-      <td>${esc(r.operator)}</td>
-      <td class="price">$${r.price.toLocaleString('es-CO')}</td>
-      <td></td>
-    </tr>`).join('')
 
   const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Reporte BDCPolo</title>
   <style>
@@ -95,7 +81,7 @@ function printHistorialReport(entries: ApiHistorialEntry[], dateFrom: string, da
         ${tableRows}
         <tr class="total-row">
           <td colspan="5" style="text-align:right">TOTAL</td>
-          <td class="price">$${total.toLocaleString('es-CO')}</td>
+          <td class="price">$${grandTotal.toLocaleString('es-CO')}</td>
           <td></td>
         </tr>
       </tbody>
@@ -334,7 +320,54 @@ export default function Historial() {
       {/* Download modal */}
       <Modal open={showDlModal} onClose={() => setShowDlModal(false)} title="Descargar reporte" size="sm">
         <div className="p-6 space-y-4">
-          <p className="text-sm text-gray-400">Selecciona el período de tiempo para el reporte PDF.</p>
+          {/* Quick-select buttons */}
+          {(() => {
+            const now = new Date()
+            const presets = [
+              {
+                label: 'Esta semana',
+                from: format(startOfWeek(now, { weekStartsOn: 0 }), 'yyyy-MM-dd'),
+                to:   TODAY,
+              },
+              {
+                label: 'Este mes',
+                from: format(startOfMonth(now), 'yyyy-MM-dd'),
+                to:   TODAY,
+              },
+              {
+                label: format(subMonths(now, 1), 'MMMM', { locale: es }).replace(/^\w/, c => c.toUpperCase()),
+                from: format(startOfMonth(subMonths(now, 1)), 'yyyy-MM-dd'),
+                to:   format(endOfMonth(subMonths(now, 1)),   'yyyy-MM-dd'),
+              },
+              {
+                label: format(subMonths(now, 2), 'MMMM', { locale: es }).replace(/^\w/, c => c.toUpperCase()),
+                from: format(startOfMonth(subMonths(now, 2)), 'yyyy-MM-dd'),
+                to:   format(endOfMonth(subMonths(now, 2)),   'yyyy-MM-dd'),
+              },
+            ]
+            return (
+              <div className="grid grid-cols-2 gap-2">
+                {presets.map(p => {
+                  const active = dlFrom === p.from && dlTo === p.to
+                  return (
+                    <button key={p.label} type="button"
+                      onClick={() => { setDlFrom(p.from); setDlTo(p.to) }}
+                      className={cn(
+                        'rounded-xl border py-2 px-3 text-sm font-medium transition-colors',
+                        active
+                          ? 'bg-yellow-500/20 border-yellow-500/50 text-yellow-400'
+                          : 'bg-white/5 border-white/8 text-gray-400 hover:bg-white/10 hover:text-gray-200'
+                      )}
+                    >
+                      {p.label}
+                    </button>
+                  )
+                })}
+              </div>
+            )
+          })()}
+
+          {/* Manual date range */}
           <div className="grid grid-cols-2 gap-3">
             <div className="flex flex-col gap-1.5">
               <label className="text-xs font-medium text-gray-400">Desde</label>
@@ -347,6 +380,7 @@ export default function Historial() {
                 className="w-full rounded-xl border border-white/10 bg-gray-900 px-3 py-2 text-sm text-gray-100 focus:border-yellow-500/50 focus:outline-none [color-scheme:dark]" />
             </div>
           </div>
+
           <div className="flex gap-3 pt-1">
             <Button variant="secondary" size="lg" className="flex-1" onClick={() => setShowDlModal(false)}>
               Cancelar
