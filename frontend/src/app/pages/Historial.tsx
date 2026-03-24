@@ -323,46 +323,77 @@ export default function Historial() {
           {/* Quick-select buttons */}
           {(() => {
             const now = new Date()
-            const presets = [
-              {
-                label: 'Esta semana',
-                from: format(startOfWeek(now, { weekStartsOn: 0 }), 'yyyy-MM-dd'),
-                to:   TODAY,
-              },
-              {
-                label: 'Este mes',
-                from: format(startOfMonth(now), 'yyyy-MM-dd'),
-                to:   TODAY,
-              },
-              {
-                label: format(subMonths(now, 1), 'MMMM', { locale: es }).replace(/^\w/, c => c.toUpperCase()),
-                from: format(startOfMonth(subMonths(now, 1)), 'yyyy-MM-dd'),
-                to:   format(endOfMonth(subMonths(now, 1)),   'yyyy-MM-dd'),
-              },
-              {
-                label: format(subMonths(now, 2), 'MMMM', { locale: es }).replace(/^\w/, c => c.toUpperCase()),
-                from: format(startOfMonth(subMonths(now, 2)), 'yyyy-MM-dd'),
-                to:   format(endOfMonth(subMonths(now, 2)),   'yyyy-MM-dd'),
-              },
-            ]
+            const thisWeekFrom = format(startOfWeek(now, { weekStartsOn: 0 }), 'yyyy-MM-dd')
+            const thisMonthFrom = format(startOfMonth(now), 'yyyy-MM-dd')
+
+            function pickMonth(val: string) {
+              // val = "yyyy-MM"
+              const [y, m] = val.split('-').map(Number)
+              const d = new Date(y, m - 1, 1)
+              setDlFrom(format(startOfMonth(d), 'yyyy-MM-dd'))
+              setDlTo(format(endOfMonth(d), 'yyyy-MM-dd'))
+            }
+
+            function pickWeek(val: string) {
+              const d   = parseISO(val)
+              const sun = startOfWeek(d, { weekStartsOn: 0 })
+              const sat = new Date(sun.getTime() + 6 * 24 * 60 * 60 * 1000)
+              setDlFrom(format(sun, 'yyyy-MM-dd'))
+              setDlTo(format(sat, 'yyyy-MM-dd'))
+            }
+
+            const isThisWeek  = dlFrom === thisWeekFrom && dlTo === TODAY
+            const isThisMonth = dlFrom === thisMonthFrom && dlTo === TODAY
+
             return (
               <div className="grid grid-cols-2 gap-2">
-                {presets.map(p => {
-                  const active = dlFrom === p.from && dlTo === p.to
-                  return (
-                    <button key={p.label} type="button"
-                      onClick={() => { setDlFrom(p.from); setDlTo(p.to) }}
-                      className={cn(
-                        'rounded-xl border py-2 px-3 text-sm font-medium transition-colors',
-                        active
-                          ? 'bg-yellow-500/20 border-yellow-500/50 text-yellow-400'
-                          : 'bg-white/5 border-white/8 text-gray-400 hover:bg-white/10 hover:text-gray-200'
-                      )}
-                    >
-                      {p.label}
-                    </button>
-                  )
-                })}
+                {/* Esta semana */}
+                <button type="button"
+                  onClick={() => { setDlFrom(thisWeekFrom); setDlTo(TODAY) }}
+                  className={cn(
+                    'rounded-xl border py-2 px-3 text-sm font-medium transition-colors',
+                    isThisWeek
+                      ? 'bg-yellow-500/20 border-yellow-500/50 text-yellow-400'
+                      : 'bg-white/5 border-white/8 text-gray-400 hover:bg-white/10 hover:text-gray-200'
+                  )}
+                >
+                  Esta semana
+                </button>
+
+                {/* Este mes */}
+                <button type="button"
+                  onClick={() => { setDlFrom(thisMonthFrom); setDlTo(TODAY) }}
+                  className={cn(
+                    'rounded-xl border py-2 px-3 text-sm font-medium transition-colors',
+                    isThisMonth
+                      ? 'bg-yellow-500/20 border-yellow-500/50 text-yellow-400'
+                      : 'bg-white/5 border-white/8 text-gray-400 hover:bg-white/10 hover:text-gray-200'
+                  )}
+                >
+                  Este mes
+                </button>
+
+                {/* Elegir semana */}
+                <label className={cn(
+                  'relative rounded-xl border py-2 px-3 text-sm font-medium transition-colors cursor-pointer text-center',
+                  !isThisWeek && !isThisMonth && dlFrom !== dlTo
+                    ? 'bg-yellow-500/20 border-yellow-500/50 text-yellow-400'
+                    : 'bg-white/5 border-white/8 text-gray-400 hover:bg-white/10 hover:text-gray-200'
+                )}>
+                  Elegir semana
+                  <input type="date" className="absolute inset-0 opacity-0 w-full cursor-pointer [color-scheme:dark]"
+                    onChange={e => e.target.value && pickWeek(e.target.value)} />
+                </label>
+
+                {/* Elegir mes */}
+                <label className={cn(
+                  'relative rounded-xl border py-2 px-3 text-sm font-medium transition-colors cursor-pointer text-center',
+                  'bg-white/5 border-white/8 text-gray-400 hover:bg-white/10 hover:text-gray-200'
+                )}>
+                  Elegir mes
+                  <input type="month" className="absolute inset-0 opacity-0 w-full cursor-pointer [color-scheme:dark]"
+                    onChange={e => e.target.value && pickMonth(e.target.value)} />
+                </label>
               </div>
             )
           })()}
