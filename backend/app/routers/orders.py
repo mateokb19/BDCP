@@ -88,6 +88,17 @@ def create_order(payload: schemas.OrderCreate, db: Session = Depends(get_db)):
         db.add(vehicle)
         db.flush()
 
+    # 3b. Reject if vehicle already has an active (non-delivered) patio entry
+    active_patio = db.query(models.PatioEntry).filter(
+        models.PatioEntry.vehicle_id == vehicle.id,
+        models.PatioEntry.status != models.PatioStatusEnum.entregado,
+    ).first()
+    if active_patio:
+        raise HTTPException(
+            status_code=409,
+            detail=f"El vehículo {vehicle.plate} ya tiene un servicio activo en el patio (estado: {active_patio.status.value}). Debe ser entregado antes de ingresar uno nuevo.",
+        )
+
     # 4. Build order items with price snapshot (overrides supported)
     override_map = {ov.service_id: ov.unit_price for ov in payload.item_overrides}
     subtotal = Decimal("0.00")

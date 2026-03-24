@@ -96,7 +96,7 @@ function ClientRow({ client, onClick }: ClientRowProps) {
 
       {/* Name + phone */}
       <div className="flex-1 min-w-0">
-        <p className="text-sm font-medium text-white truncate">{client.name}</p>
+        <p className="text-sm font-medium text-white break-all">{client.name}</p>
         <p className="text-xs text-gray-500 mt-0.5">{client.phone ?? '—'}</p>
       </div>
 
@@ -213,7 +213,7 @@ function ClientDrawer({ client, onClose, onUpdated }: DrawerProps) {
                 placeholder="Nombre del cliente"
               />
             ) : (
-              <h2 className="text-base font-semibold text-white leading-tight">{client.name}</h2>
+              <h2 className="text-base font-semibold text-white leading-tight break-all">{client.name}</h2>
             )}
             <p className="text-xs text-gray-500 mt-1">Cliente desde {clientYear}</p>
           </div>

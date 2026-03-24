@@ -22,6 +22,21 @@ class OperatorOut(OrmBase):
     active:          bool
 
 
+class OperatorCreate(BaseModel):
+    name:            str
+    phone:           Optional[str] = None
+    cedula:          Optional[str] = None
+    commission_rate: Decimal = Decimal("0")
+
+
+class OperatorPatch(BaseModel):
+    name:            Optional[str]     = None
+    phone:           Optional[str]     = None
+    cedula:          Optional[str]     = None
+    commission_rate: Optional[Decimal] = None
+    active:          Optional[bool]    = None
+
+
 # ── Service ─────────────────────────────────────────────────────────────────────
 
 class ServiceOut(OrmBase):

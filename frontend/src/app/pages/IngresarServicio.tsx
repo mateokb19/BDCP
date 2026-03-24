@@ -12,6 +12,14 @@ import { api } from '@/api'
 import { useAppContext } from '@/app/context/AppContext'
 import type { VehicleType, Service } from '@/types'
 
+// ── Currency helpers ─────────────────────────────────────────────────────────
+const parseCOP = (s: string) => s.replace(/\D/g, '')
+const fmtCOP   = (raw: string | number): string => {
+  const str = typeof raw === 'number' ? String(raw) : raw
+  const n   = Number(parseCOP(str))
+  return str === '' || isNaN(n) ? '' : n.toLocaleString('es-CO')
+}
+
 type Step = 1 | 2 | 3
 
 interface OrderDraft {
@@ -771,12 +779,11 @@ export default function IngresarServicio() {
                               </>
                             ) : isEditingThis ? (
                               <input
-                                type="number" min="0"
-                                value={form.customPrices[s.id] ?? String(stdPrice)}
-                                onChange={e => setForm(f => ({ ...f, customPrices: { ...f.customPrices, [s.id]: e.target.value } }))}
+                                type="text" inputMode="numeric"
+                                value={fmtCOP(form.customPrices[s.id] ?? String(stdPrice))}
+                                onChange={e => setForm(f => ({ ...f, customPrices: { ...f.customPrices, [s.id]: parseCOP(e.target.value) } }))}
                                 onBlur={() => setEditingPriceId(null)}
                                 onKeyDown={e => e.key === 'Enter' && setEditingPriceId(null)}
-                                onWheel={e => e.currentTarget.blur()}
                                 className="w-28 rounded-lg border border-yellow-500/40 bg-gray-900 px-2 py-1 text-sm text-yellow-400 text-right focus:outline-none"
                                 autoFocus
                               />
@@ -836,16 +843,38 @@ export default function IngresarServicio() {
 
                   {/* Abono */}
                   <div className="mt-4 pt-4 border-t border-white/8">
-                    <p className="text-xs text-gray-500 uppercase tracking-wider mb-3">Abono del Cliente <span className="text-gray-600 normal-case">(opcional)</span></p>
+                    <div className="flex items-center justify-between mb-3">
+                      <p className="text-xs text-gray-500 uppercase tracking-wider">Abono del Cliente <span className="text-gray-600 normal-case">(opcional)</span></p>
+                      {total > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => setForm(f => ({ ...f, downpayment: String(total) }))}
+                          className={cn(
+                            'flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-xs transition-colors',
+                            abonoAmt === total && total > 0
+                              ? 'border-yellow-500/60 bg-yellow-500/10 text-yellow-300'
+                              : 'border-white/8 bg-white/[0.03] text-gray-400 hover:bg-white/[0.06]'
+                          )}
+                        >
+                          <div className={cn('w-3 h-3 rounded border-2 shrink-0 flex items-center justify-center', abonoAmt === total && total > 0 ? 'border-yellow-500 bg-yellow-500' : 'border-gray-600')}>
+                            {abonoAmt === total && total > 0 && <svg viewBox="0 0 10 8" className="w-1.5 h-1.5 text-gray-900" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M1 4l2.5 2.5L9 1"/></svg>}
+                          </div>
+                          Abonar total
+                        </button>
+                      )}
+                    </div>
                     <div className="flex items-center gap-3">
                       <div className="relative flex-1">
                         <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 text-sm">$</span>
                         <input
-                          type="number" min="0" max={total}
+                          type="text" inputMode="numeric"
                           placeholder="0"
-                          value={form.downpayment}
-                          onChange={e => setForm(f => ({ ...f, downpayment: e.target.value }))}
-                          onWheel={e => e.currentTarget.blur()}
+                          value={fmtCOP(form.downpayment)}
+                          onChange={e => {
+                            const raw = parseCOP(e.target.value)
+                            const capped = raw === '' ? '' : String(Math.min(Number(raw), total))
+                            setForm(f => ({ ...f, downpayment: capped }))
+                          }}
                           className="w-full rounded-xl border border-white/10 bg-white/5 pl-7 pr-3 py-2 text-sm text-gray-100 focus:border-yellow-500/50 focus:outline-none focus:ring-2 focus:ring-yellow-500/20"
                         />
                       </div>
@@ -886,9 +915,6 @@ export default function IngresarServicio() {
                         </div>
                       </div>
                     )}
-                    {abonoAmt > total && (
-                      <p className="text-xs text-red-400 mt-1">El abono no puede superar el total</p>
-                    )}
                   </div>
                 </div>
 
@@ -898,7 +924,7 @@ export default function IngresarServicio() {
                     ← Editar
                   </Button>
                   <Button variant="primary" size="lg" className="flex-1" onClick={handleConfirm}
-                    disabled={submitting || abonoAmt > total}>
+                    disabled={submitting}>
                     {submitting ? 'Guardando...' : <><Check size={18} /> Confirmar Orden</>}
                   </Button>
                 </div>

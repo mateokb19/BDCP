@@ -437,7 +437,12 @@ export const api = {
     list: () => apiFetch<Service[]>('/services'),
   },
   operators: {
-    list: () => apiFetch<Operator[]>('/operators'),
+    list: (includeInactive = false) =>
+      apiFetch<Operator[]>(`/operators${includeInactive ? '?include_inactive=true' : ''}`),
+    create: (payload: { name: string; phone?: string; cedula?: string; commission_rate: number }) =>
+      apiFetch<Operator>('/operators', { method: 'POST', body: JSON.stringify(payload) }),
+    update: (id: number, payload: { name?: string; phone?: string; cedula?: string; commission_rate?: number; active?: boolean }) =>
+      apiFetch<Operator>(`/operators/${id}`, { method: 'PATCH', body: JSON.stringify(payload) }),
   },
   vehicles: {
     byPlate: (plate: string) =>

@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import {
   Lock, ChevronLeft, ChevronRight, ChevronDown,
   Plus, Check, X, TrendingUp, TrendingDown, Download, Banknote,
-  Phone, CreditCard, Calendar,
+  Phone, CreditCard, Calendar, Pencil, UserX, UserCheck, UserPlus,
 } from 'lucide-react'
 import { format, startOfWeek, addWeeks, addDays, parseISO } from 'date-fns'
 import { es } from 'date-fns/locale'
@@ -17,6 +17,14 @@ import { api, type ApiLiqWeekResponse, type ApiDebt, type LiquidatePayload, type
 import type { Operator } from '@/types'
 
 const CORRECT_PASSWORD = 'BDCP123'
+
+// ── Currency helpers ─────────────────────────────────────────────────────────
+const parseCOP = (s: string) => s.replace(/\D/g, '')
+const fmtCOP   = (raw: string | number): string => {
+  const str = typeof raw === 'number' ? String(raw) : raw
+  const n   = Number(parseCOP(str))
+  return str === '' || isNaN(n) ? '' : n.toLocaleString('es-CO')
+}
 
 const OP_COLORS = [
   { bg: 'bg-yellow-500/20', text: 'text-yellow-400' },
@@ -193,12 +201,14 @@ function LiquidarModal({ open, onClose, operator, weekData, debts, onConfirm }: 
                         <div className="flex items-center gap-2">
                           <span className="text-xs text-gray-500 shrink-0">Abono ahora:</span>
                           <input
-                            type="number"
-                            min={0}
-                            max={remaining}
+                            type="text" inputMode="numeric"
                             placeholder="0"
-                            value={abonoInputs[debt.id] ?? ''}
-                            onChange={e => setAbonoInputs(p => ({ ...p, [debt.id]: e.target.value }))}
+                            value={fmtCOP(abonoInputs[debt.id] ?? '')}
+                            onChange={e => {
+                              const raw = parseCOP(e.target.value)
+                              const capped = raw === '' ? '' : String(Math.min(Number(raw), remaining))
+                              setAbonoInputs(p => ({ ...p, [debt.id]: capped }))
+                            }}
                             className="flex-1 rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-sm text-gray-100 placeholder:text-gray-600 focus:border-red-500/50 focus:outline-none"
                           />
                         </div>
@@ -244,11 +254,13 @@ function LiquidarModal({ open, onClose, operator, weekData, debts, onConfirm }: 
                           <div className="flex items-center gap-2">
                             <span className="text-xs text-gray-500 shrink-0">Monto (máx ${cop(remaining)}):</span>
                             <input
-                              type="number"
-                              min={0}
-                              max={remaining}
-                              value={state.amount}
-                              onChange={e => setSettleInputs(p => ({ ...p, [debt.id]: { ...p[debt.id], amount: e.target.value } }))}
+                              type="text" inputMode="numeric"
+                              value={fmtCOP(state.amount ?? '')}
+                              onChange={e => {
+                                const raw = parseCOP(e.target.value)
+                                const capped = raw === '' ? '' : String(Math.min(Number(raw), remaining))
+                                setSettleInputs(p => ({ ...p, [debt.id]: { ...p[debt.id], amount: capped } }))
+                              }}
                               className="flex-1 rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-sm text-gray-100 placeholder:text-gray-600 focus:border-green-500/50 focus:outline-none"
                             />
                           </div>
@@ -314,18 +326,26 @@ function LiquidarModal({ open, onClose, operator, weekData, debts, onConfirm }: 
                   <div>
                     <label className="text-xs text-gray-500 mb-1 block">Transferencia</label>
                     <input
-                      type="number" min={0} max={netAmount} placeholder="0"
-                      value={payTransfer}
-                      onChange={e => setPayTransfer(String(Math.min(Math.max(0, Number(e.target.value)), netAmount - Math.max(0, Number(payCash) || 0))))}
+                      type="text" inputMode="numeric" placeholder="0"
+                      value={fmtCOP(payTransfer)}
+                      onChange={e => {
+                        const raw = parseCOP(e.target.value)
+                        const capped = raw === '' ? '' : String(Math.min(Number(raw), Math.max(0, netAmount - (Number(payCash) || 0))))
+                        setPayTransfer(capped)
+                      }}
                       className="w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-gray-100 placeholder:text-gray-600 focus:border-yellow-500/50 focus:outline-none"
                     />
                   </div>
                   <div>
                     <label className="text-xs text-gray-500 mb-1 block">Efectivo</label>
                     <input
-                      type="number" min={0} max={netAmount} placeholder="0"
-                      value={payCash}
-                      onChange={e => setPayCash(String(Math.min(Math.max(0, Number(e.target.value)), netAmount - Math.max(0, Number(payTransfer) || 0))))}
+                      type="text" inputMode="numeric" placeholder="0"
+                      value={fmtCOP(payCash)}
+                      onChange={e => {
+                        const raw = parseCOP(e.target.value)
+                        const capped = raw === '' ? '' : String(Math.min(Number(raw), Math.max(0, netAmount - (Number(payTransfer) || 0))))
+                        setPayCash(capped)
+                      }}
                       className="w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-gray-100 placeholder:text-gray-600 focus:border-yellow-500/50 focus:outline-none"
                     />
                   </div>
@@ -400,11 +420,21 @@ export default function LiquidacionPage() {
     amount: '',
     description: '',
   })
+  // New operator form
+  const [newOpOpen,  setNewOpOpen]  = useState(false)
+  const [newOpForm,  setNewOpForm]  = useState({ name: '', phone: '', cedula: '', commission_rate: '' })
+  const [newOpSaving, setNewOpSaving] = useState(false)
+  // Edit commission
+  const [editCommOpen,  setEditCommOpen]  = useState(false)
+  const [editCommValue, setEditCommValue] = useState('')
+  const [editCommSaving, setEditCommSaving] = useState(false)
+  // Deactivate confirmation
+  const [deactivateConfirm, setDeactivateConfirm] = useState(false)
 
   useEffect(() => {
     if (!unlocked) return
-    api.operators.list()
-      .then(ops => setOperators(ops.filter((o: Operator) => o.active)))
+    api.operators.list(true)
+      .then(setOperators)
       .catch(() => toast.error('Error al cargar operarios'))
       .finally(() => setOpsLoading(false))
   }, [unlocked])
@@ -462,6 +492,56 @@ export default function LiquidacionPage() {
       toast.success('Deuda registrada')
     } catch {
       toast.error('Error al registrar deuda')
+    }
+  }
+
+  async function handleCreateOperator() {
+    if (!newOpForm.name.trim()) return
+    setNewOpSaving(true)
+    try {
+      const op = await api.operators.create({
+        name: newOpForm.name.trim(),
+        phone: newOpForm.phone.trim() || undefined,
+        cedula: newOpForm.cedula.trim() || undefined,
+        commission_rate: Number(parseCOP(newOpForm.commission_rate)) || 0,
+      })
+      setOperators(prev => [...prev, op])
+      setNewOpForm({ name: '', phone: '', cedula: '', commission_rate: '' })
+      setNewOpOpen(false)
+      toast.success(`Operario ${op.name} creado`)
+    } catch {
+      toast.error('Error al crear operario')
+    } finally {
+      setNewOpSaving(false)
+    }
+  }
+
+  async function handleSaveCommission() {
+    if (!selectedOp) return
+    setEditCommSaving(true)
+    try {
+      const updated = await api.operators.update(selectedOp, {
+        commission_rate: Number(parseCOP(editCommValue)) || 0,
+      })
+      setOperators(prev => prev.map(o => o.id === updated.id ? updated : o))
+      setEditCommOpen(false)
+      toast.success('Comisión actualizada')
+    } catch {
+      toast.error('Error al actualizar comisión')
+    } finally {
+      setEditCommSaving(false)
+    }
+  }
+
+  async function handleToggleActive(op: Operator) {
+    const action = op.active ? false : true
+    try {
+      const updated = await api.operators.update(op.id, { active: action })
+      setOperators(prev => prev.map(o => o.id === updated.id ? updated : o))
+      setDeactivateConfirm(false)
+      toast.success(action ? `${op.name} reactivado` : `${op.name} dado de baja`)
+    } catch {
+      toast.error('Error al actualizar operario')
     }
   }
 
@@ -965,7 +1045,7 @@ ${r.pending_debts.length > 0 ? `
 
         {/* Back */}
         <button
-          onClick={() => { setSelectedOp(null); setWeekData(null); setWeekOffset(0); setDebts([]) }}
+          onClick={() => { setSelectedOp(null); setWeekData(null); setWeekOffset(0); setDebts([]); setDeactivateConfirm(false); setEditCommOpen(false) }}
           className="flex items-center gap-1.5 text-sm text-gray-400 hover:text-yellow-400 transition-colors"
         >
           <ChevronLeft size={16} /> Operarios
@@ -973,15 +1053,29 @@ ${r.pending_debts.length > 0 ? `
 
         {/* Operator header */}
         {operator && (
-          <GlassCard padding>
+          <GlassCard padding className="space-y-3">
             <div className="flex items-start justify-between gap-3">
               <div className="flex items-start gap-3 min-w-0">
-                <div className={cn('rounded-2xl p-3 text-lg sm:text-2xl font-bold leading-none min-w-[48px] sm:min-w-[56px] text-center shrink-0', opColor.bg, opColor.text)}>
+                <div className={cn('rounded-2xl p-3 text-lg sm:text-2xl font-bold leading-none min-w-[48px] sm:min-w-[56px] text-center shrink-0', operator.active ? `${opColor.bg} ${opColor.text}` : 'bg-gray-800 text-gray-500')}>
                   {getInitials(operator.name)}
                 </div>
                 <div className="space-y-0.5 min-w-0">
-                  <h2 className="text-base sm:text-xl font-semibold text-white leading-snug">{operator.name}</h2>
-                  <p className="text-xs sm:text-sm text-gray-500">Comisión {Number(operator.commission_rate)}%</p>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <h2 className="text-base sm:text-xl font-semibold text-white leading-snug">{operator.name}</h2>
+                    {!operator.active && (
+                      <span className="text-[10px] border border-gray-600 text-gray-500 rounded px-1.5 py-0.5">Inactivo</span>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <p className="text-xs sm:text-sm text-gray-500">Comisión {Number(operator.commission_rate)}%</p>
+                    <button
+                      onClick={() => { setEditCommValue(String(Number(operator.commission_rate))); setEditCommOpen(true) }}
+                      className="p-0.5 rounded hover:bg-white/10 text-gray-600 hover:text-yellow-400 transition-colors"
+                      title="Editar comisión"
+                    >
+                      <Pencil size={11} />
+                    </button>
+                  </div>
                   <div className="flex flex-wrap gap-x-3 gap-y-0.5 pt-1">
                     <span className="flex items-center gap-1 text-xs text-gray-500">
                       <Phone size={10} />
@@ -989,7 +1083,7 @@ ${r.pending_debts.length > 0 ? `
                     </span>
                     <span className="flex items-center gap-1 text-xs text-gray-500">
                       <CreditCard size={10} />
-                      {(operator as any).cedula || '—'}
+                      {operator.cedula || '—'}
                     </span>
                   </div>
                 </div>
@@ -1011,6 +1105,49 @@ ${r.pending_debts.length > 0 ? `
                   <span className="hidden sm:inline text-sm">Otro mes</span>
                 </button>
               </div>
+            </div>
+
+            {/* Edit commission inline */}
+            <AnimatePresence>
+              {editCommOpen && (
+                <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="overflow-hidden">
+                  <div className="flex items-center gap-2 pt-2 border-t border-white/8">
+                    <span className="text-xs text-gray-500 shrink-0">Nueva comisión:</span>
+                    <div className="relative flex-1 max-w-[120px]">
+                      <input type="text" inputMode="numeric" value={editCommValue}
+                        onChange={e => setEditCommValue(e.target.value.replace(/[^\d]/g, ''))}
+                        className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 pr-7 text-sm text-gray-100 focus:border-yellow-500/50 focus:outline-none"
+                        placeholder="30" autoFocus />
+                      <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-500 text-sm">%</span>
+                    </div>
+                    <Button variant="primary" size="sm" onClick={handleSaveCommission} disabled={editCommSaving}>
+                      {editCommSaving ? '...' : <Check size={13} />}
+                    </Button>
+                    <button onClick={() => setEditCommOpen(false)} className="text-gray-500 hover:text-gray-300"><X size={14} /></button>
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+
+            {/* Deactivate / Reactivate */}
+            <div className="border-t border-white/8 pt-3">
+              {!deactivateConfirm ? (
+                <button
+                  onClick={() => operator.active ? setDeactivateConfirm(true) : handleToggleActive(operator)}
+                  className={cn(
+                    'flex items-center gap-1.5 text-xs transition-colors',
+                    operator.active ? 'text-red-500/70 hover:text-red-400' : 'text-green-500/70 hover:text-green-400'
+                  )}
+                >
+                  {operator.active ? <><UserX size={13} /> Dar de baja a {operator.name}</> : <><UserCheck size={13} /> Reactivar a {operator.name}</>}
+                </button>
+              ) : (
+                <div className="flex items-center gap-3">
+                  <p className="text-xs text-red-400">¿Confirmar baja de {operator.name}?</p>
+                  <button onClick={() => handleToggleActive(operator)} className="text-xs text-red-400 hover:text-red-300 font-semibold">Sí, dar de baja</button>
+                  <button onClick={() => setDeactivateConfirm(false)} className="text-xs text-gray-500 hover:text-gray-300">Cancelar</button>
+                </div>
+              )}
             </div>
           </GlassCard>
         )}
@@ -1262,10 +1399,10 @@ ${r.pending_debts.length > 0 ? `
                   </div>
                   <div className="grid grid-cols-2 gap-2">
                     <input
-                      type="number"
+                      type="text" inputMode="numeric"
                       placeholder="Monto"
-                      value={debtForm.amount}
-                      onChange={e => setDebtForm(f => ({ ...f, amount: e.target.value }))}
+                      value={fmtCOP(debtForm.amount)}
+                      onChange={e => setDebtForm(f => ({ ...f, amount: parseCOP(e.target.value) }))}
                       className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-gray-100 placeholder:text-gray-600 focus:border-yellow-500/50 focus:outline-none"
                     />
                     <input
@@ -1373,33 +1510,116 @@ ${r.pending_debts.length > 0 ? `
 
   // ── Operator grid ────────────────────────────────────────────────────────────
   return (
-    <div className="max-w-5xl mx-auto">
-      <PageHeader title="Liquidación de Operarios" subtitle="Selecciona un operario para ver su liquidación" />
+    <div className="max-w-5xl mx-auto space-y-5">
+      <div className="flex items-start justify-between gap-3">
+        <PageHeader title="Liquidación de Operarios" subtitle="Selecciona un operario para ver su liquidación" />
+        <button
+          onClick={() => setNewOpOpen(true)}
+          className="flex items-center gap-1.5 rounded-xl border border-yellow-500/40 bg-yellow-500/10 px-3 py-2 text-sm font-medium text-yellow-400 hover:bg-yellow-500/20 transition-colors shrink-0 mt-1"
+        >
+          <UserPlus size={15} /> Nuevo operario
+        </button>
+      </div>
+
+      {/* New operator form */}
+      <AnimatePresence>
+        {newOpOpen && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }} transition={{ duration: 0.2 }}
+            className="overflow-hidden"
+          >
+            <GlassCard padding className="space-y-4">
+              <div className="flex items-center justify-between">
+                <p className="text-sm font-semibold text-white">Nuevo operario</p>
+                <button onClick={() => setNewOpOpen(false)} className="text-gray-500 hover:text-gray-300"><X size={16} /></button>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="col-span-2">
+                  <label className="text-xs text-gray-500 block mb-1">Nombre *</label>
+                  <input type="text" value={newOpForm.name}
+                    onChange={e => setNewOpForm(f => ({ ...f, name: e.target.value }))}
+                    className="w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-gray-100 placeholder:text-gray-600 focus:border-yellow-500/50 focus:outline-none"
+                    placeholder="Nombre completo" />
+                </div>
+                <div>
+                  <label className="text-xs text-gray-500 block mb-1">Cédula</label>
+                  <input type="text" value={newOpForm.cedula}
+                    onChange={e => setNewOpForm(f => ({ ...f, cedula: e.target.value }))}
+                    className="w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-gray-100 placeholder:text-gray-600 focus:border-yellow-500/50 focus:outline-none"
+                    placeholder="Número de cédula" />
+                </div>
+                <div>
+                  <label className="text-xs text-gray-500 block mb-1">Teléfono</label>
+                  <input type="text" value={newOpForm.phone}
+                    onChange={e => setNewOpForm(f => ({ ...f, phone: e.target.value }))}
+                    className="w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-gray-100 placeholder:text-gray-600 focus:border-yellow-500/50 focus:outline-none"
+                    placeholder="3XX XXX XXXX" />
+                </div>
+                <div className="col-span-2">
+                  <label className="text-xs text-gray-500 block mb-1">Porcentaje de comisión (%)</label>
+                  <div className="relative">
+                    <input type="text" inputMode="numeric" value={newOpForm.commission_rate}
+                      onChange={e => setNewOpForm(f => ({ ...f, commission_rate: e.target.value.replace(/[^\d]/g, '') }))}
+                      className="w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2 pr-8 text-sm text-gray-100 placeholder:text-gray-600 focus:border-yellow-500/50 focus:outline-none"
+                      placeholder="30" />
+                    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 text-sm">%</span>
+                  </div>
+                </div>
+              </div>
+              <Button variant="primary" size="sm" className="w-full" onClick={handleCreateOperator} disabled={newOpSaving || !newOpForm.name.trim()}>
+                {newOpSaving ? 'Guardando...' : <><Plus size={14} /> Crear operario</>}
+              </Button>
+            </GlassCard>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {opsLoading ? (
         <div className="flex justify-center py-12">
           <p className="text-sm text-gray-500">Cargando operarios...</p>
         </div>
       ) : (
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
-          {operators.map((operator, idx) => {
-            const color = OP_COLORS[idx % OP_COLORS.length]
-            return (
-              <motion.button
-                key={operator.id}
-                whileHover={{ scale: 1.03 }}
-                whileTap={{ scale: 0.97 }}
-                onClick={() => { setSelectedOp(operator.id); setWeekOffset(0) }}
-                className="flex flex-col items-center gap-2 rounded-2xl border border-white/8 bg-white/[0.03] p-4 sm:p-6 hover:bg-white/[0.06] hover:border-white/15 transition-all duration-200"
-              >
-                <div className={cn('rounded-2xl p-3 sm:p-4 text-xl sm:text-2xl font-bold leading-none min-w-[52px] sm:min-w-[64px] text-center', color.bg, color.text)}>
-                  {getInitials(operator.name)}
-                </div>
-                <p className="text-xs sm:text-sm font-medium text-gray-200 text-center leading-tight">{operator.name}</p>
-              </motion.button>
-            )
-          })}
-        </div>
+        <>
+          {operators.some(o => o.active) && (
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+              {operators.filter(o => o.active).map((operator, idx) => {
+                const color = OP_COLORS[idx % OP_COLORS.length]
+                return (
+                  <motion.button key={operator.id} whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }}
+                    onClick={() => { setSelectedOp(operator.id); setWeekOffset(0) }}
+                    className="flex flex-col items-center gap-2 rounded-2xl border border-white/8 bg-white/[0.03] p-4 sm:p-6 hover:bg-white/[0.06] hover:border-white/15 transition-all duration-200"
+                  >
+                    <div className={cn('rounded-2xl p-3 sm:p-4 text-xl sm:text-2xl font-bold leading-none min-w-[52px] sm:min-w-[64px] text-center', color.bg, color.text)}>
+                      {getInitials(operator.name)}
+                    </div>
+                    <p className="text-xs sm:text-sm font-medium text-gray-200 text-center leading-tight">{operator.name}</p>
+                    <p className="text-[10px] text-gray-600">{Number(operator.commission_rate)}%</p>
+                  </motion.button>
+                )
+              })}
+            </div>
+          )}
+          {operators.some(o => !o.active) && (
+            <div className="space-y-2">
+              <p className="text-xs text-gray-600 uppercase tracking-wider">Operarios dados de baja</p>
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+                {operators.filter(o => !o.active).map((operator, idx) => (
+                  <motion.button key={operator.id} whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}
+                    onClick={() => { setSelectedOp(operator.id); setWeekOffset(0) }}
+                    className="flex flex-col items-center gap-2 rounded-2xl border border-white/5 bg-white/[0.015] p-4 sm:p-6 hover:bg-white/[0.04] transition-all duration-200 opacity-60"
+                  >
+                    <div className="rounded-2xl p-3 sm:p-4 text-xl sm:text-2xl font-bold leading-none min-w-[52px] sm:min-w-[64px] text-center bg-gray-800 text-gray-500">
+                      {getInitials(operator.name)}
+                    </div>
+                    <p className="text-xs sm:text-sm font-medium text-gray-500 text-center leading-tight">{operator.name}</p>
+                    <span className="text-[10px] text-gray-600 border border-gray-700 rounded px-1.5 py-0.5">Inactivo</span>
+                  </motion.button>
+                ))}
+              </div>
+            </div>
+          )}
+        </>
       )}
     </div>
   )

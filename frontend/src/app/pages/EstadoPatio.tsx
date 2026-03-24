@@ -28,6 +28,14 @@ function loadFacturas(): Record<number, FacturaRecord> {
   try { return JSON.parse(localStorage.getItem(FACTURA_KEY) ?? '{}') } catch { return {} }
 }
 
+// ── Currency helpers ─────────────────────────────────────────────────────────
+const parseCOP = (s: string) => s.replace(/\D/g, '')
+const fmtCOP   = (raw: string | number): string => {
+  const str = typeof raw === 'number' ? String(raw) : raw
+  const n   = Number(parseCOP(str))
+  return str === '' || isNaN(n) ? '' : n.toLocaleString('es-CO')
+}
+
 const COLUMNS: { status: PatioStatus; label: string; color: string; border: string; dot: string }[] = [
   { status: 'esperando',  label: 'Esperando',  color: 'text-orange-400', border: 'border-t-orange-500/60', dot: 'bg-orange-500' },
   { status: 'en_proceso', label: 'En Proceso', color: 'text-blue-400',   border: 'border-t-blue-500/60',   dot: 'bg-blue-500'   },
@@ -442,6 +450,7 @@ export default function EstadoPatio() {
   const [operatorPickEntry, setOperatorPickEntry] = useState<ApiPatioEntry | null>(null)
   const [pickedOpId, setPickedOpId]               = useState('')
   const [picking, setPicking]                     = useState(false)
+  const [activeOperators, setActiveOperators]     = useState(operators)
 
   // Payment modal state (delivery)
   const [paymentEntry, setPaymentEntry] = useState<ApiPatioEntry | null>(null)
@@ -475,6 +484,19 @@ export default function EstadoPatio() {
       .then(setEntries)
       .catch(err => toast.error(err.message ?? 'Error al cargar el patio'))
       .finally(() => setLoading(false))
+  }, [])
+
+  // Re-fetch at midnight to drop yesterday's delivered entries from view
+  useEffect(() => {
+    let currentDate = new Date().toDateString()
+    const interval = setInterval(() => {
+      const now = new Date().toDateString()
+      if (now !== currentDate) {
+        currentDate = now
+        api.patio.list().then(setEntries).catch(() => {})
+      }
+    }, 60_000)
+    return () => clearInterval(interval)
   }, [])
 
   function openEdit(entry: ApiPatioEntry) {
@@ -521,11 +543,12 @@ export default function EstadoPatio() {
     if (entry.status === 'esperando' && !entry.order?.operator_id) {
       setOperatorPickEntry(entry)
       setPickedOpId('')
+      // Fetch fresh active operators so recently-deactivated ones don't appear
+      api.operators.list().then(setActiveOperators).catch(() => {})
       return
     }
     // Intercept delivery to collect payment info
     if (entry.status === 'listo') {
-      const restante = Math.max(0, Number(entry.order?.total ?? 0) - Number(entry.order?.downpayment ?? 0))
       setPaymentEntry(entry)
       setPayMethods({})
       setFactura(false)
@@ -952,7 +975,7 @@ export default function EstadoPatio() {
                 className="w-full max-w-sm rounded-2xl border border-white/10 bg-gray-900 shadow-2xl p-6 space-y-5 max-h-[90vh] overflow-y-auto"
               >
                 <div>
-                  <h3 className="text-base font-semibold text-white">Método de Pago</h3>
+                  <h3 className="text-base font-semibold text-white">Entregar Vehículo</h3>
                   <p className="text-sm text-gray-500 mt-1">
                     {paymentEntry.vehicle?.brand} {paymentEntry.vehicle?.model} ·{' '}
                     <span className="text-gray-300">{paymentEntry.vehicle?.plate}</span>
@@ -980,69 +1003,70 @@ export default function EstadoPatio() {
                   </div>
                 </div>
 
-                {/* Method checkboxes */}
-                <div className="space-y-2">
-                  <p className="text-xs text-gray-500 uppercase tracking-wider">Método de pago</p>
-                  <div className="space-y-1.5">
-                    {METHODS.map(m => {
-                      const isChecked = m.key in payMethods
-                      return (
-                        <button
-                          key={m.key}
-                          type="button"
-                          onClick={() => togglePayMethod(m.key)}
-                          className={cn(
-                            'w-full flex items-center gap-3 rounded-xl border px-3 py-2.5 text-left transition-colors',
-                            isChecked
-                              ? 'border-yellow-500/60 bg-yellow-500/10'
-                              : 'border-white/8 bg-white/[0.03] hover:bg-white/[0.06]'
-                          )}
-                        >
-                          {/* Checkbox indicator */}
-                          <div className={cn(
-                            'w-4 h-4 rounded border-2 shrink-0 flex items-center justify-center transition-colors',
-                            isChecked ? 'border-yellow-500 bg-yellow-500' : 'border-gray-600 bg-transparent'
-                          )}>
-                            {isChecked && (
-                              <svg viewBox="0 0 10 8" className="w-2.5 h-2 text-gray-900" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-                                <path d="M1 4l2.5 2.5L9 1" />
-                              </svg>
-                            )}
-                          </div>
-                          <div className="min-w-0 flex-1">
-                            <p className={cn('text-sm font-medium', isChecked ? 'text-yellow-300' : 'text-gray-300')}>
-                              {m.label}
-                            </p>
-                            {m.sub && <p className="text-[11px] text-gray-600 mt-0.5">{m.sub}</p>}
-                          </div>
-                          {/* Amount input shown inline when multiple methods are checked */}
-                          {isChecked && isMulti && (
-                            <input
-                              type="number" min="0" placeholder="0"
-                              value={payMethods[m.key]}
-                              onChange={e => { e.stopPropagation(); setPayMethods(prev => ({ ...prev, [m.key]: e.target.value })) }}
-                              onClick={e => e.stopPropagation()}
-                              className="w-24 rounded-lg border border-white/10 bg-white/5 px-2 py-1 text-sm text-right text-gray-100 focus:border-yellow-500/50 focus:outline-none"
-                            />
-                          )}
-                        </button>
-                      )
-                    })}
-                  </div>
-                </div>
-
-                {/* Balance indicator for multi-method payment */}
-                {isMulti && (
-                  <div className={cn(
-                    'text-xs text-center rounded-xl px-3 py-2 font-medium',
-                    diff === 0 ? 'text-green-400 bg-green-500/10 border border-green-500/20' :
-                    diff <  0 ? 'text-blue-400  bg-blue-500/10  border border-blue-500/20'  :
-                                'text-orange-400 bg-orange-500/10 border border-orange-500/20'
-                  )}>
-                    {diff === 0 && '✓ Pago completo'}
-                    {diff <  0 && `Cambio al cliente: $${Math.abs(diff).toLocaleString('es-CO')}`}
-                    {diff >  0 && `Pendiente: $${diff.toLocaleString('es-CO')}`}
-                  </div>
+                {/* Method checkboxes — only shown when there's an amount to collect */}
+                {restante > 0 && (
+                  <>
+                    <div className="space-y-2">
+                      <p className="text-xs text-gray-500 uppercase tracking-wider">Método de pago</p>
+                      <div className="space-y-1.5">
+                        {METHODS.map(m => {
+                          const isChecked = m.key in payMethods
+                          return (
+                            <button
+                              key={m.key}
+                              type="button"
+                              onClick={() => togglePayMethod(m.key)}
+                              className={cn(
+                                'w-full flex items-center gap-3 rounded-xl border px-3 py-2.5 text-left transition-colors',
+                                isChecked
+                                  ? 'border-yellow-500/60 bg-yellow-500/10'
+                                  : 'border-white/8 bg-white/[0.03] hover:bg-white/[0.06]'
+                              )}
+                            >
+                              <div className={cn(
+                                'w-4 h-4 rounded border-2 shrink-0 flex items-center justify-center transition-colors',
+                                isChecked ? 'border-yellow-500 bg-yellow-500' : 'border-gray-600 bg-transparent'
+                              )}>
+                                {isChecked && (
+                                  <svg viewBox="0 0 10 8" className="w-2.5 h-2 text-gray-900" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                                    <path d="M1 4l2.5 2.5L9 1" />
+                                  </svg>
+                                )}
+                              </div>
+                              <div className="min-w-0 flex-1">
+                                <p className={cn('text-sm font-medium', isChecked ? 'text-yellow-300' : 'text-gray-300')}>
+                                  {m.label}
+                                </p>
+                                {m.sub && <p className="text-[11px] text-gray-600 mt-0.5">{m.sub}</p>}
+                              </div>
+                              {isChecked && isMulti && (
+                                <input
+                                  type="text" inputMode="numeric" placeholder="0"
+                                  value={fmtCOP(payMethods[m.key] ?? '')}
+                                  onChange={e => { e.stopPropagation(); setPayMethods(prev => ({ ...prev, [m.key]: parseCOP(e.target.value) })) }}
+                                  onClick={e => e.stopPropagation()}
+                                  className="w-24 rounded-lg border border-white/10 bg-white/5 px-2 py-1 text-sm text-right text-gray-100 focus:border-yellow-500/50 focus:outline-none"
+                                />
+                              )}
+                            </button>
+                          )
+                        })}
+                      </div>
+                    </div>
+                    {/* Balance indicator for multi-method payment */}
+                    {isMulti && (
+                      <div className={cn(
+                        'text-xs text-center rounded-xl px-3 py-2 font-medium',
+                        diff === 0 ? 'text-green-400 bg-green-500/10 border border-green-500/20' :
+                        diff <  0 ? 'text-blue-400  bg-blue-500/10  border border-blue-500/20'  :
+                                    'text-orange-400 bg-orange-500/10 border border-orange-500/20'
+                      )}>
+                        {diff === 0 && '✓ Pago completo'}
+                        {diff <  0 && `Cambio al cliente: $${Math.abs(diff).toLocaleString('es-CO')}`}
+                        {diff >  0 && `Pendiente: $${diff.toLocaleString('es-CO')}`}
+                      </div>
+                    )}
+                  </>
                 )}
 
                 {/* Facturación electrónica */}
@@ -1201,7 +1225,7 @@ export default function EstadoPatio() {
                   </Button>
                   <Button variant="primary" size="md" className="flex-1"
                     onClick={confirmDelivery}
-                    disabled={delivering || Object.keys(payMethods).length === 0}>
+                    disabled={delivering || (restante > 0 && Object.keys(payMethods).length === 0)}>
                     {delivering ? 'Entregando...' : 'Confirmar Entrega'}
                   </Button>
                 </div>
@@ -1239,7 +1263,7 @@ export default function EstadoPatio() {
                 onValueChange={v => setPickedOpId(v === '0' ? '' : v)}
                 options={[
                   { value: '0', label: 'Seleccionar operario...' },
-                  ...operators.map(op => ({ value: String(op.id), label: op.name })),
+                  ...activeOperators.map(op => ({ value: String(op.id), label: op.name })),
                 ]}
               />
               <div className="flex gap-3 pt-1">
