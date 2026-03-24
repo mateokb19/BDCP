@@ -5,7 +5,7 @@ import {
   isSameDay, isSameMonth, addMonths, subMonths, parseISO, startOfWeek, endOfWeek, eachDayOfInterval,
 } from 'date-fns'
 import { es } from 'date-fns/locale'
-import { ChevronLeft, ChevronRight, Plus, Clock, Phone, MessageSquare, CalendarDays as EmptyCalIcon, Pencil, Trash2 } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Plus, Clock, Phone, MessageSquare, CalendarDays as EmptyCalIcon, Pencil, Trash2, Wrench } from 'lucide-react'
 import { toast } from 'sonner'
 import { PageHeader } from '@/app/components/ui/PageHeader'
 import { Button } from '@/app/components/ui/Button'
@@ -15,6 +15,7 @@ import { GlassCard } from '@/app/components/ui/GlassCard'
 import { VehicleTypeIcon, vehicleTypeLabel } from '@/app/components/ui/VehicleTypeIcon'
 import { EmptyState } from '@/app/components/ui/EmptyState'
 import { cn } from '@/app/components/ui/cn'
+import { useNavigate } from 'react-router'
 import { api, type ApiAppointment } from '@/api'
 import type { VehicleType } from '@/types'
 
@@ -87,7 +88,9 @@ const cardAnim = {
 const selectCls = 'w-full rounded-xl border border-white/10 bg-gray-900 px-3 py-2 text-sm text-gray-100 focus:border-yellow-500/50 focus:outline-none focus:ring-2 focus:ring-yellow-500/20 appearance-none disabled:opacity-40'
 
 export default function CalendarioCitas() {
+  const navigate = useNavigate()
   const today = new Date()
+  const TODAY_STR = format(today, 'yyyy-MM-dd')
   const [currentMonth, setCurrentMonth] = useState(() => new Date(today.getFullYear(), today.getMonth(), 1))
   const [selectedDate, setSelectedDate] = useState(today)
   const [appointments, setAppointments] = useState<ApiAppointment[]>([])
@@ -96,6 +99,7 @@ export default function CalendarioCitas() {
   const [editAppt, setEditAppt] = useState<ApiAppointment | null>(null)
   const [form, setForm] = useState({ ...emptyForm })
   const [saving, setSaving] = useState(false)
+  const [confirmAppt, setConfirmAppt] = useState<ApiAppointment | null>(null)
 
   const monthStart = startOfMonth(currentMonth)
   const monthEnd   = endOfMonth(currentMonth)
@@ -185,6 +189,14 @@ export default function CalendarioCitas() {
       toast.success('Cita eliminada')
     } catch {
       toast.error('Error al eliminar la cita')
+    }
+  }
+
+  function handleAddService(appt: ApiAppointment) {
+    if (appt.date === TODAY_STR) {
+      navigate('/', { state: { fromAppointment: appt } })
+    } else {
+      setConfirmAppt(appt)
     }
   }
 
@@ -311,6 +323,13 @@ export default function CalendarioCitas() {
                                 </span>
                               )}
                               <button
+                                onClick={() => handleAddService(appt)}
+                                className="p-1.5 rounded-lg text-gray-500 hover:text-green-400 hover:bg-green-500/10 transition-colors"
+                                title="Agregar servicio"
+                              >
+                                <Wrench size={14} />
+                              </button>
+                              <button
                                 onClick={() => openEdit(appt)}
                                 className="p-1.5 rounded-lg text-gray-500 hover:text-yellow-400 hover:bg-yellow-500/10 transition-colors"
                                 title="Editar cita"
@@ -358,6 +377,37 @@ export default function CalendarioCitas() {
           )}
         </div>
       </div>
+
+      {/* Confirm add-service on future date */}
+      <Modal open={confirmAppt !== null} onClose={() => setConfirmAppt(null)} title="¿Agregar servicio?" size="sm">
+        <div className="p-6 space-y-4">
+          <p className="text-gray-300 text-sm leading-relaxed">
+            Esta cita está programada para el{' '}
+            <span className="text-white font-medium">
+              {confirmAppt && format(parseISO(confirmAppt.date), "d 'de' MMMM", { locale: es })}
+            </span>
+            , que no es hoy. ¿Deseas agregar el servicio de todos modos?
+          </p>
+          {confirmAppt?.client_name && (
+            <p className="text-xs text-gray-500">
+              {confirmAppt.client_name}{confirmAppt.plate ? ` · ${confirmAppt.plate}` : ''}
+            </p>
+          )}
+          <div className="flex gap-3 pt-1">
+            <Button variant="secondary" size="lg" className="flex-1" onClick={() => setConfirmAppt(null)}>
+              No, volver
+            </Button>
+            <Button variant="primary" size="lg" className="flex-1" onClick={() => {
+              if (confirmAppt) {
+                navigate('/', { state: { fromAppointment: confirmAppt } })
+                setConfirmAppt(null)
+              }
+            }}>
+              Sí, agregar
+            </Button>
+          </div>
+        </div>
+      </Modal>
 
       {/* Create / Edit Modal */}
       <Modal open={showModal} onClose={() => setShowModal(false)} title={editAppt ? 'Editar Cita' : 'Nueva Cita'} size="lg">
