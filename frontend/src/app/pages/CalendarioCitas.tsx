@@ -439,9 +439,12 @@ export default function CalendarioCitas() {
                 className={selectCls}
               >
                 <option value="">— Hora —</option>
-                {Array.from({ length: 13 }, (_, i) => i + 6).map(h => {
-                  const val = `${String(h).padStart(2, '0')}:00`
-                  return <option key={h} value={val}>{h}:00</option>
+                {Array.from({ length: 19 }, (_, i) => {
+                  const totalMinutes = 8 * 60 + i * 30
+                  const h = Math.floor(totalMinutes / 60)
+                  const m = totalMinutes % 60
+                  const val = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`
+                  return <option key={val} value={val}>{h}:{m === 0 ? '00' : '30'}</option>
                 })}
               </select>
             </div>
