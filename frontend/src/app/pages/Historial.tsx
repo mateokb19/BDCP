@@ -269,7 +269,7 @@ export default function Historial() {
     <div className="max-w-xl mx-auto">
       <PageHeader
         title="Historial"
-        subtitle={`${entries.length} servicio${entries.length !== 1 ? 's' : ''} · $${totalDay.toLocaleString('es-CO')}`}
+        subtitle={`${entries.length} servicio${entries.length !== 1 ? 's' : ''}`}
         actions={
           <Button variant="secondary" size="md" onClick={() => setShowDlModal(true)}>
             <Download size={15} /> Descargar
