@@ -324,32 +324,35 @@ export default function Historial() {
         <div className="p-6 space-y-4">
           {/* Quick-select buttons */}
           {(() => {
-            const now = new Date()
-            const thisWeekFrom  = format(startOfWeek(now, { weekStartsOn: 0 }), 'yyyy-MM-dd')
-            const thisMonthFrom = format(startOfMonth(now), 'yyyy-MM-dd')
-            const isThisWeek    = dlFrom === thisWeekFrom  && dlTo === TODAY
-            const isThisMonth   = dlFrom === thisMonthFrom && dlTo === TODAY
+            const now  = new Date()
+            const yesterday = new Date(now); yesterday.setDate(now.getDate() - 1)
+            const YESTERDAY = format(yesterday, 'yyyy-MM-dd')
+            const isToday     = dlFrom === TODAY     && dlTo === TODAY
+            const isYesterday = dlFrom === YESTERDAY && dlTo === YESTERDAY
+            const isCustomWeek  = !isToday && !isYesterday && dlFrom !== dlTo &&
+              dlFrom === format(startOfWeek(parseISO(dlFrom), { weekStartsOn: 0 }), 'yyyy-MM-dd')
+            const isCustomMonth = !isToday && !isYesterday && dlFrom !== dlTo && !isCustomWeek
             const btnCls = (active: boolean) => cn(
-              'rounded-xl border py-2 px-3 text-sm font-medium transition-colors',
+              'rounded-xl border py-2.5 px-3 text-sm font-medium transition-colors',
               active
                 ? 'bg-yellow-500/20 border-yellow-500/50 text-yellow-400'
                 : 'bg-white/5 border-white/8 text-gray-400 hover:bg-white/10 hover:text-gray-200'
             )
             return (
               <div className="grid grid-cols-2 gap-2">
-                <button type="button" className={btnCls(isThisWeek)}
-                  onClick={() => { setDlFrom(thisWeekFrom); setDlTo(TODAY) }}>
-                  Esta semana
+                <button type="button" className={btnCls(isToday)}
+                  onClick={() => { setDlFrom(TODAY); setDlTo(TODAY) }}>
+                  Hoy
                 </button>
-                <button type="button" className={btnCls(isThisMonth)}
-                  onClick={() => { setDlFrom(thisMonthFrom); setDlTo(TODAY) }}>
-                  Este mes
+                <button type="button" className={btnCls(isYesterday)}
+                  onClick={() => { setDlFrom(YESTERDAY); setDlTo(YESTERDAY) }}>
+                  Ayer
                 </button>
-                <button type="button" className={btnCls(!isThisWeek && !isThisMonth && dlFrom !== dlTo)}
+                <button type="button" className={btnCls(isCustomWeek)}
                   onClick={() => weekInputRef.current?.showPicker()}>
                   Elegir semana
                 </button>
-                <button type="button" className={btnCls(false)}
+                <button type="button" className={btnCls(isCustomMonth)}
                   onClick={() => monthInputRef.current?.showPicker()}>
                   Elegir mes
                 </button>
