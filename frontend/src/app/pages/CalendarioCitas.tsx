@@ -432,39 +432,59 @@ export default function CalendarioCitas() {
                 className={cn(selectCls, '[color-scheme:dark]')} />
             </div>
           </div>
-          <div className="flex flex-col gap-1.5">
-            <label className="text-sm font-medium text-gray-300">
-              Hora
-              {form.time && (
-                <span className="ml-2 text-yellow-400 font-semibold">{form.time}</span>
-              )}
-            </label>
-            <div className="grid grid-cols-4 gap-1.5">
-              {Array.from({ length: 19 }, (_, i) => {
-                const totalMinutes = 8 * 60 + i * 30
-                const h = Math.floor(totalMinutes / 60)
-                const m = totalMinutes % 60
-                const val = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`
-                const label = `${h}:${m === 0 ? '00' : '30'}`
-                const selected = form.time === val
-                return (
-                  <button
-                    key={val}
-                    type="button"
-                    onClick={() => setForm(p => ({ ...p, time: selected ? '' : val }))}
-                    className={cn(
-                      'rounded-lg py-1.5 text-sm font-medium transition-colors border',
-                      selected
-                        ? 'bg-yellow-500/20 border-yellow-500/50 text-yellow-400'
-                        : 'bg-white/5 border-white/8 text-gray-400 hover:bg-white/10 hover:text-gray-200'
-                    )}
-                  >
-                    {label}
-                  </button>
-                )
-              })}
-            </div>
-          </div>
+          {/* Time picker: hour row + :00/:30 toggle */}
+          {(() => {
+            const selectedH = form.time ? parseInt(form.time.split(':')[0]) : null
+            const selectedM = form.time ? form.time.split(':')[1] : null
+            return (
+              <div className="flex flex-col gap-2">
+                <label className="text-sm font-medium text-gray-300">
+                  Hora
+                  {form.time && <span className="ml-2 text-yellow-400 font-semibold">{form.time}</span>}
+                </label>
+                {/* Hour row */}
+                <div className="grid grid-cols-5 gap-1.5">
+                  {Array.from({ length: 10 }, (_, i) => i + 8).map(h => {
+                    const active = selectedH === h
+                    return (
+                      <button key={h} type="button"
+                        onClick={() => {
+                          const m = (h === 17 || !selectedM) ? '00' : selectedM
+                          setForm(p => ({ ...p, time: `${String(h).padStart(2,'0')}:${m}` }))
+                        }}
+                        className={cn(
+                          'rounded-lg py-2 text-sm font-medium transition-colors border',
+                          active
+                            ? 'bg-yellow-500/20 border-yellow-500/50 text-yellow-400'
+                            : 'bg-white/5 border-white/8 text-gray-400 hover:bg-white/10 hover:text-gray-200'
+                        )}
+                      >
+                        {h}
+                      </button>
+                    )
+                  })}
+                </div>
+                {/* Minute toggle — only shown once an hour is picked */}
+                {selectedH !== null && (
+                  <div className="grid grid-cols-2 gap-1.5">
+                    {(['00', ...(selectedH < 17 ? ['30'] : [])] as string[]).map(m => (
+                      <button key={m} type="button"
+                        onClick={() => setForm(p => ({ ...p, time: `${String(selectedH).padStart(2,'0')}:${m}` }))}
+                        className={cn(
+                          'rounded-lg py-2 text-sm font-semibold transition-colors border',
+                          selectedM === m
+                            ? 'bg-yellow-500/20 border-yellow-500/50 text-yellow-400'
+                            : 'bg-white/5 border-white/8 text-gray-400 hover:bg-white/10 hover:text-gray-200'
+                        )}
+                      >
+                        :{m}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )
+          })()}
 
           <div className="flex flex-col gap-1.5">
             <label className="text-sm font-medium text-gray-300">Tipo de Vehículo</label>
