@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Search, ChevronDown, ChevronUp, Clock, User, Wrench, Download } from 'lucide-react'
 import { format, parseISO, startOfWeek, startOfMonth, endOfMonth, subMonths } from 'date-fns'
@@ -221,6 +221,8 @@ export default function Historial() {
   const [dlFrom, setDlFrom] = useState(TODAY)
   const [dlTo,   setDlTo]   = useState(TODAY)
   const [dlLoading, setDlLoading] = useState(false)
+  const weekInputRef  = useRef<HTMLInputElement>(null)
+  const monthInputRef = useRef<HTMLInputElement>(null)
 
   async function handleDownload() {
     if (!dlFrom || !dlTo) { toast.error('Selecciona el rango de fechas'); return }
@@ -323,80 +325,58 @@ export default function Historial() {
           {/* Quick-select buttons */}
           {(() => {
             const now = new Date()
-            const thisWeekFrom = format(startOfWeek(now, { weekStartsOn: 0 }), 'yyyy-MM-dd')
+            const thisWeekFrom  = format(startOfWeek(now, { weekStartsOn: 0 }), 'yyyy-MM-dd')
             const thisMonthFrom = format(startOfMonth(now), 'yyyy-MM-dd')
+            const isThisWeek    = dlFrom === thisWeekFrom  && dlTo === TODAY
+            const isThisMonth   = dlFrom === thisMonthFrom && dlTo === TODAY
+            const btnCls = (active: boolean) => cn(
+              'rounded-xl border py-2 px-3 text-sm font-medium transition-colors',
+              active
+                ? 'bg-yellow-500/20 border-yellow-500/50 text-yellow-400'
+                : 'bg-white/5 border-white/8 text-gray-400 hover:bg-white/10 hover:text-gray-200'
+            )
+            return (
+              <div className="grid grid-cols-2 gap-2">
+                <button type="button" className={btnCls(isThisWeek)}
+                  onClick={() => { setDlFrom(thisWeekFrom); setDlTo(TODAY) }}>
+                  Esta semana
+                </button>
+                <button type="button" className={btnCls(isThisMonth)}
+                  onClick={() => { setDlFrom(thisMonthFrom); setDlTo(TODAY) }}>
+                  Este mes
+                </button>
+                <button type="button" className={btnCls(!isThisWeek && !isThisMonth && dlFrom !== dlTo)}
+                  onClick={() => weekInputRef.current?.showPicker()}>
+                  Elegir semana
+                </button>
+                <button type="button" className={btnCls(false)}
+                  onClick={() => monthInputRef.current?.showPicker()}>
+                  Elegir mes
+                </button>
+              </div>
+            )
+          })()}
 
-            function pickMonth(val: string) {
-              // val = "yyyy-MM"
-              const [y, m] = val.split('-').map(Number)
-              const d = new Date(y, m - 1, 1)
-              setDlFrom(format(startOfMonth(d), 'yyyy-MM-dd'))
-              setDlTo(format(endOfMonth(d), 'yyyy-MM-dd'))
-            }
-
-            function pickWeek(val: string) {
-              const d   = parseISO(val)
+          {/* Hidden pickers */}
+          <input ref={weekInputRef} type="date" className="sr-only" tabIndex={-1}
+            onChange={e => {
+              if (!e.target.value) return
+              const d   = parseISO(e.target.value)
               const sun = startOfWeek(d, { weekStartsOn: 0 })
               const sat = new Date(sun.getTime() + 6 * 24 * 60 * 60 * 1000)
               setDlFrom(format(sun, 'yyyy-MM-dd'))
               setDlTo(format(sat, 'yyyy-MM-dd'))
-            }
-
-            const isThisWeek  = dlFrom === thisWeekFrom && dlTo === TODAY
-            const isThisMonth = dlFrom === thisMonthFrom && dlTo === TODAY
-
-            return (
-              <div className="grid grid-cols-2 gap-2">
-                {/* Esta semana */}
-                <button type="button"
-                  onClick={() => { setDlFrom(thisWeekFrom); setDlTo(TODAY) }}
-                  className={cn(
-                    'rounded-xl border py-2 px-3 text-sm font-medium transition-colors',
-                    isThisWeek
-                      ? 'bg-yellow-500/20 border-yellow-500/50 text-yellow-400'
-                      : 'bg-white/5 border-white/8 text-gray-400 hover:bg-white/10 hover:text-gray-200'
-                  )}
-                >
-                  Esta semana
-                </button>
-
-                {/* Este mes */}
-                <button type="button"
-                  onClick={() => { setDlFrom(thisMonthFrom); setDlTo(TODAY) }}
-                  className={cn(
-                    'rounded-xl border py-2 px-3 text-sm font-medium transition-colors',
-                    isThisMonth
-                      ? 'bg-yellow-500/20 border-yellow-500/50 text-yellow-400'
-                      : 'bg-white/5 border-white/8 text-gray-400 hover:bg-white/10 hover:text-gray-200'
-                  )}
-                >
-                  Este mes
-                </button>
-
-                {/* Elegir semana */}
-                <label className={cn(
-                  'relative rounded-xl border py-2 px-3 text-sm font-medium transition-colors cursor-pointer text-center',
-                  !isThisWeek && !isThisMonth && dlFrom !== dlTo
-                    ? 'bg-yellow-500/20 border-yellow-500/50 text-yellow-400'
-                    : 'bg-white/5 border-white/8 text-gray-400 hover:bg-white/10 hover:text-gray-200'
-                )}>
-                  Elegir semana
-                  <input type="date" className="absolute inset-0 opacity-0 w-full cursor-pointer [color-scheme:dark]"
-                    onChange={e => e.target.value && pickWeek(e.target.value)} />
-                </label>
-
-                {/* Elegir mes */}
-                <label className={cn(
-                  'relative rounded-xl border py-2 px-3 text-sm font-medium transition-colors cursor-pointer text-center',
-                  'bg-white/5 border-white/8 text-gray-400 hover:bg-white/10 hover:text-gray-200'
-                )}>
-                  Elegir mes
-                  <input type="month" className="absolute inset-0 opacity-0 w-full cursor-pointer [color-scheme:dark]"
-                    onChange={e => e.target.value && pickMonth(e.target.value)} />
-                </label>
-              </div>
-            )
-          })()}
+            }}
+          />
+          <input ref={monthInputRef} type="month" className="sr-only" tabIndex={-1}
+            onChange={e => {
+              if (!e.target.value) return
+              const [y, m] = e.target.value.split('-').map(Number)
+              const d = new Date(y, m - 1, 1)
+              setDlFrom(format(startOfMonth(d), 'yyyy-MM-dd'))
+              setDlTo(format(endOfMonth(d), 'yyyy-MM-dd'))
+            }}
+          />
 
           {/* Manual date range */}
           <div className="grid grid-cols-2 gap-3">
