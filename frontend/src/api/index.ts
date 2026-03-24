@@ -181,11 +181,13 @@ export interface ApiLiqWeekResponse {
   commission_amount:         string
   is_liquidated:             boolean
   unliquidated_count:        number
-  liquidated_at?:            string
-  net_amount?:               string
-  payment_transfer_amount?:  string
-  payment_cash_amount?:      string
-  amount_pending?:           string
+  liquidated_at?:               string
+  net_amount?:                  string
+  payment_cash_amount?:         string
+  payment_datafono_amount?:     string
+  payment_nequi_amount?:        string
+  payment_bancolombia_amount?:  string
+  amount_pending?:              string
 }
 
 export interface ApiDebtPayment {
@@ -217,8 +219,10 @@ export interface DebtCreatePayload {
 export interface LiquidatePayload {
   abonos:              { debt_id: number; amount: number }[]
   company_settlements: { debt_id: number; amount: number }[]
-  payment_transfer:    number
   payment_cash:        number
+  payment_datafono:    number
+  payment_nequi:       number
+  payment_bancolombia: number
 }
 
 export interface ApiHistorialItem {
@@ -316,15 +320,17 @@ export interface ApiReportOrder {
 }
 
 export interface ApiReportWeekStatus {
-  week_start:       string
-  week_end:         string
-  is_liquidated:    boolean
-  week_gross:       string
-  week_commission:  string
-  net_amount?:      string
-  payment_transfer?: string
-  payment_cash?:    string
-  amount_pending?:  string
+  week_start:          string
+  week_end:            string
+  is_liquidated:       boolean
+  week_gross:          string
+  week_commission:     string
+  net_amount?:         string
+  payment_cash?:       string
+  payment_datafono?:   string
+  payment_nequi?:      string
+  payment_bancolombia?: string
+  amount_pending?:     string
 }
 
 export interface ApiReportPendingDebt {
@@ -411,29 +417,31 @@ export interface ApiClientVehicle {
 }
 
 export interface ApiClient {
-  id:           number
-  name:         string
-  phone?:       string
-  email?:       string
-  nit?:         string
-  direccion?:   string
-  regimen?:     string
-  notes?:       string
-  created_at:   string
-  vehicles:     ApiClientVehicle[]
-  order_count:  number
-  total_spent:  string
-  last_service?: string
+  id:                   number
+  name:                 string
+  phone?:               string
+  email?:               string
+  tipo_persona?:        string
+  tipo_identificacion?: string
+  identificacion?:      string
+  dv?:                  string
+  notes?:               string
+  created_at:           string
+  vehicles:             ApiClientVehicle[]
+  order_count:          number
+  total_spent:          string
+  last_service?:        string
 }
 
 export interface ClientPatchPayload {
-  name?:      string
-  phone?:     string
-  email?:     string
-  nit?:       string
-  direccion?: string
-  regimen?:   string
-  notes?:     string
+  name?:                string
+  phone?:               string
+  email?:               string
+  tipo_persona?:        string
+  tipo_identificacion?: string
+  identificacion?:      string
+  dv?:                  string
+  notes?:               string
 }
 
 // ── API methods ────────────────────────────────────────────────────────────────

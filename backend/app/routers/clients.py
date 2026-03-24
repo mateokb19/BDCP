@@ -24,9 +24,10 @@ def _build_client_out(c: models.Client) -> schemas.ClientOut:
         name=c.name,
         phone=c.phone,
         email=c.email,
-        nit=c.nit,
-        direccion=c.direccion,
-        regimen=c.regimen,
+        tipo_persona=c.tipo_persona,
+        tipo_identificacion=c.tipo_identificacion,
+        identificacion=c.identificacion,
+        dv=c.dv,
         notes=c.notes,
         created_at=c.created_at,
         vehicles=[schemas.ClientVehicleOut.model_validate(v) for v in c.vehicles],
@@ -53,13 +54,14 @@ def patch_client(client_id: int, data: schemas.ClientPatch, db: Session = Depend
     c = db.query(models.Client).filter(models.Client.id == client_id).first()
     if not c:
         raise HTTPException(status_code=404, detail="Cliente no encontrado")
-    if data.name      is not None: c.name      = data.name
-    if data.phone     is not None: c.phone     = data.phone
-    if data.email     is not None: c.email     = data.email
-    if data.nit       is not None: c.nit       = data.nit
-    if data.direccion is not None: c.direccion = data.direccion
-    if data.regimen   is not None: c.regimen   = data.regimen
-    if data.notes     is not None: c.notes     = data.notes
+    if data.name                is not None: c.name                = data.name
+    if data.phone               is not None: c.phone               = data.phone
+    if data.email               is not None: c.email               = data.email
+    if data.tipo_persona        is not None: c.tipo_persona        = data.tipo_persona
+    if data.tipo_identificacion is not None: c.tipo_identificacion = data.tipo_identificacion
+    if data.identificacion      is not None: c.identificacion      = data.identificacion
+    if data.dv                  is not None: c.dv                  = data.dv
+    if data.notes               is not None: c.notes               = data.notes
     db.commit()
     db.refresh(c)
     return _build_client_out(c)

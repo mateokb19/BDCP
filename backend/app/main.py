@@ -25,9 +25,10 @@ with engine.connect() as _conn:
     _conn.execute(text(
         "ALTER TABLE patio ADD COLUMN IF NOT EXISTS scheduled_delivery_at TIMESTAMP"
     ))
-    _conn.execute(text("ALTER TABLE clients ADD COLUMN IF NOT EXISTS nit VARCHAR(30)"))
-    _conn.execute(text("ALTER TABLE clients ADD COLUMN IF NOT EXISTS direccion VARCHAR(200)"))
-    _conn.execute(text("ALTER TABLE clients ADD COLUMN IF NOT EXISTS regimen VARCHAR(50)"))
+    _conn.execute(text("ALTER TABLE clients ADD COLUMN IF NOT EXISTS tipo_persona VARCHAR(20)"))
+    _conn.execute(text("ALTER TABLE clients ADD COLUMN IF NOT EXISTS tipo_identificacion VARCHAR(50)"))
+    _conn.execute(text("ALTER TABLE clients ADD COLUMN IF NOT EXISTS identificacion VARCHAR(30)"))
+    _conn.execute(text("ALTER TABLE clients ADD COLUMN IF NOT EXISTS dv VARCHAR(2)"))
     _conn.execute(text(
         "ALTER TABLE service_orders ADD COLUMN IF NOT EXISTS payment_cash NUMERIC(12,2) NOT NULL DEFAULT 0"
     ))
@@ -39,6 +40,18 @@ with engine.connect() as _conn:
     ))
     _conn.execute(text(
         "ALTER TABLE service_orders ADD COLUMN IF NOT EXISTS payment_bancolombia NUMERIC(12,2) NOT NULL DEFAULT 0"
+    ))
+    _conn.execute(text(
+        "ALTER TABLE week_liquidations ALTER COLUMN payment_transfer SET DEFAULT 0"
+    ))
+    _conn.execute(text(
+        "ALTER TABLE week_liquidations ADD COLUMN IF NOT EXISTS payment_datafono NUMERIC(12,2) NOT NULL DEFAULT 0"
+    ))
+    _conn.execute(text(
+        "ALTER TABLE week_liquidations ADD COLUMN IF NOT EXISTS payment_nequi NUMERIC(12,2) NOT NULL DEFAULT 0"
+    ))
+    _conn.execute(text(
+        "ALTER TABLE week_liquidations ADD COLUMN IF NOT EXISTS payment_bancolombia NUMERIC(12,2) NOT NULL DEFAULT 0"
     ))
     _conn.execute(text(
         "ALTER TABLE expenses ADD COLUMN IF NOT EXISTS payment_method VARCHAR(50)"
