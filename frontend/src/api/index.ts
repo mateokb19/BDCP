@@ -460,9 +460,11 @@ export const api = {
     list: () => apiFetch<ApiCeramicTreatment[]>('/ceramics'),
   },
   history: {
-    list: (params?: { date_filter?: string; search?: string }) => {
+    list: (params?: { date_filter?: string; date_from?: string; date_to?: string; search?: string }) => {
       const qs = new URLSearchParams()
       if (params?.date_filter) qs.set('date_filter', params.date_filter)
+      if (params?.date_from)   qs.set('date_from',   params.date_from)
+      if (params?.date_to)     qs.set('date_to',     params.date_to)
       if (params?.search)      qs.set('search', params.search)
       const query = qs.toString() ? `?${qs}` : ''
       return apiFetch<ApiHistorialEntry[]>(`/history${query}`)

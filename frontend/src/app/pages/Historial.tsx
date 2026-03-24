@@ -1,18 +1,112 @@
 import { useState, useEffect, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Search, ChevronDown, ChevronUp, Clock, User, Wrench } from 'lucide-react'
+import { Search, ChevronDown, ChevronUp, Clock, User, Wrench, Download } from 'lucide-react'
 import { format, parseISO } from 'date-fns'
 import { es } from 'date-fns/locale'
 import { toast } from 'sonner'
 import { PageHeader } from '@/app/components/ui/PageHeader'
 import { Badge } from '@/app/components/ui/Badge'
+import { Button } from '@/app/components/ui/Button'
+import { Modal } from '@/app/components/ui/Modal'
 import { StatusBadge } from '@/app/components/ui/StatusBadge'
-import { GlassCard } from '@/app/components/ui/GlassCard'
 import { EmptyState } from '@/app/components/ui/EmptyState'
 import { cn } from '@/app/components/ui/cn'
 import { api, type ApiHistorialEntry } from '@/api'
 
 const TODAY = format(new Date(), 'yyyy-MM-dd')
+
+const VEHICLE_TYPE_LABEL: Record<string, string> = {
+  automovil:       'Automóvil',
+  camion_estandar: 'C. Estándar',
+  camion_xl:       'C. XL',
+}
+
+function esc(s: string) {
+  return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
+}
+
+function printHistorialReport(entries: ApiHistorialEntry[], dateFrom: string, dateTo: string) {
+  // Flatten: one row per service item
+  const rows: {
+    date: string; vehicleType: string; plate: string
+    service: string; operator: string; price: number
+  }[] = []
+
+  const sorted = [...entries].sort((a, b) => a.date.localeCompare(b.date))
+
+  for (const entry of sorted) {
+    const vt   = VEHICLE_TYPE_LABEL[entry.vehicle?.type ?? ''] ?? (entry.vehicle?.type ?? '—')
+    const plate = entry.vehicle?.plate ?? '—'
+    const op    = entry.operator?.name ?? '—'
+    const dateLabel = format(parseISO(`${entry.date}T00:00:00`), 'dd/MM/yyyy')
+    for (const item of entry.items) {
+      rows.push({
+        date:        dateLabel,
+        vehicleType: vt,
+        plate,
+        service:     item.service_name,
+        operator:    op,
+        price:       Number(item.subtotal),
+      })
+    }
+  }
+
+  const total = rows.reduce((s, r) => s + r.price, 0)
+
+  const fromLabel = format(parseISO(`${dateFrom}T00:00:00`), "d 'de' MMMM yyyy", { locale: es })
+  const toLabel   = format(parseISO(`${dateTo}T00:00:00`),   "d 'de' MMMM yyyy", { locale: es })
+
+  const tableRows = rows.map(r => `
+    <tr>
+      <td>${esc(r.date)}</td>
+      <td>${esc(r.vehicleType)}</td>
+      <td class="plate">${esc(r.plate)}</td>
+      <td>${esc(r.service)}</td>
+      <td>${esc(r.operator)}</td>
+      <td class="price">$${r.price.toLocaleString('es-CO')}</td>
+      <td></td>
+    </tr>`).join('')
+
+  const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Reporte BDCPolo</title>
+  <style>
+    *{margin:0;padding:0;box-sizing:border-box}
+    body{font-family:Arial,sans-serif;font-size:10px;padding:20px;color:#000}
+    h1{text-align:center;font-size:14px;font-weight:bold;letter-spacing:1px;margin-bottom:3px}
+    .period{text-align:center;font-size:10px;color:#555;margin-bottom:14px}
+    table{width:100%;border-collapse:collapse}
+    th{background:#e8e8e8;font-weight:bold;text-transform:uppercase;font-size:9px;padding:6px 5px;border:1px solid #aaa;text-align:center}
+    td{padding:4px 5px;border:1px solid #ccc;vertical-align:middle}
+    .plate{font-family:monospace;font-weight:bold;text-align:center}
+    .price{text-align:right;white-space:nowrap}
+    .total-row td{font-weight:bold;background:#f5f5f5;border-top:2px solid #888}
+  </style>
+  </head>
+  <body onload="window.print()">
+    <h1>BOGOTA DETAILING CENTER</h1>
+    <p class="period">Reporte de servicios: ${esc(fromLabel)} — ${esc(toLabel)}</p>
+    <table>
+      <thead>
+        <tr>
+          <th>Fecha</th><th>Tipo de Vehículo</th><th>Placa</th>
+          <th>Servicio</th><th>Operario</th><th>Valor del Servicio</th><th>Método de Pago</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${tableRows}
+        <tr class="total-row">
+          <td colspan="5" style="text-align:right">TOTAL</td>
+          <td class="price">$${total.toLocaleString('es-CO')}</td>
+          <td></td>
+        </tr>
+      </tbody>
+    </table>
+  </body></html>`
+
+  const blob = new Blob([html], { type: 'text/html' })
+  const url  = URL.createObjectURL(blob)
+  window.open(url, '_blank')
+  setTimeout(() => URL.revokeObjectURL(url), 60_000)
+}
 
 const categoryColors: Record<string, string> = {
   exterior: 'yellow',
@@ -136,6 +230,28 @@ export default function Historial() {
   const [search, setSearch]       = useState('')
   const [debouncedSearch, setDebouncedSearch] = useState('')
 
+  // Download modal
+  const [showDlModal, setShowDlModal] = useState(false)
+  const [dlFrom, setDlFrom] = useState(TODAY)
+  const [dlTo,   setDlTo]   = useState(TODAY)
+  const [dlLoading, setDlLoading] = useState(false)
+
+  async function handleDownload() {
+    if (!dlFrom || !dlTo) { toast.error('Selecciona el rango de fechas'); return }
+    if (dlFrom > dlTo)    { toast.error('La fecha inicial no puede ser mayor a la final'); return }
+    setDlLoading(true)
+    try {
+      const data = await api.history.list({ date_from: dlFrom, date_to: dlTo })
+      if (data.length === 0) { toast.error('No hay servicios en ese período'); return }
+      printHistorialReport(data, dlFrom, dlTo)
+      setShowDlModal(false)
+    } catch {
+      toast.error('Error al generar el reporte')
+    } finally {
+      setDlLoading(false)
+    }
+  }
+
   // Debounce search input 350ms
   useEffect(() => {
     const t = setTimeout(() => setDebouncedSearch(search), 350)
@@ -166,6 +282,11 @@ export default function Historial() {
       <PageHeader
         title="Historial"
         subtitle={`${entries.length} servicio${entries.length !== 1 ? 's' : ''} · $${totalDay.toLocaleString('es-CO')}`}
+        actions={
+          <Button variant="secondary" size="md" onClick={() => setShowDlModal(true)}>
+            <Download size={15} /> Descargar
+          </Button>
+        }
       />
 
       {/* Filters */}
@@ -209,6 +330,33 @@ export default function Historial() {
           </AnimatePresence>
         </div>
       )}
+
+      {/* Download modal */}
+      <Modal open={showDlModal} onClose={() => setShowDlModal(false)} title="Descargar reporte" size="sm">
+        <div className="p-6 space-y-4">
+          <p className="text-sm text-gray-400">Selecciona el período de tiempo para el reporte PDF.</p>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="flex flex-col gap-1.5">
+              <label className="text-xs font-medium text-gray-400">Desde</label>
+              <input type="date" value={dlFrom} onChange={e => setDlFrom(e.target.value)}
+                className="w-full rounded-xl border border-white/10 bg-gray-900 px-3 py-2 text-sm text-gray-100 focus:border-yellow-500/50 focus:outline-none [color-scheme:dark]" />
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <label className="text-xs font-medium text-gray-400">Hasta</label>
+              <input type="date" value={dlTo} onChange={e => setDlTo(e.target.value)}
+                className="w-full rounded-xl border border-white/10 bg-gray-900 px-3 py-2 text-sm text-gray-100 focus:border-yellow-500/50 focus:outline-none [color-scheme:dark]" />
+            </div>
+          </div>
+          <div className="flex gap-3 pt-1">
+            <Button variant="secondary" size="lg" className="flex-1" onClick={() => setShowDlModal(false)}>
+              Cancelar
+            </Button>
+            <Button variant="primary" size="lg" className="flex-1" onClick={handleDownload} disabled={dlLoading}>
+              {dlLoading ? 'Generando...' : <><Download size={15} /> Descargar PDF</>}
+            </Button>
+          </div>
+        </div>
+      </Modal>
     </div>
   )
 }
