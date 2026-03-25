@@ -148,8 +148,9 @@ export default function CalendarioCitas() {
   }
 
   async function handleSave() {
-    if (!form.clientName.trim()) { toast.error('El nombre del cliente es obligatorio'); return }
-    if (!form.date)              { toast.error('La fecha es obligatoria'); return }
+    if (!form.clientName.trim())  { toast.error('El nombre del cliente es obligatorio'); return }
+    if (!form.clientPhone.trim()) { toast.error('El teléfono es obligatorio'); return }
+    if (!form.date)               { toast.error('La fecha es obligatoria'); return }
     setSaving(true)
     const payload = {
       date:         form.date,
@@ -364,7 +365,7 @@ export default function CalendarioCitas() {
                               </div>
                             )}
                             {appt.client_name && (
-                              <div className="text-gray-200">{appt.client_name}</div>
+                              <div className="text-gray-200 truncate">{appt.client_name}</div>
                             )}
                             {appt.client_phone && (
                               <div className="flex items-center gap-1.5 text-gray-400">
@@ -488,8 +489,8 @@ export default function CalendarioCitas() {
 
           <div className="flex flex-col gap-1.5">
             <label className="text-sm font-medium text-gray-300">Tipo de Vehículo</label>
-            <div className="grid grid-cols-3 gap-2">
-              {(['automovil', 'camion_estandar', 'camion_xl'] as VehicleType[]).map(t => (
+            <div className="grid grid-cols-2 gap-2">
+              {(['automovil', 'camion_estandar', 'camion_xl', 'moto'] as VehicleType[]).map(t => (
                 <button key={t} onClick={() => setForm(p => ({ ...p, vehicleType: t }))}
                   className={cn('rounded-xl border py-2 px-3 text-sm transition-colors', form.vehicleType === t
                     ? 'border-yellow-500/50 bg-yellow-500/10 text-yellow-400'
@@ -531,13 +532,13 @@ export default function CalendarioCitas() {
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div className="flex flex-col gap-1.5">
               <label className="text-sm font-medium text-gray-300">Nombre Cliente *</label>
-              <input value={form.clientName} placeholder="Nombre completo"
+              <input value={form.clientName} placeholder="Nombre completo" maxLength={60}
                 onChange={e => setForm(p => ({ ...p, clientName: e.target.value }))}
                 className={selectCls} />
             </div>
             <div className="flex flex-col gap-1.5">
-              <label className="text-sm font-medium text-gray-300">Teléfono</label>
-              <input value={form.clientPhone} placeholder="3001234567"
+              <label className="text-sm font-medium text-gray-300">Teléfono *</label>
+              <input value={form.clientPhone} placeholder="3001234567" maxLength={15}
                 onChange={e => setForm(p => ({ ...p, clientPhone: e.target.value.replace(/[^0-9+]/g, '') }))}
                 className={selectCls} />
             </div>

@@ -248,14 +248,18 @@ export interface ApiHistorialOperator {
 }
 
 export interface ApiHistorialEntry {
-  id:           number
-  order_number: string
-  date:         string
-  status:       string
-  total?:       string
-  vehicle?:     ApiHistorialVehicle
-  items:        ApiHistorialItem[]
-  operator?:    ApiHistorialOperator
+  id:                  number
+  order_number:        string
+  date:                string
+  status:              string
+  total?:              string
+  vehicle?:            ApiHistorialVehicle
+  items:               ApiHistorialItem[]
+  operator?:           ApiHistorialOperator
+  payment_cash?:       string
+  payment_datafono?:   string
+  payment_nequi?:      string
+  payment_bancolombia?: string
 }
 
 export interface ApiAppointment {

@@ -278,14 +278,18 @@ class HistorialItemOut(OrmBase):
 
 
 class HistorialEntryOut(OrmBase):
-    id:           int
-    order_number: str
-    date:         date
-    status:       str
-    total:        Optional[Decimal]
-    vehicle:      Optional[HistorialVehicleOut]
-    items:        List[HistorialItemOut]
-    operator:     Optional[HistorialOperatorOut]
+    id:                  int
+    order_number:        str
+    date:                date
+    status:              str
+    total:               Optional[Decimal]
+    vehicle:             Optional[HistorialVehicleOut]
+    items:               List[HistorialItemOut]
+    operator:            Optional[HistorialOperatorOut]
+    payment_cash:        Optional[Decimal] = None
+    payment_datafono:    Optional[Decimal] = None
+    payment_nequi:       Optional[Decimal] = None
+    payment_bancolombia: Optional[Decimal] = None
 
 
 # ── Appointments ──────────────────────────────────────────────────────────────

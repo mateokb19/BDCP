@@ -418,7 +418,7 @@ export default function IngresarServicio() {
                     whileTap={{ scale: 0.98 }}
                     onClick={() => { setVehicleType(opt.type); setPlateTypeMismatch(false); goTo(2) }}
                     className={cn(
-                      'group flex flex-col items-center gap-5 rounded-2xl border p-8 text-center transition-all duration-200',
+                      'group flex flex-col items-center justify-center gap-5 rounded-2xl border p-8 text-center transition-all duration-200 min-h-[160px]',
                       'bg-white/[0.03] border-white/8 hover:border-yellow-500/40 hover:bg-yellow-500/5',
                       'hover:shadow-lg hover:shadow-yellow-500/10'
                     )}

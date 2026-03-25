@@ -94,10 +94,15 @@ function ClientRow({ client, onClick }: ClientRowProps) {
         {initials(client.name)}
       </div>
 
-      {/* Name + phone */}
+      {/* Name + phone + FE */}
       <div className="flex-1 min-w-0">
         <p className="text-sm font-medium text-white break-all">{client.name}</p>
         <p className="text-xs text-gray-500 mt-0.5">{client.phone ?? '—'}</p>
+        {client.identificacion && (
+          <p className="text-xs text-blue-400 font-mono mt-0.5">
+            {client.tipo_identificacion === 'NIT' ? 'NIT' : 'ID'} {client.identificacion}{client.dv ? `-${client.dv}` : ''}
+          </p>
+        )}
       </div>
 
       {/* Chips */}

@@ -25,17 +25,29 @@ function esc(s: string) {
   return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
 }
 
+function fmtPaymentMethod(e: ApiHistorialEntry): string {
+  const methods = [
+    Number(e.payment_cash)        > 0 && 'Efectivo',
+    Number(e.payment_datafono)    > 0 && 'Datafono',
+    Number(e.payment_nequi)       > 0 && 'Nequi',
+    Number(e.payment_bancolombia) > 0 && 'Bancolombia',
+  ].filter(Boolean) as string[]
+  return methods.length ? methods.join(' + ') : '—'
+}
+
 function printHistorialReport(entries: ApiHistorialEntry[], dateFrom: string, dateTo: string) {
   // One row per order — services joined in a single cell
   const sorted = [...entries].sort((a, b) => a.date.localeCompare(b.date) || a.id - b.id)
 
   const tableRows = sorted.map(entry => {
-    const vt        = VEHICLE_TYPE_LABEL[entry.vehicle?.type ?? ''] ?? (entry.vehicle?.type ?? '—')
+    const brandModel = [entry.vehicle?.brand, entry.vehicle?.model].filter(Boolean).join(' ')
+    const vt        = brandModel || VEHICLE_TYPE_LABEL[entry.vehicle?.type ?? ''] || '—'
     const plate     = entry.vehicle?.plate ?? '—'
     const op        = entry.operator?.name ?? '—'
     const dateLabel = format(parseISO(`${entry.date}T00:00:00`), 'dd/MM/yyyy')
     const services  = entry.items.map(i => esc(i.service_name)).join('<br>')
     const total     = Number(entry.total ?? 0)
+    const payment   = fmtPaymentMethod(entry)
     return `
     <tr>
       <td>${esc(dateLabel)}</td>
@@ -44,7 +56,7 @@ function printHistorialReport(entries: ApiHistorialEntry[], dateFrom: string, da
       <td>${services}</td>
       <td>${esc(op)}</td>
       <td class="price">$${total.toLocaleString('es-CO')}</td>
-      <td></td>
+      <td style="text-align:center">${esc(payment)}</td>
     </tr>`
   }).join('')
 
@@ -73,7 +85,7 @@ function printHistorialReport(entries: ApiHistorialEntry[], dateFrom: string, da
     <table>
       <thead>
         <tr>
-          <th>Fecha</th><th>Tipo de Vehículo</th><th>Placa</th>
+          <th>Fecha</th><th>Vehículo</th><th>Placa</th>
           <th>Servicio</th><th>Operario</th><th>Valor del Servicio</th><th>Método de Pago</th>
         </tr>
       </thead>
@@ -181,6 +193,13 @@ function OrderCard({ entry }: { entry: ApiHistorialEntry }) {
                   </div>
                 )}
               </div>
+
+              {/* Payment method */}
+              {(Number(entry.payment_cash) + Number(entry.payment_datafono) + Number(entry.payment_nequi) + Number(entry.payment_bancolombia)) > 0 && (
+                <p className="text-xs text-gray-400">
+                  <span className="text-gray-600">Pago:</span> {fmtPaymentMethod(entry)}
+                </p>
+              )}
 
               {/* Services */}
               {entry.items.length > 0 && (

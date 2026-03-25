@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { motion, AnimatePresence, LayoutGroup } from 'framer-motion'
 import { Clock, ArrowRight, Wrench, Pencil, X, ChevronDown, Calendar, Phone, User, ChevronUp, Banknote, CreditCard, Check } from 'lucide-react'
 import { toast } from 'sonner'
+import { format, parseISO } from 'date-fns'
 import { PageHeader } from '@/app/components/ui/PageHeader'
 import { Badge } from '@/app/components/ui/Badge'
 import { Button } from '@/app/components/ui/Button'
@@ -549,6 +550,13 @@ export default function EstadoPatio() {
     }
     // Intercept delivery to collect payment info
     if (entry.status === 'listo') {
+      if (entry.scheduled_delivery_at) {
+        const scheduledDate = format(parseISO(entry.scheduled_delivery_at), 'dd/MM/yyyy')
+        const today = format(new Date(), 'dd/MM/yyyy')
+        if (scheduledDate !== today) {
+          toast.warning(`Este vehículo estaba programado para entregarse el ${scheduledDate}`)
+        }
+      }
       setPaymentEntry(entry)
       setPayMethods({})
       setFactura(false)
