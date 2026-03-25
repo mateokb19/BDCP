@@ -27,6 +27,7 @@ const fmtCOP   = (raw: string | number): string => {
 const TOOLTIP_STYLE = {
   contentStyle: { background: '#111827', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 12, fontSize: 12 },
   labelStyle: { color: '#9ca3af' },
+  itemStyle: { color: '#f3f4f6' },
   cursor: { fill: 'rgba(255,255,255,0.03)' },
 }
 
@@ -60,10 +61,10 @@ function getPeriodDates(period: IngresosPeriod): { start: string; end: string } 
 }
 
 const PAY_METHODS = [
-  { key: 'payment_cash'        as const, label: 'Efectivo',    color: '#eab308', icon: <Banknote size={13} /> },
+  { key: 'payment_cash'        as const, label: 'Efectivo',    color: '#4ade80', icon: <Banknote size={13} /> },
   { key: 'payment_datafono'    as const, label: 'Datáfono',    color: '#3b82f6', icon: <CreditCard size={13} /> },
   { key: 'payment_nequi'       as const, label: 'Nequi',       color: '#a855f7', icon: <CreditCard size={13} /> },
-  { key: 'payment_bancolombia' as const, label: 'Bancolombia', color: '#ef4444', icon: <CreditCard size={13} /> },
+  { key: 'payment_bancolombia' as const, label: 'Bancolombia', color: '#eab308', icon: <CreditCard size={13} /> },
 ]
 
 const EXPENSE_CATEGORIES = [
@@ -357,7 +358,7 @@ export default function IngresosEgresos() {
                   tickFormatter={v => v >= 1000000 ? `${(v/1000000).toFixed(1)}M` : v >= 1000 ? `${(v/1000).toFixed(0)}k` : String(v)} />
                 <Tooltip {...TOOLTIP_STYLE} formatter={(v) => [`$${Number(v).toLocaleString('es-CO')}`, '']} />
                 <Legend wrapperStyle={{ fontSize: 12, color: '#9ca3af' }} />
-                <Bar dataKey="ingresos" fill="#eab308" radius={[4, 4, 0, 0]} />
+                <Bar dataKey="ingresos" fill="#22c55e" radius={[4, 4, 0, 0]} />
                 <Bar dataKey="egresos"  fill="#ef4444" radius={[4, 4, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
@@ -378,7 +379,7 @@ export default function IngresosEgresos() {
                     dataKey="value" paddingAngle={3}>
                     {categoryData.map((_, i) => <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />)}
                   </Pie>
-                  <Tooltip {...TOOLTIP_STYLE} formatter={(v) => [`$${Number(v).toLocaleString('es-CO')}`, '']} />
+                  <Tooltip {...TOOLTIP_STYLE} formatter={(v, _k, props) => [`$${Number(v).toLocaleString('es-CO')}`, props.name ?? '']} />
                 </PieChart>
               </ResponsiveContainer>
               <div className="space-y-1 mt-2">

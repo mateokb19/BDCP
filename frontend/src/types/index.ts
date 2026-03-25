@@ -1,6 +1,6 @@
 // ---- Enums as string literals (mirror DB enum types) ----
-export type VehicleType       = 'automovil' | 'camion_estandar' | 'camion_xl'
-export type ServiceCategory   = 'exterior' | 'interior' | 'ceramico' | 'correccion_pintura'
+export type VehicleType       = 'automovil' | 'camion_estandar' | 'camion_xl' | 'moto'
+export type ServiceCategory   = 'exterior' | 'interior' | 'ceramico' | 'correccion_pintura' | 'latoneria' | 'pintura' | 'ppf' | 'polarizado'
 export type OrderStatus       = 'pendiente' | 'en_proceso' | 'listo' | 'entregado' | 'cancelado'
 export type PatioStatus       = 'esperando' | 'en_proceso' | 'listo' | 'entregado'
 export type AppointmentStatus = 'programada' | 'confirmada' | 'completada' | 'cancelada' | 'no_asistio'

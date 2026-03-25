@@ -137,8 +137,8 @@ All routes are prefixed `/api/v1/`.
 ## Domain enums (mirror DB)
 
 ```
-VehicleType:        automovil | camion_estandar | camion_xl
-ServiceCategory:    exterior | interior | ceramico | correccion_pintura
+VehicleType:        moto | automovil | camion_estandar | camion_xl
+ServiceCategory:    exterior | interior | ceramico | correccion_pintura | latoneria | pintura | ppf | polarizado
 OrderStatus:        pendiente | en_proceso | listo | entregado | cancelado
 PatioStatus:        esperando | en_proceso | listo | entregado
 AppointmentStatus:  programada | confirmada | completada | cancelada | no_asistio
@@ -185,11 +185,16 @@ ALTER TABLE week_liquidations ADD COLUMN IF NOT EXISTS payment_bancolombia NUMER
 ## Service order flow
 
 1. **IngresarServicio** — 3-step wizard:
-   - **Step 1**: Select vehicle type (Automóvil / Camioneta Estándar / Camioneta XL).
+   - **Step 1**: Select vehicle type (Moto / Automóvil / Camioneta Estándar / Camioneta XL). Clicking a type goes directly to step 2.
    - **Step 2**: Fill form. Plate lookup (`onBlur`) calls `GET /vehicles/by-plate/{plate}`:
      - **Type match**: autofills brand, model, color, client name, and phone.
      - **Type mismatch**: autofills client info only; shows warning toast; disables service selection and "Revisar Orden" button until user selects the correct vehicle type.
      - Plate cleared → all autofilled fields cleared immediately.
+   - **Service selection (step 2)**: services column shows 5 collapsible accordion sections — Detallado (Exterior / Interior / Corrección / Cerámico), Latonería, Pintura, PPF, Polarizado. "Detallado" is open by default; all others start closed. Services from multiple areas can be combined in one order. Each accordion header shows a count badge when services are selected from that area.
+     - **Moto pricing**: uses `price_automovil` (no separate moto price column).
+     - **PPF / Polarizado**: seeded with price $0; user enters a custom price per service in step 2 (editable input).
+     - **Latonería**: seeded with $0 for most pieces (except Desmonte/Monte Bumper at $110k); inline price input per piece.
+     - **Pintura**: fixed prices per piece ($220k = ½ pieza, $430k = 1 pieza, $860k = 2 piezas); same price for all vehicle types.
    - Optional fields: delivery date/time (hour picker shows 8:00–17:00), abono (partial payment with method selector), "Entrada por garantía" toggle.
    - **Abono method selector**: when abono > 0, 4 checkbox buttons appear — Efectivo, Banco Caja Social, Nequi, Bancolombia. Selected method stored as `downpayment_method` and sent to backend.
    - **Abono cap**: abono is automatically capped at the order total (cannot exceed it). "Abonar total" checkbox button sets abono to the full total instantly.
@@ -287,7 +292,8 @@ Key implementation details:
   - Footer shows item count + total. Period-aware — always matches the active tab (Hoy/Semana/Mes/Año).
 - **`GET/POST/DELETE /egresos`**: full CRUD for manual expense records. `payment_method` field stores where money came from (Efectivo, Nequi, Bancolombia, Datáfono, Transferencia). "Banco Caja Social" is shown as label in the UI but stored as `"Datáfono"` in the DB for backward compatibility.
 - **Liquidation auto-expense**: confirming a weekly liquidation auto-creates `Expense` records (category "Salarios") for the amounts paid by each method.
-- **Chart granularity**: matches the active period tab — day shows a single bar, week/month show daily bars, year shows monthly bars. Both ingresos and egresos rendered side by side (yellow / red).
+- **Chart granularity**: matches the active period tab — day shows a single bar, week/month show daily bars, year shows monthly bars. Both ingresos and egresos rendered side by side (green `#22c55e` / red).
+- **Payment method colors**: Efectivo = green `#4ade80`, Banco Caja Social = blue `#60a5fa`, Nequi = pink `#f472b6`, Bancolombia = yellow `#eab308`.
 - **Period sync**: changing the period tab recomputes `date_start`/`date_end` via `getPeriodDates()` and re-fetches both ingresos and egresos simultaneously.
 - **Mobile responsive**: payment method grid is 1-col mobile / 2-col tablet / 4-col desktop. KPI cards always 3-col but compact (subtítulo hidden on mobile). Egresos table hides "Categoría" and "Método" columns on mobile. "Nuevo Egreso" button stacks below date selectors on mobile.
 
@@ -314,7 +320,7 @@ Key implementation details:
 - **AppContext** provides only `services`, `operators`, `loading`, and `createOrder()`. No global patio/ceramic/liquidation state — each page fetches its own data.
 - **Password gate** for Liquidacion uses `useState` (not sessionStorage) — resets on page refresh.
 - **`native_enum=False`** on all SQLAlchemy Enums → stored as VARCHAR. Column widths expanded to VARCHAR(30) for `category` columns after adding `correccion_pintura`.
-- **`_seed_if_empty()`** reseeds services if `count != 28` (restart-to-update pattern). Operators seeded only if table is empty.
+- **`_seed_if_empty()`** reseeds services if `count != 54` (restart-to-update pattern). Operators seeded only if table is empty. 54 services span 8 categories: exterior (11), interior (9), correccion_pintura (4), ceramico (5), ppf (2), polarizado (2), pintura (11), latoneria (10).
 - **Ceramic treatments**: auto-created in `POST /orders` for every `ceramico` service; `operator_id` synced on `PATCH /patio/{id}` if operator changes.
 - **Week starts on Sunday** (`weekStartsOn: 0` in date-fns). `week_start` param is always the Sunday ISO date.
 - **Backend API prefix**: `/api/v1/` — all routers mounted under this prefix in `main.py`.
@@ -323,6 +329,7 @@ Key implementation details:
 - **Operator assignment flow**: operator is NOT selected during order entry. It is required when advancing a patio card from `esperando` → `en_proceso`. If no operator is assigned at that point, an operator-picker modal intercepts the advance: calls `PATCH /patio/{id}` to set operator, then `POST /patio/{id}/advance`.
 - **Warranty orders** (`is_warranty: true`): individual services can be marked as warranty in step 3. Warranty services are sent with `unit_price: 0` via `item_overrides`. Non-warranty services in the same order keep their normal/custom price. Total reflects only non-warranty services.
 - **`getEffectivePrice` vs `getStandardPrice`** (IngresarServicio): `getEffectivePrice` checks `warrantyServiceIds` first (returns 0), then `customPrices`, then falls back to standard price. Used for totals and step 3 display. `getStandardPrice` always returns the catalog price; used for discount calculation.
+- **Total display in step 3**: `totalDiscount = standardTotal - total`. When `totalDiscount > 0` shows subtotal + discount + total. When `totalDiscount <= 0` (including negative, which happens when PPF/Polarizado/Latonería custom prices exceed their $0 standard) shows simple total only.
 - **`apiFetch` handles 204**: returns `undefined` without calling `res.json()` when status is 204 or `content-length: 0` — required for the DELETE /patio endpoint.
 - **Patio card UX**: collapsed/expanded toggle per card (local `expanded` state inside `PatioCard`). Collapsed = minimal info; expanded = client, services, financials, edit button.
 - **Service editing scope**: `PATCH /patio/{id}` with `service_ids` is accepted for `esperando` and `en_proceso`. For `listo`/`entregado` the frontend sends no `service_ids` field. `service_ids: []` (empty) is valid — sets total/subtotal to 0; use `DELETE /patio/{id}` to fully remove from kanban.
@@ -330,7 +337,7 @@ Key implementation details:
 - **Payment methods on delivery**: 4 accepted methods stored as separate columns on `service_orders`: `payment_cash`, `payment_datafono`, `payment_nequi`, `payment_bancolombia`. All `Numeric(12,2) DEFAULT 0`. "Banco Caja Social" in the UI maps to `payment_datafono` in the DB. Sub-account info shown for Nequi and Bancolombia.
 - **Facturación electrónica**: captured at delivery time only. Stored in `localStorage` under key `bdcpolo_facturas` as `Record<orderId, FacturaRecord>`. Not sent to the backend. `FacturaRecord` = `{ tipo, id_type, id_number, dv, name, phone, email }`. Shown as a blue "FE" badge on delivered cards and a detail panel when expanded.
 - **CalendarioCitas UX**: past days in month grid are dimmed (`text-gray-700`). New appointment date picker has `min=today`; edit mode has no minimum (allows changing to any date). Time picker is a `<select>` with full hours 6:00–18:00. Appointments within a day are sorted by time ascending. Field order in form: Marca → Modelo → Placa.
-- **"Agregar servicio" from calendar**: appointments in `programada` or `confirmada` status show a Wrench icon button. If the appointment date ≠ today, shows a "¿Estás seguro?" confirmation modal first. Clicking (and confirming) navigates to `/` with `location.state.fromAppointment` containing vehicle/client data. IngresarServicio reads this on mount, pre-fills the form, and jumps to step 2. After `POST /orders` succeeds, `DELETE /appointments/{id}` is called automatically to remove the appointment. State cleared via `window.history.replaceState({}, '')` to prevent re-apply on refresh.
+- **"Agregar servicio" from calendar**: appointments in `programada` or `confirmada` status show a Wrench icon button. If the appointment date ≠ today, shows a "¿Estás seguro?" confirmation modal first. Clicking (and confirming) navigates to `/` with `location.state.fromAppointment` containing vehicle/client data. IngresarServicio reads this on mount, pre-fills the form, and jumps directly to step 2 (Detallado accordion open by default). After `POST /orders` succeeds, `DELETE /appointments/{id}` is called automatically to remove the appointment. State cleared via `window.history.replaceState({}, '')` to prevent re-apply on refresh.
 - **`AppointmentPatch.date` as `Optional[str]`**: Pydantic v2 name collision — field named `date` with type `Optional[date]` resolves incorrectly. Fixed by using `Optional[str]` and parsing manually in the router with `_date.fromisoformat(data['date'])`. The `date` stdlib import is aliased as `_date` in `appointments.py` to avoid the same collision.
 - **Clients are find-or-create by phone**: `POST /orders` looks up an existing client by phone; if found, updates the name; if not found, creates a new one. The `/clientes` page surfaces these records.
 - **Dark native date inputs**: `style={{ colorScheme: 'dark' }}` + Tailwind arbitrary variant `[&::-webkit-calendar-picker-indicator]:invert` applied to `<input type="date">` elements. Pure CSS solution — no third-party date picker needed.

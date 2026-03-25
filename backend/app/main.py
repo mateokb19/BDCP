@@ -62,7 +62,7 @@ with engine.connect() as _conn:
     _conn.commit()
 
 
-_EXPECTED_SERVICES = 28
+_EXPECTED_SERVICES = 54
 
 _SERVICES_SEED = [
     # ── Servicios Básicos / Exterior ─────────────────────────────────────
@@ -97,6 +97,36 @@ _SERVICES_SEED = [
     dict(category="ceramico", name="Superior Shine +9",           price_automovil=2780000, price_camion_estandar=2980000, price_camion_xl=3380000),
     dict(category="ceramico", name="Superior Shine +5",           price_automovil=2050000, price_camion_estandar=2300000, price_camion_xl=2500000),
     dict(category="ceramico", name="Superior Shine +2",           price_automovil=980000,  price_camion_estandar=1300000, price_camion_xl=1450000),
+    dict(category="ceramico", name="Mantenimiento Cerámico",      price_automovil=400000,  price_camion_estandar=450000,  price_camion_xl=500000),
+    # ── PPF ─────────────────────────────────────────────────────────────────
+    dict(category="ppf", name="PPF Full",                         price_automovil=0, price_camion_estandar=0, price_camion_xl=0),
+    dict(category="ppf", name="PPF Parcial",                      price_automovil=0, price_camion_estandar=0, price_camion_xl=0),
+    # ── Polarizado ───────────────────────────────────────────────────────────
+    dict(category="polarizado", name="Polarizado IRX Llumar",     price_automovil=0, price_camion_estandar=0, price_camion_xl=0),
+    dict(category="polarizado", name="Polarizado ATR Llumar",     price_automovil=0, price_camion_estandar=0, price_camion_xl=0),
+    # ── Pintura (precio por pieza, igual para todos los tipos) ───────────────
+    dict(category="pintura", name="Bumper delantero",             price_automovil=430000, price_camion_estandar=430000, price_camion_xl=430000),
+    dict(category="pintura", name="Parcial bumper delantero",     price_automovil=220000, price_camion_estandar=220000, price_camion_xl=220000),
+    dict(category="pintura", name="Capot",                        price_automovil=860000, price_camion_estandar=860000, price_camion_xl=860000),
+    dict(category="pintura", name="Tapa baúl",                    price_automovil=430000, price_camion_estandar=430000, price_camion_xl=430000),
+    dict(category="pintura", name="Bumper trasero",               price_automovil=430000, price_camion_estandar=430000, price_camion_xl=430000),
+    dict(category="pintura", name="Parcial bumper trasero",       price_automovil=220000, price_camion_estandar=220000, price_camion_xl=220000),
+    dict(category="pintura", name="Puerta",                       price_automovil=430000, price_camion_estandar=430000, price_camion_xl=430000),
+    dict(category="pintura", name="Espejo",                       price_automovil=220000, price_camion_estandar=220000, price_camion_xl=220000),
+    dict(category="pintura", name="Estribos",                     price_automovil=220000, price_camion_estandar=220000, price_camion_xl=220000),
+    dict(category="pintura", name="Extensión",                    price_automovil=220000, price_camion_estandar=220000, price_camion_xl=220000),
+    dict(category="pintura", name="Guardafangos",                 price_automovil=430000, price_camion_estandar=430000, price_camion_xl=430000),
+    # ── Latonería (precio variable) ──────────────────────────────────────────
+    dict(category="latoneria", name="Bumper",                     price_automovil=0, price_camion_estandar=0, price_camion_xl=0),
+    dict(category="latoneria", name="Capot",                      price_automovil=0, price_camion_estandar=0, price_camion_xl=0),
+    dict(category="latoneria", name="Puerta baúl",                price_automovil=0, price_camion_estandar=0, price_camion_xl=0),
+    dict(category="latoneria", name="Bumper trasero",             price_automovil=0, price_camion_estandar=0, price_camion_xl=0),
+    dict(category="latoneria", name="Puerta",                     price_automovil=0, price_camion_estandar=0, price_camion_xl=0),
+    dict(category="latoneria", name="Espejo",                     price_automovil=0, price_camion_estandar=0, price_camion_xl=0),
+    dict(category="latoneria", name="Estribos",                   price_automovil=0, price_camion_estandar=0, price_camion_xl=0),
+    dict(category="latoneria", name="Extensión",                  price_automovil=0, price_camion_estandar=0, price_camion_xl=0),
+    dict(category="latoneria", name="Guardafangos",               price_automovil=0, price_camion_estandar=0, price_camion_xl=0),
+    dict(category="latoneria", name="Desmonte/Monte de Bumper",   price_automovil=110000, price_camion_estandar=110000, price_camion_xl=110000),
 ]
 
 

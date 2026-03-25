@@ -1,6 +1,6 @@
 import { useState, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Car, Truck, Check, ChevronRight, Search, User, Phone, Palette, Hash, Calendar, Pencil, AlertTriangle, ShieldCheck } from 'lucide-react'
+import { Car, Truck, Bike, Check, ChevronRight, Search, User, Phone, Palette, Hash, Calendar, Pencil, AlertTriangle, ShieldCheck, Sparkles, Wrench, Paintbrush, Shield, Layers } from 'lucide-react'
 import { useNavigate, useLocation } from 'react-router'
 import { toast } from 'sonner'
 import { Button } from '@/app/components/ui/Button'
@@ -43,10 +43,11 @@ interface OrderDraft {
 const _d = new Date()
 const TODAY = `${_d.getFullYear()}-${String(_d.getMonth() + 1).padStart(2, '0')}-${String(_d.getDate()).padStart(2, '0')}`
 
-const vehicleOptions: { type: VehicleType; label: string; sub: string; icon: React.ReactNode }[] = [
-  { type: 'automovil',       label: 'Automóvil',          sub: 'Sedán, SUV, Hatchback',      icon: <Car size={48} /> },
-  { type: 'camion_estandar', label: 'Camioneta Estándar', sub: 'Pick-up, Van mediana',        icon: <Truck size={48} /> },
-  { type: 'camion_xl',       label: 'Camioneta XL',       sub: 'Camión grande, Doble cabina', icon: <Truck size={52} /> },
+const vehicleOptions: { type: VehicleType; label: string; icon: React.ReactNode }[] = [
+  { type: 'moto',            label: 'Moto',               icon: <Bike size={44} /> },
+  { type: 'automovil',       label: 'Automóvil',          icon: <Car size={48} /> },
+  { type: 'camion_estandar', label: 'Camioneta Estándar', icon: <Truck size={48} /> },
+  { type: 'camion_xl',       label: 'Camioneta XL',       icon: <Truck size={52} /> },
 ]
 
 const categoryColors: Record<string, string> = {
@@ -54,12 +55,53 @@ const categoryColors: Record<string, string> = {
   interior:           'bg-blue-500/10 border-blue-500/20',
   ceramico:           'bg-purple-500/10 border-purple-500/20',
   correccion_pintura: 'bg-orange-500/10 border-orange-500/20',
+  latoneria:          'bg-blue-500/10 border-blue-500/20',
+  pintura:            'bg-orange-500/10 border-orange-500/20',
+  ppf:                'bg-purple-500/10 border-purple-500/20',
+  polarizado:         'bg-cyan-500/10 border-cyan-500/20',
 }
 const categoryLabels: Record<string, string> = {
   exterior:           'Exterior',
   interior:           'Interior',
   ceramico:           'Cerámico',
   correccion_pintura: 'Corrección',
+  latoneria:          'Latonería',
+  pintura:            'Pintura',
+  ppf:                'PPF',
+  polarizado:         'Polarizado',
+}
+
+type AreaId = 'detallado' | 'latoneria' | 'pintura' | 'ppf' | 'polarizado'
+
+const VEHICLE_LABELS: Record<string, string> = {
+  moto:            'Moto',
+  automovil:       'Automóvil',
+  camion_estandar: 'Camioneta Estándar',
+  camion_xl:       'Camioneta XL',
+}
+
+const AREAS: { id: AreaId; label: string; iconClass: string }[] = [
+  { id: 'detallado',  label: 'Detallado',  iconClass: 'text-gray-400 group-hover:text-yellow-400' },
+  { id: 'latoneria',  label: 'Latonería',  iconClass: 'text-gray-400 group-hover:text-blue-400' },
+  { id: 'pintura',    label: 'Pintura',    iconClass: 'text-gray-400 group-hover:text-orange-400' },
+  { id: 'ppf',        label: 'PPF',        iconClass: 'text-gray-400 group-hover:text-purple-400' },
+  { id: 'polarizado', label: 'Polarizado', iconClass: 'text-gray-400 group-hover:text-cyan-400' },
+]
+
+const AREA_ICONS_SM: Record<AreaId, React.ReactNode> = {
+  detallado:  <Sparkles size={15} />,
+  latoneria:  <Wrench size={15} />,
+  pintura:    <Paintbrush size={15} />,
+  ppf:        <Shield size={15} />,
+  polarizado: <Layers size={15} />,
+}
+
+const AREA_CATEGORIES: Record<AreaId, string[]> = {
+  detallado:  ['exterior', 'interior', 'ceramico', 'correccion_pintura'],
+  latoneria:  ['latoneria'],
+  pintura:    ['pintura'],
+  ppf:        ['ppf'],
+  polarizado: ['polarizado'],
 }
 
 const BRANDS = [
@@ -123,6 +165,7 @@ export default function IngresarServicio() {
   const [vehicleType, setVehicleType] = useState<VehicleType | null>(
     fromAppt?.vehicle_type as VehicleType ?? null
   )
+  const [expandedAreas, setExpandedAreas] = useState<Set<AreaId>>(new Set(['detallado']))
   const [submitting, setSubmitting]   = useState(false)
   const [plateTypeMismatch, setPlateTypeMismatch] = useState(false)
   const [form, setForm] = useState<OrderDraft>({
@@ -160,6 +203,14 @@ export default function IngresarServicio() {
     setStep(next)
   }
 
+  function toggleArea(id: AreaId) {
+    setExpandedAreas(prev => {
+      const next = new Set(prev)
+      next.has(id) ? next.delete(id) : next.add(id)
+      return next
+    })
+  }
+
   function handlePlateChange(e: React.ChangeEvent<HTMLInputElement>) {
     const val = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6)
     // Clear auto-filled vehicle + client fields when plate is edited
@@ -172,12 +223,6 @@ export default function IngresarServicio() {
     setPlateTypeMismatch(false)
   }
 
-  const TYPE_LABELS: Record<string, string> = {
-    automovil:       'Automóvil',
-    camion_estandar: 'Camioneta Estándar',
-    camion_xl:       'Camioneta XL',
-  }
-
   async function handlePlateBlur() {
     if (form.plate.length < 3) return
     try {
@@ -188,7 +233,7 @@ export default function IngresarServicio() {
       if (!typeMatches) {
         setPlateTypeMismatch(true)
         toast.warning(
-          `Esta placa está registrada como ${TYPE_LABELS[found.type] ?? found.type}. ` +
+          `Esta placa está registrada como ${VEHICLE_LABELS[found.type] ?? found.type}. ` +
           `Cambia el tipo de vehículo para continuar.`,
           { duration: 5000 }
         )
@@ -315,7 +360,7 @@ export default function IngresarServicio() {
       if (fromAppt?.id) {
         api.appointments.delete(fromAppt.id).catch(() => {})
       }
-      setStep(1); setPrevStep(1); setVehicleType(null)
+      setStep(1); setPrevStep(1); setVehicleType(null); setExpandedAreas(new Set(['detallado']))
       setForm({ plate: '', brand: '', model: '', color: '', clientName: '', clientPhone: '', selectedServices: [], notes: '', deliveryDate: '', deliveryTime: '', customPrices: {}, warrantyServiceIds: [], downpayment: '', downpaymentMethod: '', isWarranty: false })
       setBrandQuery('')
       navigate('/')
@@ -365,7 +410,7 @@ export default function IngresarServicio() {
             <div>
               <h1 className="text-3xl font-semibold text-white text-center mb-2">Nuevo Servicio</h1>
               <p className="text-gray-400 text-center mb-10">Selecciona el tipo de vehículo</p>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 sm:gap-5">
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 sm:gap-5">
                 {vehicleOptions.map(opt => (
                   <motion.button
                     key={opt.type}
@@ -381,10 +426,7 @@ export default function IngresarServicio() {
                     <div className="text-gray-400 group-hover:text-yellow-400 transition-colors duration-200">
                       {opt.icon}
                     </div>
-                    <div>
-                      <div className="text-lg font-medium text-white group-hover:text-yellow-300 transition-colors">{opt.label}</div>
-                      <div className="text-sm text-gray-500 mt-0.5">{opt.sub}</div>
-                    </div>
+                    <div className="text-lg font-medium text-white group-hover:text-yellow-300 transition-colors">{opt.label}</div>
                     <ChevronRight size={18} className="text-gray-600 group-hover:text-yellow-500 transition-colors" />
                   </motion.button>
                 ))}
@@ -395,14 +437,13 @@ export default function IngresarServicio() {
           {/* STEP 2 — Form */}
           {step === 2 && vehicleType && (
             <div>
-              <div className="flex items-center gap-3 mb-6">
-                <button onClick={() => { setPlateTypeMismatch(false); goTo(1) }} className="text-sm text-gray-400 hover:text-yellow-400 transition-colors">
+              <div className="flex items-center gap-3 mb-6 flex-wrap">
+                <button onClick={() => { setPlateTypeMismatch(false); setVehicleType(null); goTo(1) }}
+                  className="text-sm text-gray-400 hover:text-yellow-400 transition-colors">
                   ← Cambiar tipo
                 </button>
                 <span className="text-gray-700">|</span>
-                <span className="text-sm text-gray-300">
-                  {vehicleType === 'automovil' ? 'Automóvil' : vehicleType === 'camion_estandar' ? 'Camioneta Estándar' : 'Camioneta XL'}
-                </span>
+                <span className="text-sm text-gray-300">{VEHICLE_LABELS[vehicleType]}</span>
               </div>
 
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 lg:gap-5">
@@ -544,31 +585,169 @@ export default function IngresarServicio() {
                       </button>
                     </motion.div>
                   )}
-                  <div className={cn(plateTypeMismatch && 'opacity-25 pointer-events-none select-none')}>
-                  {(['exterior', 'interior', 'correccion_pintura', 'ceramico'] as const).map(cat => (
-                    <div key={cat}>
-                      <div className={cn('rounded-xl border p-3', categoryColors[cat])}>
-                        <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">
-                          {categoryLabels[cat]}
-                        </h3>
-                        <div className="space-y-1 max-h-52 overflow-y-auto pr-1">
-                        {services.filter(s => s.category === cat).map(service => {
-                          const price   = getStandardPrice(service)
-                          const checked = form.selectedServices.includes(service.id)
-                          return (
-                            <motion.label key={service.id} whileHover={{ x: 2 }}
-                              className="flex items-center gap-3 rounded-lg px-2 py-1.5 cursor-pointer hover:bg-white/5 transition-colors">
-                              <input type="checkbox" checked={checked} onChange={() => toggleService(service.id)}
-                                className="w-4 h-4 rounded accent-yellow-400 cursor-pointer" />
-                              <span className="flex-1 text-sm text-gray-200">{service.name}</span>
-                              <span className="text-sm font-medium text-yellow-400">${Number(price).toLocaleString('es-CO')}</span>
-                            </motion.label>
-                          )
-                        })}
+                  <div className={cn(plateTypeMismatch && 'opacity-25 pointer-events-none select-none', 'space-y-2')}>
+
+                    {AREAS.map(area => {
+                      const isOpen = expandedAreas.has(area.id)
+                      const selectedCount = form.selectedServices.filter(id => {
+                        const svc = services.find(s => s.id === id)
+                        return svc && AREA_CATEGORIES[area.id].includes(svc.category)
+                      }).length
+
+                      return (
+                        <div key={area.id} className="rounded-xl border border-white/8 overflow-hidden">
+                          <button
+                            type="button"
+                            onClick={() => toggleArea(area.id)}
+                            className="group w-full flex items-center gap-3 px-3 py-2.5 bg-white/[0.03] hover:bg-white/[0.05] transition-colors"
+                          >
+                            <span className={cn('shrink-0 transition-colors', area.iconClass)}>{AREA_ICONS_SM[area.id]}</span>
+                            <span className="flex-1 text-sm font-medium text-gray-300 text-left">{area.label}</span>
+                            {selectedCount > 0 && (
+                              <span className="text-xs text-yellow-400 font-medium">{selectedCount} sel.</span>
+                            )}
+                            <ChevronRight size={14} className={cn('text-gray-600 transition-transform shrink-0', isOpen && 'rotate-90')} />
+                          </button>
+
+                          <AnimatePresence initial={false}>
+                            {isOpen && (
+                              <motion.div
+                                initial={{ height: 0, opacity: 0 }}
+                                animate={{ height: 'auto', opacity: 1 }}
+                                exit={{ height: 0, opacity: 0 }}
+                                transition={{ duration: 0.2 }}
+                                className="overflow-hidden"
+                              >
+                                <div className="p-3 pt-2 border-t border-white/5 space-y-3">
+
+                                  {/* ── DETALLADO: 4 sub-sections ──────────────────── */}
+                                  {area.id === 'detallado' && (['exterior', 'interior', 'correccion_pintura', 'ceramico'] as const).map(cat => (
+                                    <div key={cat} className={cn('rounded-xl border p-3', categoryColors[cat])}>
+                                      <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">{categoryLabels[cat]}</h3>
+                                      <div className="space-y-1 max-h-52 overflow-y-auto pr-1">
+                                        {services.filter(s => s.category === cat).map(service => {
+                                          const price   = getStandardPrice(service)
+                                          const checked = form.selectedServices.includes(service.id)
+                                          return (
+                                            <motion.label key={service.id} whileHover={{ x: 2 }}
+                                              className="flex items-center gap-3 rounded-lg px-2 py-1.5 cursor-pointer hover:bg-white/5 transition-colors">
+                                              <input type="checkbox" checked={checked} onChange={() => toggleService(service.id)}
+                                                className="w-4 h-4 rounded accent-yellow-400 cursor-pointer" />
+                                              <span className="flex-1 text-sm text-gray-200">{service.name}</span>
+                                              <span className="text-sm font-medium text-yellow-400">${Number(price).toLocaleString('es-CO')}</span>
+                                            </motion.label>
+                                          )
+                                        })}
+                                      </div>
+                                    </div>
+                                  ))}
+
+                                  {/* ── PPF / POLARIZADO: toggle cards + editable price ── */}
+                                  {(area.id === 'ppf' || area.id === 'polarizado') && (
+                                    <div className={cn('rounded-xl border p-3', categoryColors[area.id])}>
+                                      <div className="space-y-3">
+                                        {services.filter(s => s.category === area.id).map(service => {
+                                          const checked   = form.selectedServices.includes(service.id)
+                                          const customVal = form.customPrices[service.id] ?? ''
+                                          return (
+                                            <div key={service.id}
+                                              className={cn(
+                                                'rounded-xl border p-3 transition-colors cursor-pointer',
+                                                checked ? 'border-yellow-500/40 bg-yellow-500/5' : 'border-white/8 bg-white/[0.02] hover:bg-white/[0.04]'
+                                              )}
+                                              onClick={() => toggleService(service.id)}>
+                                              <div className="flex items-center gap-3 mb-2.5">
+                                                <div className={cn('w-4 h-4 rounded border-2 shrink-0 flex items-center justify-center transition-colors', checked ? 'border-yellow-500 bg-yellow-500' : 'border-gray-600')}>
+                                                  {checked && <Check size={10} className="text-gray-900" />}
+                                                </div>
+                                                <span className="text-sm font-medium text-gray-200">{service.name}</span>
+                                              </div>
+                                              <div className="flex items-center gap-2" onClick={e => e.stopPropagation()}>
+                                                <span className="text-xs text-gray-500 shrink-0">Precio:</span>
+                                                <div className="relative flex-1">
+                                                  <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-500 text-xs">$</span>
+                                                  <input
+                                                    type="text" inputMode="numeric"
+                                                    value={fmtCOP(customVal)}
+                                                    placeholder="0"
+                                                    onWheel={e => e.currentTarget.blur()}
+                                                    onChange={e => setForm(f => ({ ...f, customPrices: { ...f.customPrices, [service.id]: parseCOP(e.target.value) } }))}
+                                                    className="w-full rounded-lg border border-white/10 bg-white/5 pl-6 pr-3 py-1.5 text-sm text-gray-100 focus:border-yellow-500/50 focus:outline-none"
+                                                  />
+                                                </div>
+                                              </div>
+                                            </div>
+                                          )
+                                        })}
+                                      </div>
+                                    </div>
+                                  )}
+
+                                  {/* ── PINTURA: pieces list + fixed prices ─────────── */}
+                                  {area.id === 'pintura' && (
+                                    <div className={cn('rounded-xl border p-3', categoryColors.pintura)}>
+                                      <p className="text-[11px] text-gray-600 mb-3">½ pieza $220.000 · 1 pieza $430.000 · 2 piezas $860.000</p>
+                                      <div className="space-y-1 max-h-72 overflow-y-auto pr-1">
+                                        {services.filter(s => s.category === 'pintura').map(service => {
+                                          const price   = getStandardPrice(service)
+                                          const checked = form.selectedServices.includes(service.id)
+                                          const pieces  = price >= 800000 ? '2 piezas' : price >= 400000 ? '1 pieza' : '½ pieza'
+                                          return (
+                                            <motion.label key={service.id} whileHover={{ x: 2 }}
+                                              className="flex items-center gap-3 rounded-lg px-2 py-1.5 cursor-pointer hover:bg-white/5 transition-colors">
+                                              <input type="checkbox" checked={checked} onChange={() => toggleService(service.id)}
+                                                className="w-4 h-4 rounded accent-yellow-400 cursor-pointer shrink-0" />
+                                              <span className="flex-1 text-sm text-gray-200">{service.name}</span>
+                                              <span className="text-xs text-gray-500 shrink-0">{pieces}</span>
+                                              <span className="text-sm font-medium text-yellow-400 shrink-0">${price.toLocaleString('es-CO')}</span>
+                                            </motion.label>
+                                          )
+                                        })}
+                                      </div>
+                                    </div>
+                                  )}
+
+                                  {/* ── LATONERÍA: checkbox + inline price input ──────── */}
+                                  {area.id === 'latoneria' && (
+                                    <div className={cn('rounded-xl border p-3', categoryColors.latoneria)}>
+                                      <p className="text-[11px] text-gray-600 mb-3">Selecciona las partes e ingresa el precio de cada una</p>
+                                      <div className="space-y-1.5 max-h-96 overflow-y-auto pr-1">
+                                        {services.filter(s => s.category === 'latoneria').map(service => {
+                                          const checked    = form.selectedServices.includes(service.id)
+                                          const stdPrice   = getStandardPrice(service)
+                                          const customVal  = form.customPrices[service.id]
+                                          const displayVal = customVal !== undefined ? customVal : String(stdPrice)
+                                          return (
+                                            <div key={service.id}
+                                              className="flex items-center gap-2 rounded-lg px-2 py-1.5 hover:bg-white/5 transition-colors">
+                                              <input type="checkbox" checked={checked} onChange={() => toggleService(service.id)}
+                                                className="w-4 h-4 rounded accent-yellow-400 cursor-pointer shrink-0" />
+                                              <span className="flex-1 text-sm text-gray-200">{service.name}</span>
+                                              <div className="relative shrink-0 w-32">
+                                                <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-500 text-xs">$</span>
+                                                <input
+                                                  type="text" inputMode="numeric"
+                                                  value={fmtCOP(displayVal)}
+                                                  onWheel={e => e.currentTarget.blur()}
+                                                  onChange={e => setForm(f => ({ ...f, customPrices: { ...f.customPrices, [service.id]: parseCOP(e.target.value) } }))}
+                                                  className="w-full rounded-lg border border-white/10 bg-white/5 pl-6 pr-2 py-1 text-sm text-gray-100 focus:border-yellow-500/50 focus:outline-none text-right"
+                                                />
+                                              </div>
+                                            </div>
+                                          )
+                                        })}
+                                      </div>
+                                    </div>
+                                  )}
+
+                                </div>
+                              </motion.div>
+                            )}
+                          </AnimatePresence>
                         </div>
-                      </div>
-                    </div>
-                  ))}
+                      )
+                    })}
+
                   </div>
                 </div>
 
@@ -743,8 +922,17 @@ export default function IngresarServicio() {
                         )}>
                           {/* Row 1: badge + service name */}
                           <div className="flex items-center gap-2 min-w-0">
-                            <Badge variant={s.category === 'exterior' ? 'yellow' : s.category === 'interior' ? 'blue' : s.category === 'correccion_pintura' ? 'orange' : 'purple'} className="shrink-0">
-                              {categoryLabels[s.category]}
+                            <Badge variant={
+                              s.category === 'exterior' ? 'yellow' :
+                              s.category === 'interior' ? 'blue' :
+                              s.category === 'correccion_pintura' ? 'orange' :
+                              s.category === 'latoneria' ? 'blue' :
+                              s.category === 'pintura' ? 'orange' :
+                              s.category === 'ppf' ? 'purple' :
+                              s.category === 'polarizado' ? 'default' :
+                              'purple'
+                            } className="shrink-0">
+                              {categoryLabels[s.category] ?? s.category}
                             </Badge>
                             <span className="text-sm text-gray-200 truncate">{s.name}</span>
                           </div>
@@ -825,7 +1013,7 @@ export default function IngresarServicio() {
                         </div>
                       </>
                     )}
-                    {totalDiscount === 0 && (
+                    {totalDiscount <= 0 && (
                       <div className="flex justify-between items-center">
                         <span className="text-lg text-gray-200 font-medium">Total</span>
                         <span className="text-3xl font-bold text-yellow-400">${total.toLocaleString('es-CO')}</span>

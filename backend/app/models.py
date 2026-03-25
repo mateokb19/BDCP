@@ -13,12 +13,17 @@ class VehicleTypeEnum(str, enum.Enum):
     automovil       = "automovil"
     camion_estandar = "camion_estandar"
     camion_xl       = "camion_xl"
+    moto            = "moto"
 
 class ServiceCategoryEnum(str, enum.Enum):
     exterior            = "exterior"
     interior            = "interior"
     ceramico            = "ceramico"
     correccion_pintura  = "correccion_pintura"
+    latoneria           = "latoneria"
+    pintura             = "pintura"
+    ppf                 = "ppf"
+    polarizado          = "polarizado"
 
 class OrderStatusEnum(str, enum.Enum):
     pendiente  = "pendiente"
