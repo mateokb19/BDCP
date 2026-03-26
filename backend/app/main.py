@@ -41,9 +41,14 @@ with engine.connect() as _conn:
     _conn.execute(text(
         "ALTER TABLE service_orders ADD COLUMN IF NOT EXISTS payment_bancolombia NUMERIC(12,2) NOT NULL DEFAULT 0"
     ))
-    _conn.execute(text(
-        "ALTER TABLE week_liquidations ALTER COLUMN payment_transfer SET DEFAULT 0"
-    ))
+    _conn.execute(text("""
+        DO $$ BEGIN
+          IF EXISTS (SELECT 1 FROM information_schema.columns
+                     WHERE table_name='week_liquidations' AND column_name='payment_transfer') THEN
+            ALTER TABLE week_liquidations ALTER COLUMN payment_transfer SET DEFAULT 0;
+          END IF;
+        END $$
+    """))
     _conn.execute(text(
         "ALTER TABLE week_liquidations ADD COLUMN IF NOT EXISTS payment_datafono NUMERIC(12,2) NOT NULL DEFAULT 0"
     ))
@@ -188,11 +193,7 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:5173",
-        "http://127.0.0.1:5173",
-        "http://frontend:5173",
-    ],
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
