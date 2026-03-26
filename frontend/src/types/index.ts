@@ -38,6 +38,7 @@ export interface Operator {
   phone?: string
   cedula?: string
   commission_rate: number
+  operator_type: string
   active: boolean
   created_at?: string
 }

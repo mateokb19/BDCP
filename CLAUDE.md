@@ -178,6 +178,9 @@ ALTER TABLE week_liquidations ALTER COLUMN payment_transfer SET DEFAULT 0;  -- l
 ALTER TABLE week_liquidations ADD COLUMN IF NOT EXISTS payment_datafono NUMERIC(12,2) NOT NULL DEFAULT 0;
 ALTER TABLE week_liquidations ADD COLUMN IF NOT EXISTS payment_nequi NUMERIC(12,2) NOT NULL DEFAULT 0;
 ALTER TABLE week_liquidations ADD COLUMN IF NOT EXISTS payment_bancolombia NUMERIC(12,2) NOT NULL DEFAULT 0;
+ALTER TABLE operators ADD COLUMN IF NOT EXISTS operator_type VARCHAR(30) NOT NULL DEFAULT 'detallado';
+ALTER TABLE service_order_items ADD COLUMN IF NOT EXISTS standard_price NUMERIC(10,2);
+-- Backfill: UPDATE service_order_items SET standard_price = unit_price WHERE standard_price IS NULL;
 ```
 
 > **`week_liquidations.payment_transfer`**: legacy column — still in DB (NOT NULL, now has `DEFAULT 0`) but no longer written to or read by the model. New liquidations only populate `payment_cash`, `payment_datafono`, `payment_nequi`, `payment_bancolombia`. If you ever remove `payment_transfer` from the DB you must first drop the NOT NULL constraint or set a default, because SQLAlchemy's INSERT omits unmapped columns.
@@ -232,13 +235,40 @@ ALTER TABLE week_liquidations ADD COLUMN IF NOT EXISTS payment_bancolombia NUMER
 
 ## Liquidation flow
 
+### Operator types and commission rules
+
+Each operator has an `operator_type` that determines which service categories count for their liquidation and how commission is calculated:
+
+| `operator_type` | Relevant categories | Commission rule |
+|---|---|---|
+| `detallado` | exterior, interior, ceramico, correccion_pintura | `commission_rate` % × sum of **standard (catalog) prices** — discounts are ignored |
+| `pintura` | pintura | `piece_count` × $90,000 per piece ($220k = ½ pieza, $430k = 1, $860k = 2) |
+| `latoneria` | latoneria | TBD |
+| `ppf` | ppf | TBD |
+| `polarizado` | polarizado | TBD |
+
+Current operators:
+- **Detallado**: Carlos Mora, Francisco Currea, Luis Lopez (commission_rate: 30%)
+- **Pintura**: Jose D. Lindarte
+- **Latonería**: Enrique Rodríguez
+
+### `standard_price` on `service_order_items`
+
+The `standard_price` column stores the catalog price at order creation time (before any overrides/discounts). Used for detallado commission calculation and pintura piece counting. `unit_price` stores the actual charged price (with discounts). For orders created before the migration, `standard_price` is backfilled from `unit_price`.
+
+### Liquidation API — item filtering by operator type
+
+The liquidation endpoints (`GET /liquidation/{op_id}/week`, `POST /liquidation/{op_id}/liquidate`, `GET /liquidation/{op_id}/report`) filter order items to only those matching the operator's category via `CATEGORY_MAP`. Orders with no relevant items after filtering are excluded. Totals are recalculated from filtered items using `standard_price`. The frontend receives pre-filtered data and does not need to filter client-side.
+
+### UI flow
+
 1. Password gate (`BDCP123`) on every visit (uses `useState` — resets on refresh).
-2. **Operator grid**: colored initials, no amounts shown. Active operators listed first; deactivated operators shown in a separate "Dados de baja" section below.
+2. **Operator grid**: colored initials, grouped by `operator_type` section. Active operators listed first; deactivated operators shown in a separate "Dados de baja" section below.
    - **"Nuevo operario"** button opens an inline animated form (name, cédula, teléfono, comisión %). Calls `POST /operators`.
    - Deactivated operator cards are dimmed and show a "Reactivar" button. Active ones show a "Dar de baja" button with a confirmation step.
-3. **Operator detail header**: inline commission rate editor (pencil icon → text input → save via `PATCH /operators/{id}`). Deactivate/Reactivate button with confirmation.
-4. Operator detail: week carousel (Sun–Sat), daily accordion with total + commission per day.
-5. Only orders with patio status `en_proceso | listo | entregado` and an assigned operator count.
+3. **Operator detail header**: inline edit form (name, phone, cedula, commission — commission hidden for non-detallado). Deactivate/Reactivate button with confirmation.
+4. Operator detail: week carousel (Sun–Sat), daily accordion with filtered total + commission per day. Pintura days show piece count instead of percentage.
+5. Only orders with patio status `en_proceso | listo | entregado` and an assigned operator count. For pintura operators, ALL orders with pintura items count (regardless of assigned operator).
 6. **Liquidar semana** opens a modal with:
    - Abonos: input per unpaid `operario_empresa` debt — deducted from payout and recorded as `DebtPayment`
    - Settlements: toggle per unpaid `empresa_operario` debt to include in payout
@@ -326,7 +356,11 @@ Key implementation details:
 - **Backend API prefix**: `/api/v1/` — all routers mounted under this prefix in `main.py`.
 - **`item_overrides`** in `POST /orders`: array of `{ service_id, unit_price }` that override the standard price snapshot. Used for custom discounts (any price) and warranty services (`unit_price: 0`). Backend builds `override_map` and computes discount as `sum(std - override)`.
 - **Plate uniqueness**: a plate is always tied to one vehicle type and one client. On plate lookup type mismatch, the frontend blocks service selection and the "Revisar Orden" button; client info is still returned and autofilled regardless of type match.
-- **Operator assignment flow**: operator is NOT selected during order entry. It is required when advancing a patio card from `esperando` → `en_proceso`. If no operator is assigned at that point, an operator-picker modal intercepts the advance: calls `PATCH /patio/{id}` to set operator, then `POST /patio/{id}/advance`.
+- **Operator assignment flow**: operator is NOT selected during order entry. It is required when advancing a patio card from `esperando` → `en_proceso`. If no operator is assigned at that point, an operator-picker modal intercepts the advance: calls `PATCH /patio/{id}` to set operator, then `POST /patio/{id}/advance`. Only detallado-type operators appear in the picker. Pintura services are automatically attributed to the pintura operator via the liquidation logic (no manual assignment).
+- **`operator_type`** on `operators` table: `VARCHAR(30) DEFAULT 'detallado'`. Values: `detallado`, `pintura`, `latoneria`. Determines which service categories count for the operator's liquidation and how commission is calculated.
+- **`standard_price`** on `service_order_items`: stores the catalog price at order creation (before any overrides/discounts). Used by liquidation to calculate detallado commission on base prices and pintura piece counts. Backfilled from `unit_price` for historical records.
+- **`CATEGORY_MAP`** in `liquidation.py`: maps `operator_type` → set of relevant `ServiceCategory` values. Used to filter items in the weekly view, liquidation, and reports. Orders with no relevant items after filtering are excluded.
+- **Liquidation item filtering**: the API endpoints filter order items by operator category and use `standard_price` for totals. The frontend receives pre-filtered data — no client-side category filtering needed.
 - **Warranty orders** (`is_warranty: true`): individual services can be marked as warranty in step 3. Warranty services are sent with `unit_price: 0` via `item_overrides`. Non-warranty services in the same order keep their normal/custom price. Total reflects only non-warranty services.
 - **`getEffectivePrice` vs `getStandardPrice`** (IngresarServicio): `getEffectivePrice` checks `warrantyServiceIds` first (returns 0), then `customPrices`, then falls back to standard price. Used for totals and step 3 display. `getStandardPrice` always returns the catalog price; used for discount calculation.
 - **Total display in step 3**: `totalDiscount = standardTotal - total`. When `totalDiscount > 0` shows subtotal + discount + total. When `totalDiscount <= 0` (including negative, which happens when PPF/Polarizado/Latonería custom prices exceed their $0 standard) shows simple total only.

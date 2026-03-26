@@ -1,6 +1,6 @@
 import type { Service, Operator } from '@/types'
 
-export const API_BASE = import.meta.env.VITE_API_URL ?? 'http://localhost:8000/api/v1'
+export const API_BASE = import.meta.env.VITE_API_URL ?? 'http://localhost:28000/api/v1'
 
 async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, {
@@ -143,10 +143,12 @@ export interface ApiCeramicTreatment {
 }
 
 export interface ApiLiqWeekOrderItem {
-  service_name: string
-  unit_price:   string
-  quantity:     number
-  subtotal:     string
+  service_name:     string
+  service_category: string
+  unit_price:       string
+  standard_price?:  string
+  quantity:         number
+  subtotal:         string
 }
 
 export interface ApiLiqWeekOrder {
@@ -158,6 +160,7 @@ export interface ApiLiqWeekOrder {
   vehicle_model?: string
   items:         ApiLiqWeekOrderItem[]
   total:         string
+  piece_count?:  string
   is_liquidated: boolean
 }
 
@@ -172,12 +175,15 @@ export interface ApiLiqWeekDay {
 export interface ApiLiqWeekResponse {
   operator_id:               number
   operator_name:             string
+  operator_type:             string
   commission_rate:           string
   week_start:                string
   week_end:                  string
   days:                      ApiLiqWeekDay[]
   week_total:                string
+  commission_base:           string
   week_services:             number
+  piece_count?:              string
   commission_amount:         string
   is_liquidated:             boolean
   unliquidated_count:        number

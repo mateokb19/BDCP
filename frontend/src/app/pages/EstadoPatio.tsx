@@ -451,7 +451,7 @@ export default function EstadoPatio() {
   const [operatorPickEntry, setOperatorPickEntry] = useState<ApiPatioEntry | null>(null)
   const [pickedOpId, setPickedOpId]               = useState('')
   const [picking, setPicking]                     = useState(false)
-  const [activeOperators, setActiveOperators]     = useState(operators)
+  const [activeOperators, setActiveOperators]     = useState(operators.filter(o => (o.operator_type ?? 'detallado') === 'detallado'))
 
   // Payment modal state (delivery)
   const [paymentEntry, setPaymentEntry] = useState<ApiPatioEntry | null>(null)
@@ -545,7 +545,7 @@ export default function EstadoPatio() {
       setOperatorPickEntry(entry)
       setPickedOpId('')
       // Fetch fresh active operators so recently-deactivated ones don't appear
-      api.operators.list().then(setActiveOperators).catch(() => {})
+      api.operators.list().then(ops => setActiveOperators(ops.filter(o => (o.operator_type ?? 'detallado') === 'detallado'))).catch(() => {})
       return
     }
     // Intercept delivery to collect payment info

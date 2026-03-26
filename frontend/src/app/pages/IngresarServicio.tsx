@@ -82,10 +82,10 @@ const VEHICLE_LABELS: Record<string, string> = {
 
 const AREAS: { id: AreaId; label: string; iconClass: string }[] = [
   { id: 'detallado',  label: 'Detallado',  iconClass: 'text-gray-400 group-hover:text-yellow-400' },
-  { id: 'latoneria',  label: 'Latonería',  iconClass: 'text-gray-400 group-hover:text-blue-400' },
-  { id: 'pintura',    label: 'Pintura',    iconClass: 'text-gray-400 group-hover:text-orange-400' },
   { id: 'ppf',        label: 'PPF',        iconClass: 'text-gray-400 group-hover:text-purple-400' },
   { id: 'polarizado', label: 'Polarizado', iconClass: 'text-gray-400 group-hover:text-cyan-400' },
+  { id: 'latoneria',  label: 'Latonería',  iconClass: 'text-gray-400 group-hover:text-blue-400' },
+  { id: 'pintura',    label: 'Pintura',    iconClass: 'text-gray-400 group-hover:text-orange-400' },
 ]
 
 const AREA_ICONS_SM: Record<AreaId, React.ReactNode> = {
@@ -165,7 +165,8 @@ export default function IngresarServicio() {
   const [vehicleType, setVehicleType] = useState<VehicleType | null>(
     fromAppt?.vehicle_type as VehicleType ?? null
   )
-  const [expandedAreas, setExpandedAreas] = useState<Set<AreaId>>(new Set(['detallado']))
+  const [expandedAreas, setExpandedAreas] = useState<Set<AreaId>>(new Set())
+  const [partQuantities, setPartQuantities] = useState<Record<number, number>>({})
   const [submitting, setSubmitting]   = useState(false)
   const [plateTypeMismatch, setPlateTypeMismatch] = useState(false)
   const [form, setForm] = useState<OrderDraft>({
@@ -204,11 +205,7 @@ export default function IngresarServicio() {
   }
 
   function toggleArea(id: AreaId) {
-    setExpandedAreas(prev => {
-      const next = new Set(prev)
-      next.has(id) ? next.delete(id) : next.add(id)
-      return next
-    })
+    setExpandedAreas(prev => prev.has(id) ? new Set() : new Set([id]))
   }
 
   function handlePlateChange(e: React.ChangeEvent<HTMLInputElement>) {
@@ -284,17 +281,25 @@ export default function IngresarServicio() {
     }))
   }
 
+  function hasPartSelector(service: Service): boolean {
+    return service.category === 'polarizado' || service.name.toLowerCase().includes('parcial')
+  }
+  function getPartQty(id: number): number {
+    return partQuantities[id] ?? 1
+  }
+
   function getStandardPrice(service: Service): number {
     return vehicleType ? getServicePrice(service, vehicleType) : Number(service.price_automovil)
   }
   function getEffectivePrice(service: Service): number {
     if (form.warrantyServiceIds.includes(service.id)) return 0
+    const qty = hasPartSelector(service) ? getPartQty(service.id) : 1
     const custom = form.customPrices[service.id]
     if (custom !== undefined && custom !== '') {
       const n = Number(custom)
-      if (!isNaN(n) && n >= 0) return n
+      if (!isNaN(n) && n >= 0) return n * qty
     }
-    return getStandardPrice(service)
+    return getStandardPrice(service) * qty
   }
 
   const total = form.selectedServices.reduce((sum, id) => {
@@ -322,9 +327,14 @@ export default function IngresarServicio() {
           if (form.warrantyServiceIds.includes(Number(id))) return false
           const s = services.find(s => s.id === Number(id))
           if (!s) return false
-          return Number(priceStr) !== getStandardPrice(s)
+          const qty = hasPartSelector(s) ? getPartQty(Number(id)) : 1
+          return Number(priceStr) * qty !== getStandardPrice(s)
         })
-        .map(([id, priceStr]) => ({ service_id: Number(id), unit_price: Number(priceStr) }))
+        .map(([id, priceStr]) => {
+          const s = services.find(s => s.id === Number(id))!
+          const qty = hasPartSelector(s) ? getPartQty(Number(id)) : 1
+          return { service_id: Number(id), unit_price: Number(priceStr) * qty }
+        })
 
       // Warranty service overrides (price = 0)
       const warrantyOverrides = form.warrantyServiceIds
@@ -360,7 +370,7 @@ export default function IngresarServicio() {
       if (fromAppt?.id) {
         api.appointments.delete(fromAppt.id).catch(() => {})
       }
-      setStep(1); setPrevStep(1); setVehicleType(null); setExpandedAreas(new Set(['detallado']))
+      setStep(1); setPrevStep(1); setVehicleType(null); setExpandedAreas(new Set()); setPartQuantities({})
       setForm({ plate: '', brand: '', model: '', color: '', clientName: '', clientPhone: '', selectedServices: [], notes: '', deliveryDate: '', deliveryTime: '', customPrices: {}, warrantyServiceIds: [], downpayment: '', downpaymentMethod: '', isWarranty: false })
       setBrandQuery('')
       navigate('/')
@@ -587,7 +597,8 @@ export default function IngresarServicio() {
                   )}
                   <div className={cn(plateTypeMismatch && 'opacity-25 pointer-events-none select-none', 'space-y-2')}>
 
-                    {AREAS.map(area => {
+                    <AnimatePresence initial={false}>
+                    {AREAS.filter(a => expandedAreas.size === 0 || expandedAreas.has(a.id)).map(area => {
                       const isOpen = expandedAreas.has(area.id)
                       const selectedCount = form.selectedServices.filter(id => {
                         const svc = services.find(s => s.id === id)
@@ -595,7 +606,14 @@ export default function IngresarServicio() {
                       }).length
 
                       return (
-                        <div key={area.id} className="rounded-xl border border-white/8 overflow-hidden">
+                        <motion.div
+                          key={area.id}
+                          initial={{ opacity: 0, y: -6 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          exit={{ opacity: 0, y: -6 }}
+                          transition={{ duration: 0.15 }}
+                          className="rounded-xl border border-white/8 overflow-hidden"
+                        >
                           <button
                             type="button"
                             onClick={() => toggleArea(area.id)}
@@ -642,40 +660,39 @@ export default function IngresarServicio() {
                                     </div>
                                   ))}
 
-                                  {/* ── PPF / POLARIZADO: toggle cards + editable price ── */}
+                                  {/* ── PPF / POLARIZADO: precio fijo en amarillo + stepper partes ── */}
                                   {(area.id === 'ppf' || area.id === 'polarizado') && (
                                     <div className={cn('rounded-xl border p-3', categoryColors[area.id])}>
-                                      <div className="space-y-3">
+                                      <div className="space-y-2">
                                         {services.filter(s => s.category === area.id).map(service => {
+                                          const price     = getStandardPrice(service)
                                           const checked   = form.selectedServices.includes(service.id)
-                                          const customVal = form.customPrices[service.id] ?? ''
+                                          const withParts = hasPartSelector(service)
+                                          const qty       = getPartQty(service.id)
                                           return (
-                                            <div key={service.id}
-                                              className={cn(
-                                                'rounded-xl border p-3 transition-colors cursor-pointer',
-                                                checked ? 'border-yellow-500/40 bg-yellow-500/5' : 'border-white/8 bg-white/[0.02] hover:bg-white/[0.04]'
+                                            <div key={service.id} className="space-y-1.5">
+                                              <motion.label whileHover={{ x: 2 }}
+                                                className="flex items-center gap-3 rounded-lg px-2 py-1.5 cursor-pointer hover:bg-white/5 transition-colors">
+                                                <input type="checkbox" checked={checked} onChange={() => toggleService(service.id)}
+                                                  className="w-4 h-4 rounded accent-yellow-400 cursor-pointer shrink-0" />
+                                                <span className="flex-1 text-sm text-gray-200">{service.name}</span>
+                                                <span className="text-sm font-medium text-yellow-400">${price.toLocaleString('es-CO')}</span>
+                                              </motion.label>
+                                              {withParts && (
+                                                <div className="flex items-center gap-2 pl-7">
+                                                  <span className="text-xs text-gray-500 shrink-0">Partes:</span>
+                                                  <div className="flex items-center gap-1.5">
+                                                    <button type="button"
+                                                      onClick={() => setPartQuantities(p => ({ ...p, [service.id]: Math.max(1, (p[service.id] ?? 1) - 1) }))}
+                                                      className="w-6 h-6 rounded-md border border-white/10 bg-white/5 text-gray-300 hover:bg-white/10 flex items-center justify-center text-sm font-bold transition-colors">−</button>
+                                                    <span className="text-sm text-gray-200 w-4 text-center">{qty}</span>
+                                                    <button type="button"
+                                                      disabled={service.category === 'polarizado' && qty >= 7}
+                                                      onClick={() => setPartQuantities(p => ({ ...p, [service.id]: Math.min(service.category === 'polarizado' ? 7 : Infinity, (p[service.id] ?? 1) + 1) }))}
+                                                      className="w-6 h-6 rounded-md border border-white/10 bg-white/5 text-gray-300 hover:bg-white/10 flex items-center justify-center text-sm font-bold transition-colors disabled:opacity-30 disabled:cursor-not-allowed">+</button>
+                                                  </div>
+                                                </div>
                                               )}
-                                              onClick={() => toggleService(service.id)}>
-                                              <div className="flex items-center gap-3 mb-2.5">
-                                                <div className={cn('w-4 h-4 rounded border-2 shrink-0 flex items-center justify-center transition-colors', checked ? 'border-yellow-500 bg-yellow-500' : 'border-gray-600')}>
-                                                  {checked && <Check size={10} className="text-gray-900" />}
-                                                </div>
-                                                <span className="text-sm font-medium text-gray-200">{service.name}</span>
-                                              </div>
-                                              <div className="flex items-center gap-2" onClick={e => e.stopPropagation()}>
-                                                <span className="text-xs text-gray-500 shrink-0">Precio:</span>
-                                                <div className="relative flex-1">
-                                                  <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-500 text-xs">$</span>
-                                                  <input
-                                                    type="text" inputMode="numeric"
-                                                    value={fmtCOP(customVal)}
-                                                    placeholder="0"
-                                                    onWheel={e => e.currentTarget.blur()}
-                                                    onChange={e => setForm(f => ({ ...f, customPrices: { ...f.customPrices, [service.id]: parseCOP(e.target.value) } }))}
-                                                    className="w-full rounded-lg border border-white/10 bg-white/5 pl-6 pr-3 py-1.5 text-sm text-gray-100 focus:border-yellow-500/50 focus:outline-none"
-                                                  />
-                                                </div>
-                                              </div>
                                             </div>
                                           )
                                         })}
@@ -707,33 +724,21 @@ export default function IngresarServicio() {
                                     </div>
                                   )}
 
-                                  {/* ── LATONERÍA: checkbox + inline price input ──────── */}
+                                  {/* ── LATONERÍA: checkbox + precio (edición en paso 3) ── */}
                                   {area.id === 'latoneria' && (
                                     <div className={cn('rounded-xl border p-3', categoryColors.latoneria)}>
-                                      <p className="text-[11px] text-gray-600 mb-3">Selecciona las partes e ingresa el precio de cada una</p>
-                                      <div className="space-y-1.5 max-h-96 overflow-y-auto pr-1">
+                                      <div className="space-y-1 max-h-96 overflow-y-auto pr-1">
                                         {services.filter(s => s.category === 'latoneria').map(service => {
-                                          const checked    = form.selectedServices.includes(service.id)
-                                          const stdPrice   = getStandardPrice(service)
-                                          const customVal  = form.customPrices[service.id]
-                                          const displayVal = customVal !== undefined ? customVal : String(stdPrice)
+                                          const price   = getStandardPrice(service)
+                                          const checked = form.selectedServices.includes(service.id)
                                           return (
-                                            <div key={service.id}
-                                              className="flex items-center gap-2 rounded-lg px-2 py-1.5 hover:bg-white/5 transition-colors">
+                                            <motion.label key={service.id} whileHover={{ x: 2 }}
+                                              className="flex items-center gap-3 rounded-lg px-2 py-1.5 cursor-pointer hover:bg-white/5 transition-colors">
                                               <input type="checkbox" checked={checked} onChange={() => toggleService(service.id)}
                                                 className="w-4 h-4 rounded accent-yellow-400 cursor-pointer shrink-0" />
                                               <span className="flex-1 text-sm text-gray-200">{service.name}</span>
-                                              <div className="relative shrink-0 w-32">
-                                                <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-500 text-xs">$</span>
-                                                <input
-                                                  type="text" inputMode="numeric"
-                                                  value={fmtCOP(displayVal)}
-                                                  onWheel={e => e.currentTarget.blur()}
-                                                  onChange={e => setForm(f => ({ ...f, customPrices: { ...f.customPrices, [service.id]: parseCOP(e.target.value) } }))}
-                                                  className="w-full rounded-lg border border-white/10 bg-white/5 pl-6 pr-2 py-1 text-sm text-gray-100 focus:border-yellow-500/50 focus:outline-none text-right"
-                                                />
-                                              </div>
-                                            </div>
+                                              <span className="text-sm font-medium text-yellow-400">${price.toLocaleString('es-CO')}</span>
+                                            </motion.label>
                                           )
                                         })}
                                       </div>
@@ -744,9 +749,10 @@ export default function IngresarServicio() {
                               </motion.div>
                             )}
                           </AnimatePresence>
-                        </div>
+                        </motion.div>
                       )
                     })}
+                    </AnimatePresence>
 
                   </div>
                 </div>

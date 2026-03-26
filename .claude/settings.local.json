@@ -30,7 +30,15 @@
       "Bash(curl -s -X POST \"http://localhost:8000/api/v1/liquidation/1/liquidate?week_start=2026-03-15\")",
       "Bash(python -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\(d.get\\(''''is_liquidated''''\\), d.get\\(''''net_amount''''\\)\\)\")",
       "Bash(curl -s \"http://localhost:8000/api/v1/liquidation/1/week?week_start=2026-03-16\")",
-      "Bash(docker exec:*)"
+      "Bash(docker exec:*)",
+      "Bash(python -c \"import ast; ast.parse\\(open\\(''backend/app/routers/clients.py''\\).read\\(\\)\\); print\\(''clients.py OK''\\)\")",
+      "Bash(python -c \"import ast; ast.parse\\(open\\(''backend/app/schemas.py''\\).read\\(\\)\\); print\\(''schemas.py OK''\\)\")",
+      "Bash(python -c \"import ast; ast.parse\\(open\\(''backend/app/main.py''\\).read\\(\\)\\); print\\(''main.py OK''\\)\")",
+      "Bash(python -c \"import ast; ast.parse\\(open\\(''app/routers/liquidation.py''\\).read\\(\\)\\); print\\(''OK''\\)\")",
+      "Bash(python -c \"import ast; ast.parse\\(open\\(''app/models.py''\\).read\\(\\)\\); ast.parse\\(open\\(''app/routers/orders.py''\\).read\\(\\)\\); ast.parse\\(open\\(''app/routers/patio.py''\\).read\\(\\)\\); ast.parse\\(open\\(''app/main.py''\\).read\\(\\)\\); ast.parse\\(open\\(''app/schemas.py''\\).read\\(\\)\\); print\\(''All OK''\\)\")",
+      "Bash(curl -s http://localhost:28000/api/v1/operators)",
+      "Bash(python -c \"import sys,json; ops=json.load\\(sys.stdin\\); [print\\(f''''{o[\"\"id\"\"]:3d} {o[\"\"name\"\"]:20s} type={o[\"\"operator_type\"\"]:12s} rate={o[\"\"commission_rate\"\"]}''''\\) for o in ops]\")",
+      "Bash(curl -s \"http://localhost:28000/api/v1/liquidation/1/week?week_start=2026-03-22\")"
     ]
   }
 }

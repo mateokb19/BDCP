@@ -105,6 +105,7 @@ class Operator(Base):
     phone           = Column(String(20))
     cedula          = Column(String(20))
     commission_rate = Column(Numeric(5, 2), nullable=False, default=0)
+    operator_type   = Column(String(30), nullable=False, server_default='detallado')
     active          = Column(Boolean, nullable=False, default=True)
     created_at      = Column(DateTime, server_default=func.now(), nullable=False)
 
@@ -168,6 +169,7 @@ class ServiceOrderItem(Base):
     service_name     = Column(String(100), nullable=False)
     service_category = Column(_enum(ServiceCategoryEnum, "service_category"), nullable=False)
     unit_price       = Column(Numeric(10, 2), nullable=False)
+    standard_price   = Column(Numeric(10, 2))
     quantity         = Column(Integer, nullable=False, default=1)
     subtotal         = Column(Numeric(10, 2), nullable=False)
 

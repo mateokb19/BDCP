@@ -59,10 +59,34 @@ with engine.connect() as _conn:
     _conn.execute(text(
         "ALTER TABLE service_orders ADD COLUMN IF NOT EXISTS downpayment_method VARCHAR(50)"
     ))
+    _conn.execute(text(
+        "ALTER TABLE operators ADD COLUMN IF NOT EXISTS operator_type VARCHAR(30) NOT NULL DEFAULT 'detallado'"
+    ))
+    _conn.execute(text(
+        "ALTER TABLE service_order_items ADD COLUMN IF NOT EXISTS standard_price NUMERIC(10,2)"
+    ))
+    _conn.execute(text(
+        "UPDATE service_order_items SET standard_price = unit_price WHERE standard_price IS NULL"
+    ))
+    # Remove legacy detallado operator if present
+    _conn.execute(text(
+        "DELETE FROM operators WHERE name = 'Jose Domingo Lindarte' AND operator_type = 'detallado'"
+    ))
+    # Seed new specialist operators if not present
+    _conn.execute(text(
+        "INSERT INTO operators (name, commission_rate, operator_type, active) "
+        "SELECT 'Jose D. Lindarte', 30, 'pintura', true "
+        "WHERE NOT EXISTS (SELECT 1 FROM operators WHERE name = 'Jose D. Lindarte')"
+    ))
+    _conn.execute(text(
+        "INSERT INTO operators (name, commission_rate, operator_type, active) "
+        "SELECT 'Enrique Rodríguez', 30, 'latoneria', true "
+        "WHERE NOT EXISTS (SELECT 1 FROM operators WHERE name = 'Enrique Rodríguez')"
+    ))
     _conn.commit()
 
 
-_EXPECTED_SERVICES = 54
+_EXPECTED_SERVICES = 55
 
 _SERVICES_SEED = [
     # ── Servicios Básicos / Exterior ─────────────────────────────────────
@@ -102,8 +126,7 @@ _SERVICES_SEED = [
     dict(category="ppf", name="PPF Full",                         price_automovil=0, price_camion_estandar=0, price_camion_xl=0),
     dict(category="ppf", name="PPF Parcial",                      price_automovil=0, price_camion_estandar=0, price_camion_xl=0),
     # ── Polarizado ───────────────────────────────────────────────────────────
-    dict(category="polarizado", name="Polarizado IRX Llumar",     price_automovil=0, price_camion_estandar=0, price_camion_xl=0),
-    dict(category="polarizado", name="Polarizado ATR Llumar",     price_automovil=0, price_camion_estandar=0, price_camion_xl=0),
+    dict(category="polarizado", name="Polarizado Llumar IRX / ATR", price_automovil=0, price_camion_estandar=0, price_camion_xl=0),
     # ── Pintura (precio por pieza, igual para todos los tipos) ───────────────
     dict(category="pintura", name="Bumper delantero",             price_automovil=430000, price_camion_estandar=430000, price_camion_xl=430000),
     dict(category="pintura", name="Parcial bumper delantero",     price_automovil=220000, price_camion_estandar=220000, price_camion_xl=220000),
@@ -127,6 +150,8 @@ _SERVICES_SEED = [
     dict(category="latoneria", name="Extensión",                  price_automovil=0, price_camion_estandar=0, price_camion_xl=0),
     dict(category="latoneria", name="Guardafangos",               price_automovil=0, price_camion_estandar=0, price_camion_xl=0),
     dict(category="latoneria", name="Desmonte/Monte de Bumper",   price_automovil=110000, price_camion_estandar=110000, price_camion_xl=110000),
+    dict(category="latoneria", name="PDR",                        price_automovil=200000, price_camion_estandar=200000, price_camion_xl=200000),
+    dict(category="latoneria", name="Arreglo Rin",                price_automovil=250000, price_camion_estandar=250000, price_camion_xl=250000),
 ]
 
 
@@ -136,9 +161,11 @@ def _seed_if_empty() -> None:
     try:
         if db.query(models.Operator).count() == 0:
             db.add_all([
-                models.Operator(name="Carlos Mora",      phone="555-0001", commission_rate=30),
-                models.Operator(name="Francisco Currea", phone="555-0002", commission_rate=30),
-                models.Operator(name="Luis Lopez",       phone="555-0003", commission_rate=30),
+                models.Operator(name="Carlos Mora",        phone="555-0001", commission_rate=30, operator_type="detallado"),
+                models.Operator(name="Francisco Currea",   phone="555-0002", commission_rate=30, operator_type="detallado"),
+                models.Operator(name="Luis Lopez",         phone="555-0003", commission_rate=30, operator_type="detallado"),
+                models.Operator(name="Jose D. Lindarte",   commission_rate=30, operator_type="pintura"),
+                models.Operator(name="Enrique Rodríguez",  commission_rate=30, operator_type="latoneria"),
             ])
             db.commit()
 

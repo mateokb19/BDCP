@@ -158,6 +158,7 @@ def edit_patio_entry(id: int, payload: schemas.PatioPatch, db: Session = Depends
                     service_name=svc.name,
                     service_category=svc.category,
                     unit_price=p,
+                    standard_price=p,
                     quantity=1,
                     subtotal=p,
                 ))

@@ -19,6 +19,7 @@ class OperatorOut(OrmBase):
     phone:           Optional[str]
     cedula:          Optional[str]
     commission_rate: Decimal
+    operator_type:   str = "detallado"
     active:          bool
 
 
@@ -27,6 +28,7 @@ class OperatorCreate(BaseModel):
     phone:           Optional[str] = None
     cedula:          Optional[str] = None
     commission_rate: Decimal = Decimal("0")
+    operator_type:   str = "detallado"
 
 
 class OperatorPatch(BaseModel):
@@ -34,6 +36,7 @@ class OperatorPatch(BaseModel):
     phone:           Optional[str]     = None
     cedula:          Optional[str]     = None
     commission_rate: Optional[Decimal] = None
+    operator_type:   Optional[str]     = None
     active:          Optional[bool]    = None
 
 
@@ -339,10 +342,12 @@ class AppointmentPatch(BaseModel):
 # ── Liquidation ───────────────────────────────────────────────────────────────
 
 class LiqWeekOrderItem(BaseModel):
-    service_name: str
-    unit_price:   Decimal
-    quantity:     int
-    subtotal:     Decimal
+    service_name:     str
+    service_category: str
+    unit_price:       Decimal
+    standard_price:   Optional[Decimal] = None
+    quantity:         int
+    subtotal:         Decimal
 
 
 class LiqWeekOrder(BaseModel):
@@ -354,6 +359,7 @@ class LiqWeekOrder(BaseModel):
     vehicle_model: Optional[str]
     items:         List[LiqWeekOrderItem]
     total:         Decimal
+    piece_count:   Optional[Decimal] = None
     is_liquidated: bool
 
 
@@ -368,12 +374,15 @@ class LiqWeekDay(BaseModel):
 class LiqWeekResponse(BaseModel):
     operator_id:              int
     operator_name:            str
+    operator_type:            str
     commission_rate:          Decimal
     week_start:               str
     week_end:                 str
     days:                     List[LiqWeekDay]
     week_total:               Decimal
+    commission_base:          Decimal           # detallado: only detallado items; pintura: pintura items total
     week_services:            int
+    piece_count:              Optional[Decimal]  # pintura only
     commission_amount:        Decimal
     is_liquidated:            bool
     unliquidated_count:       int

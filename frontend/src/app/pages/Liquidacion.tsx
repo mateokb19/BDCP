@@ -46,6 +46,12 @@ function getInitials(name: string) {
   return name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()
 }
 
+const OP_TYPE_STYLE: Record<string, { label: string; cls: string }> = {
+  detallado: { label: 'Detallado',  cls: 'text-yellow-400 border-yellow-500/30 bg-yellow-500/10' },
+  pintura:   { label: 'Pintura',    cls: 'text-orange-400 border-orange-500/30 bg-orange-500/10' },
+  latoneria: { label: 'Latonería',  cls: 'text-blue-400   border-blue-500/30   bg-blue-500/10'   },
+}
+
 function escapeHtml(s: string | undefined | null) {
   if (!s) return ''
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
@@ -72,9 +78,12 @@ interface LiquidarModalProps {
 
 function LiquidarModal({ open, onClose, operator, weekData, debts, onConfirm }: LiquidarModalProps) {
   // Only compute commission for unliquidated orders
+  // Backend already filters items by operator category and uses standard prices
   const unliqOrders  = weekData.days.flatMap(d => d.orders.filter(o => !o.is_liquidated))
   const unliqGross   = unliqOrders.reduce((s, o) => s + Number(o.total), 0)
-  const commission   = Math.round(unliqGross * Number(weekData.commission_rate)) / 100
+  const commission   = weekData.operator_type === 'pintura'
+    ? unliqOrders.reduce((s, o) => s + Number(o.piece_count ?? 0), 0) * 90000
+    : Math.round(unliqGross * Number(weekData.commission_rate)) / 100
 
   const unpaidOpOwes      = debts.filter(d => d.direction === 'operario_empresa' && !d.paid)
   const unpaidCompanyOwes = debts.filter(d => d.direction === 'empresa_operario' && !d.paid)
@@ -194,7 +203,11 @@ function LiquidarModal({ open, onClose, operator, weekData, debts, onConfirm }: 
                   <span className="text-gray-200">${cop(unliqGross)}</span>
                 </div>
                 <div className="flex justify-between text-sm">
-                  <span className="text-gray-400">Comisión ({Number(weekData.commission_rate)}%)</span>
+                  <span className="text-gray-400">
+                    {weekData.operator_type === 'pintura'
+                      ? `Comisión (${weekData.piece_count ?? 0} piezas × $90.000)`
+                      : `Comisión (${Number(weekData.commission_rate)}%)`}
+                  </span>
                   <span className="text-yellow-400 font-semibold">${cop(commission)}</span>
                 </div>
               </div>
@@ -451,12 +464,12 @@ export default function LiquidacionPage() {
   })
   // New operator form
   const [newOpOpen,  setNewOpOpen]  = useState(false)
-  const [newOpForm,  setNewOpForm]  = useState({ name: '', phone: '', cedula: '', commission_rate: '' })
+  const [newOpForm,  setNewOpForm]  = useState({ name: '', phone: '', cedula: '', commission_rate: '', operator_type: 'detallado' })
   const [newOpSaving, setNewOpSaving] = useState(false)
   // Edit commission
-  const [editCommOpen,  setEditCommOpen]  = useState(false)
-  const [editCommValue, setEditCommValue] = useState('')
-  const [editCommSaving, setEditCommSaving] = useState(false)
+  const [editOpOpen,  setEditOpOpen]  = useState(false)
+  const [editOpForm,  setEditOpForm]  = useState({ name: '', phone: '', cedula: '', commission_rate: '' })
+  const [editOpSaving, setEditOpSaving] = useState(false)
   // Deactivate confirmation
   const [deactivateConfirm, setDeactivateConfirm] = useState(false)
 
@@ -533,9 +546,10 @@ export default function LiquidacionPage() {
         phone: newOpForm.phone.trim() || undefined,
         cedula: newOpForm.cedula.trim() || undefined,
         commission_rate: Number(parseCOP(newOpForm.commission_rate)) || 0,
+        operator_type: newOpForm.operator_type,
       })
       setOperators(prev => [...prev, op])
-      setNewOpForm({ name: '', phone: '', cedula: '', commission_rate: '' })
+      setNewOpForm({ name: '', phone: '', cedula: '', commission_rate: '', operator_type: 'detallado' })
       setNewOpOpen(false)
       toast.success(`Operario ${op.name} creado`)
     } catch {
@@ -545,20 +559,23 @@ export default function LiquidacionPage() {
     }
   }
 
-  async function handleSaveCommission() {
+  async function handleSaveOpEdit() {
     if (!selectedOp) return
-    setEditCommSaving(true)
+    setEditOpSaving(true)
     try {
       const updated = await api.operators.update(selectedOp, {
-        commission_rate: Number(parseCOP(editCommValue)) || 0,
+        name:            editOpForm.name.trim() || undefined,
+        phone:           editOpForm.phone.trim() || undefined,
+        cedula:          editOpForm.cedula.trim() || undefined,
+        commission_rate: Number(parseCOP(editOpForm.commission_rate)) || 0,
       })
       setOperators(prev => prev.map(o => o.id === updated.id ? updated : o))
-      setEditCommOpen(false)
-      toast.success('Comisión actualizada')
+      setEditOpOpen(false)
+      toast.success('Operario actualizado')
     } catch {
-      toast.error('Error al actualizar comisión')
+      toast.error('Error al actualizar operario')
     } finally {
-      setEditCommSaving(false)
+      setEditOpSaving(false)
     }
   }
 
@@ -1085,7 +1102,7 @@ ${r.pending_debts.length > 0 ? `
 
         {/* Back */}
         <button
-          onClick={() => { setSelectedOp(null); setWeekData(null); setWeekOffset(0); setDebts([]); setDeactivateConfirm(false); setEditCommOpen(false) }}
+          onClick={() => { setSelectedOp(null); setWeekData(null); setWeekOffset(0); setDebts([]); setDeactivateConfirm(false); setEditOpOpen(false) }}
           className="flex items-center gap-1.5 text-sm text-gray-400 hover:text-yellow-400 transition-colors"
         >
           <ChevronLeft size={16} /> Operarios
@@ -1102,16 +1119,21 @@ ${r.pending_debts.length > 0 ? `
                 <div className="space-y-0.5 min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
                     <h2 className="text-base sm:text-xl font-semibold text-white leading-snug">{operator.name}</h2>
+                    {(() => { const t = OP_TYPE_STYLE[operator.operator_type] ?? OP_TYPE_STYLE.detallado; return (
+                      <span className={cn('text-[10px] border rounded px-1.5 py-0.5', t.cls)}>{t.label}</span>
+                    )})()}
                     {!operator.active && (
                       <span className="text-[10px] border border-gray-600 text-gray-500 rounded px-1.5 py-0.5">Inactivo</span>
                     )}
                   </div>
                   <div className="flex items-center gap-2">
-                    <p className="text-xs sm:text-sm text-gray-500">Comisión {Number(operator.commission_rate)}%</p>
+                    {(operator.operator_type ?? 'detallado') === 'detallado' && (
+                      <p className="text-xs sm:text-sm text-gray-500">Comisión {Number(operator.commission_rate)}%</p>
+                    )}
                     <button
-                      onClick={() => { setEditCommValue(String(Number(operator.commission_rate))); setEditCommOpen(true) }}
+                      onClick={() => { setEditOpForm({ name: operator.name, phone: operator.phone ?? '', cedula: operator.cedula ?? '', commission_rate: String(Number(operator.commission_rate)) }); setEditOpOpen(v => !v) }}
                       className="p-0.5 rounded hover:bg-white/10 text-gray-600 hover:text-yellow-400 transition-colors"
-                      title="Editar comisión"
+                      title="Editar operario"
                     >
                       <Pencil size={11} />
                     </button>
@@ -1147,23 +1169,50 @@ ${r.pending_debts.length > 0 ? `
               </div>
             </div>
 
-            {/* Edit commission inline */}
+            {/* Edit operator inline */}
             <AnimatePresence>
-              {editCommOpen && (
+              {editOpOpen && (
                 <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="overflow-hidden">
-                  <div className="flex items-center gap-2 pt-2 border-t border-white/8">
-                    <span className="text-xs text-gray-500 shrink-0">Nueva comisión:</span>
-                    <div className="relative flex-1 max-w-[120px]">
-                      <input type="text" inputMode="numeric" value={editCommValue}
-                        onChange={e => setEditCommValue(e.target.value.replace(/[^\d]/g, ''))}
-                        className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 pr-7 text-sm text-gray-100 focus:border-yellow-500/50 focus:outline-none"
-                        placeholder="30" autoFocus />
-                      <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-500 text-sm">%</span>
+                  <div className="pt-3 border-t border-white/8 space-y-2">
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <label className="text-[11px] text-gray-500 block mb-1">Nombre</label>
+                        <input type="text" value={editOpForm.name}
+                          onChange={e => setEditOpForm(f => ({ ...f, name: e.target.value }))}
+                          className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-sm text-gray-100 focus:border-yellow-500/50 focus:outline-none"
+                          autoFocus />
+                      </div>
+                      <div>
+                        <label className="text-[11px] text-gray-500 block mb-1">Teléfono</label>
+                        <input type="text" inputMode="tel" value={editOpForm.phone}
+                          onChange={e => setEditOpForm(f => ({ ...f, phone: e.target.value }))}
+                          className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-sm text-gray-100 focus:border-yellow-500/50 focus:outline-none" />
+                      </div>
+                      <div>
+                        <label className="text-[11px] text-gray-500 block mb-1">Cédula</label>
+                        <input type="text" value={editOpForm.cedula}
+                          onChange={e => setEditOpForm(f => ({ ...f, cedula: e.target.value }))}
+                          className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-sm text-gray-100 focus:border-yellow-500/50 focus:outline-none" />
+                      </div>
+                      {(operator.operator_type ?? 'detallado') === 'detallado' && (
+                        <div>
+                          <label className="text-[11px] text-gray-500 block mb-1">Comisión (%)</label>
+                          <div className="relative">
+                            <input type="text" inputMode="numeric" value={editOpForm.commission_rate}
+                              onChange={e => setEditOpForm(f => ({ ...f, commission_rate: e.target.value.replace(/[^\d]/g, '') }))}
+                              className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 pr-6 text-sm text-gray-100 focus:border-yellow-500/50 focus:outline-none"
+                              placeholder="30" />
+                            <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-500 text-sm">%</span>
+                          </div>
+                        </div>
+                      )}
                     </div>
-                    <Button variant="primary" size="sm" onClick={handleSaveCommission} disabled={editCommSaving}>
-                      {editCommSaving ? '...' : <Check size={13} />}
-                    </Button>
-                    <button onClick={() => setEditCommOpen(false)} className="text-gray-500 hover:text-gray-300"><X size={14} /></button>
+                    <div className="flex gap-2 justify-end">
+                      <button onClick={() => setEditOpOpen(false)} className="text-xs text-gray-500 hover:text-gray-300 px-3 py-1.5 rounded-lg hover:bg-white/5 transition-colors">Cancelar</button>
+                      <Button variant="primary" size="sm" onClick={handleSaveOpEdit} disabled={editOpSaving}>
+                        {editOpSaving ? 'Guardando...' : <><Check size={13} /> Guardar</>}
+                      </Button>
+                    </div>
                   </div>
                 </motion.div>
               )}
@@ -1223,8 +1272,12 @@ ${r.pending_debts.length > 0 ? `
             <div className="grid grid-cols-3 gap-2">
               {[
                 { label: 'Servicios', value: weekData.week_services },
-                { label: 'Total', value: `$${cop(weekData.week_total)}` },
-                { label: `Com. ${Number(weekData.commission_rate)}%`, value: `$${cop(weekData.commission_amount)}`, highlight: true },
+                weekData.operator_type === 'pintura'
+                  ? { label: `Base pintura`, value: `$${cop(weekData.commission_base)}` }
+                  : { label: 'Total', value: `$${cop(weekData.week_total)}` },
+                weekData.operator_type === 'pintura'
+                  ? { label: `${weekData.piece_count ?? 0} piezas × $90.000`, value: `$${cop(weekData.commission_amount)}`, highlight: true }
+                  : { label: `Com. ${Number(weekData.commission_rate)}%`, value: `$${cop(weekData.commission_amount)}`, highlight: true },
               ].map(item => (
                 <GlassCard key={item.label} padding className="text-center !px-2 !py-3">
                   <p className="text-[10px] sm:text-xs text-gray-500 mb-1 leading-tight">{item.label}</p>
@@ -1337,9 +1390,18 @@ ${r.pending_debts.length > 0 ? `
                           <p className="text-sm text-gray-200 font-medium">{day.day_services} servicio{day.day_services !== 1 ? 's' : ''}</p>
                           <p className="text-xs text-gray-400">
                             ${cop(day.day_total)}
-                            <span className="text-yellow-500 ml-2">
-                              · comisión ${cop((Number(day.day_total) * Number(weekData.commission_rate) / 100).toFixed(0))}
-                            </span>
+                            {weekData.operator_type === 'pintura' ? (() => {
+                              const pieces = day.orders.reduce((s, o) => s + Number(o.piece_count ?? 0), 0)
+                              return pieces > 0 ? (
+                                <span className="text-yellow-500 ml-2">
+                                  · {pieces} pieza{pieces !== 1 ? 's' : ''} × $90.000
+                                </span>
+                              ) : null
+                            })() : Number(day.day_total) > 0 && weekData.operator_type !== 'latoneria' ? (
+                              <span className="text-yellow-500 ml-2">
+                                · comisión ${cop((Number(day.day_total) * Number(weekData.commission_rate) / 100).toFixed(0))}
+                              </span>
+                            ) : null}
                           </p>
                         </>
                       ) : (
@@ -1608,16 +1670,28 @@ ${r.pending_debts.length > 0 ? `
                     className="w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-gray-100 placeholder:text-gray-600 focus:border-yellow-500/50 focus:outline-none"
                     placeholder="3XX XXX XXXX" />
                 </div>
-                <div className="col-span-2">
-                  <label className="text-xs text-gray-500 block mb-1">Porcentaje de comisión (%)</label>
-                  <div className="relative">
-                    <input type="text" inputMode="numeric" value={newOpForm.commission_rate}
-                      onChange={e => setNewOpForm(f => ({ ...f, commission_rate: e.target.value.replace(/[^\d]/g, '') }))}
-                      className="w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2 pr-8 text-sm text-gray-100 placeholder:text-gray-600 focus:border-yellow-500/50 focus:outline-none"
-                      placeholder="30" />
-                    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 text-sm">%</span>
+                {newOpForm.operator_type === 'detallado' && (
+                  <div className="col-span-2">
+                    <label className="text-xs text-gray-500 block mb-1">Porcentaje de comisión (%)</label>
+                    <div className="relative">
+                      <input type="text" inputMode="numeric" value={newOpForm.commission_rate}
+                        onChange={e => setNewOpForm(f => ({ ...f, commission_rate: e.target.value.replace(/[^\d]/g, '') }))}
+                        className="w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2 pr-8 text-sm text-gray-100 placeholder:text-gray-600 focus:border-yellow-500/50 focus:outline-none"
+                        placeholder="30" />
+                      <span className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 text-sm">%</span>
+                    </div>
                   </div>
-                </div>
+                )}
+              </div>
+              <div>
+                <label className="text-xs text-gray-500 block mb-1">Tipo</label>
+                <select value={newOpForm.operator_type}
+                  onChange={e => setNewOpForm(f => ({ ...f, operator_type: e.target.value }))}
+                  className="w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-gray-100 focus:border-yellow-500/50 focus:outline-none [color-scheme:dark]">
+                  <option value="detallado">Detallado</option>
+                  <option value="pintura">Pintura</option>
+                  <option value="latoneria">Latonería</option>
+                </select>
               </div>
               <Button variant="primary" size="sm" className="w-full" onClick={handleCreateOperator} disabled={newOpSaving || !newOpForm.name.trim()}>
                 {newOpSaving ? 'Guardando...' : <><Plus size={14} /> Crear operario</>}
@@ -1633,44 +1707,53 @@ ${r.pending_debts.length > 0 ? `
         </div>
       ) : (
         <>
-          {operators.some(o => o.active) && (
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
-              {operators.filter(o => o.active).map((operator, idx) => {
-                const color = OP_COLORS[idx % OP_COLORS.length]
-                return (
-                  <motion.button key={operator.id} whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }}
-                    onClick={() => { setSelectedOp(operator.id); setWeekOffset(0) }}
-                    className="flex flex-col items-center gap-2 rounded-2xl border border-white/8 bg-white/[0.03] p-4 sm:p-6 hover:bg-white/[0.06] hover:border-white/15 transition-all duration-200"
-                  >
-                    <div className={cn('rounded-2xl p-3 sm:p-4 text-xl sm:text-2xl font-bold leading-none min-w-[52px] sm:min-w-[64px] text-center', color.bg, color.text)}>
-                      {getInitials(operator.name)}
-                    </div>
-                    <p className="text-xs sm:text-sm font-medium text-gray-200 text-center leading-tight">{operator.name}</p>
-                    <p className="text-[10px] text-gray-600">{Number(operator.commission_rate)}%</p>
-                  </motion.button>
-                )
-              })}
-            </div>
-          )}
-          {operators.some(o => !o.active) && (
-            <div className="space-y-2">
-              <p className="text-xs text-gray-600 uppercase tracking-wider">Operarios dados de baja</p>
-              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
-                {operators.filter(o => !o.active).map((operator, idx) => (
-                  <motion.button key={operator.id} whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}
-                    onClick={() => { setSelectedOp(operator.id); setWeekOffset(0) }}
-                    className="flex flex-col items-center gap-2 rounded-2xl border border-white/5 bg-white/[0.015] p-4 sm:p-6 hover:bg-white/[0.04] transition-all duration-200 opacity-60"
-                  >
-                    <div className="rounded-2xl p-3 sm:p-4 text-xl sm:text-2xl font-bold leading-none min-w-[52px] sm:min-w-[64px] text-center bg-gray-800 text-gray-500">
-                      {getInitials(operator.name)}
-                    </div>
-                    <p className="text-xs sm:text-sm font-medium text-gray-500 text-center leading-tight">{operator.name}</p>
-                    <span className="text-[10px] text-gray-600 border border-gray-700 rounded px-1.5 py-0.5">Inactivo</span>
-                  </motion.button>
-                ))}
+          {(['detallado', 'pintura', 'latoneria'] as const).map(type => {
+            const active   = operators.filter(o => o.active   && (o.operator_type ?? 'detallado') === type)
+            const inactive = operators.filter(o => !o.active  && (o.operator_type ?? 'detallado') === type)
+            if (active.length === 0 && inactive.length === 0) return null
+            const typeStyle = OP_TYPE_STYLE[type]
+            return (
+              <div key={type} className="space-y-2">
+                <p className={cn('text-xs font-semibold uppercase tracking-wider', typeStyle.cls.split(' ')[0])}>
+                  {typeStyle.label}
+                </p>
+                {active.length > 0 && (
+                  <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+                    {active.map((operator, idx) => {
+                      const color = OP_COLORS[idx % OP_COLORS.length]
+                      return (
+                        <motion.button key={operator.id} whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }}
+                          onClick={() => { setSelectedOp(operator.id); setWeekOffset(0) }}
+                          className="flex flex-col items-center gap-2 rounded-2xl border border-white/8 bg-white/[0.03] p-4 sm:p-6 hover:bg-white/[0.06] hover:border-white/15 transition-all duration-200"
+                        >
+                          <div className={cn('rounded-2xl p-3 sm:p-4 text-xl sm:text-2xl font-bold leading-none min-w-[52px] sm:min-w-[64px] text-center', color.bg, color.text)}>
+                            {getInitials(operator.name)}
+                          </div>
+                          <p className="text-xs sm:text-sm font-medium text-gray-200 text-center leading-tight">{operator.name}</p>
+                        </motion.button>
+                      )
+                    })}
+                  </div>
+                )}
+                {inactive.length > 0 && (
+                  <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+                    {inactive.map((operator) => (
+                      <motion.button key={operator.id} whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}
+                        onClick={() => { setSelectedOp(operator.id); setWeekOffset(0) }}
+                        className="flex flex-col items-center gap-2 rounded-2xl border border-white/5 bg-white/[0.015] p-4 sm:p-6 hover:bg-white/[0.04] transition-all duration-200 opacity-60"
+                      >
+                        <div className="rounded-2xl p-3 sm:p-4 text-xl sm:text-2xl font-bold leading-none min-w-[52px] sm:min-w-[64px] text-center bg-gray-800 text-gray-500">
+                          {getInitials(operator.name)}
+                        </div>
+                        <p className="text-xs sm:text-sm font-medium text-gray-500 text-center leading-tight">{operator.name}</p>
+                        <span className="text-[10px] text-gray-600 border border-gray-700 rounded px-1.5 py-0.5">Inactivo</span>
+                      </motion.button>
+                    ))}
+                  </div>
+                )}
               </div>
-            </div>
-          )}
+            )
+          })}
         </>
       )}
     </div>

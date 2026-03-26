@@ -114,6 +114,7 @@ def create_order(payload: schemas.OrderCreate, db: Session = Depends(get_db)):
             service_name=svc.name,
             service_category=svc.category,
             unit_price=price,
+            standard_price=std_price,
             quantity=1,
             subtotal=price,
         ))

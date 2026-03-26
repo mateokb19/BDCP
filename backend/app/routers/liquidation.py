@@ -16,6 +16,36 @@ router = APIRouter(prefix="/liquidation", tags=["liquidation"])
 QUALIFYING_STATUSES = {"en_proceso", "listo", "entregado"}
 DAY_NAMES = ["Domingo", "Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado"]
 
+DETALLADO_CATEGORIES = {"exterior", "interior", "ceramico", "correccion_pintura"}
+PINTURA_PIECE_RATE   = Decimal("90000")
+
+CATEGORY_MAP: dict[str, set[str]] = {
+    "detallado":  DETALLADO_CATEGORIES,
+    "pintura":    {"pintura"},
+    "latoneria":  {"latoneria"},
+    "ppf":        {"ppf"},
+    "polarizado": {"polarizado"},
+}
+
+
+def _cat(item) -> str:
+    """Return the category string of an item (handles both enum and plain str)."""
+    c = item.service_category
+    return c.value if hasattr(c, "value") else str(c)
+
+
+def _std(item) -> Decimal:
+    """Return the standard (catalog) price of an item, falling back to unit_price."""
+    return item.standard_price or item.unit_price or Decimal("0")
+
+
+def _pintura_pieces(standard_price: Decimal) -> Decimal:
+    """Convert a pintura item standard price to piece count (½ / 1 / 2)."""
+    if standard_price >= Decimal("800000"): return Decimal("2")
+    if standard_price >= Decimal("400000"): return Decimal("1")
+    if standard_price >  Decimal("0"):      return Decimal("0.5")
+    return Decimal("0")
+
 
 def _build_week_response(
     operator: models.Operator,
@@ -24,6 +54,9 @@ def _build_week_response(
     qualifying: list,
     liq_record: models.WeekLiquidation | None,
 ) -> schemas.LiqWeekResponse:
+    op_type = operator.operator_type or "detallado"
+    relevant_cats = CATEGORY_MAP.get(op_type, DETALLADO_CATEGORIES)
+
     days_map: dict[date, list] = {}
     for i in range(7):
         days_map[ws + timedelta(days=i)] = []
@@ -33,55 +66,102 @@ def _build_week_response(
         if d in days_map:
             days_map[d].append(order)
 
-    rate = Decimal(str(operator.commission_rate)) / Decimal("100")
+    week_total = Decimal("0")
+    total_piece_count = Decimal("0")
+    commission_base = Decimal("0")
+    total_services = 0
 
     days = []
     for d in sorted(days_map.keys()):
         day_orders = days_map[d]
         day_idx = d.isoweekday() % 7
-        day_total = sum((o.total or Decimal("0")) for o in day_orders)
+        day_total = Decimal("0")
+        day_order_schemas = []
+
+        for o in day_orders:
+            # Filter items to only those relevant to this operator type
+            filtered = [i for i in o.items if _cat(i) in relevant_cats]
+            if not filtered:
+                continue  # skip orders with no relevant items
+
+            # Build item schemas + compute order total using standard_price
+            item_schemas = []
+            order_total = Decimal("0")
+            order_pieces = Decimal("0")
+            for item in filtered:
+                sp = _std(item)
+                item_schemas.append(schemas.LiqWeekOrderItem(
+                    service_name=item.service_name,
+                    service_category=_cat(item),
+                    unit_price=sp,
+                    standard_price=sp,
+                    quantity=item.quantity,
+                    subtotal=sp,
+                ))
+                order_total += sp
+                if op_type == "pintura":
+                    order_pieces += _pintura_pieces(sp)
+
+            day_order_schemas.append(schemas.LiqWeekOrder(
+                order_id=o.id,
+                order_number=o.order_number,
+                patio_status=o.patio_entry.status.value if hasattr(o.patio_entry.status, "value") else str(o.patio_entry.status),
+                vehicle_plate=o.vehicle.plate,
+                vehicle_brand=o.vehicle.brand,
+                vehicle_model=o.vehicle.model,
+                items=item_schemas,
+                total=order_total,
+                piece_count=order_pieces if op_type == "pintura" else None,
+                is_liquidated=o.week_liquidation_id is not None,
+            ))
+            day_total += order_total
+            total_piece_count += order_pieces
+
+        total_services += len(day_order_schemas)
+        week_total += day_total
+
         days.append(schemas.LiqWeekDay(
             date=str(d),
             day_name=DAY_NAMES[day_idx],
-            orders=[
-                schemas.LiqWeekOrder(
-                    order_id=o.id,
-                    order_number=o.order_number,
-                    patio_status=o.patio_entry.status,
-                    vehicle_plate=o.vehicle.plate,
-                    vehicle_brand=o.vehicle.brand,
-                    vehicle_model=o.vehicle.model,
-                    items=[
-                        schemas.LiqWeekOrderItem(
-                            service_name=i.service_name,
-                            unit_price=i.unit_price,
-                            quantity=i.quantity,
-                            subtotal=i.subtotal,
-                        )
-                        for i in o.items
-                    ],
-                    total=o.total or Decimal("0"),
-                    is_liquidated=o.week_liquidation_id is not None,
-                )
-                for o in day_orders
-            ],
+            orders=day_order_schemas,
             day_total=day_total,
-            day_services=len(day_orders),
+            day_services=len(day_order_schemas),
         ))
 
-    week_total = sum((o.total or Decimal("0")) for o in qualifying)
-    commission = (rate * week_total).quantize(Decimal("0.01"))
-    unliquidated_count = sum(1 for o in qualifying if o.week_liquidation_id is None)
+    # ── Commission calculation by operator type ───────────────────────────────
+    if op_type == "pintura":
+        commission_base = week_total
+        commission = (total_piece_count * PINTURA_PIECE_RATE).quantize(Decimal("0.01"))
+        piece_count: Decimal | None = total_piece_count
+    else:
+        rate = Decimal(str(operator.commission_rate)) / Decimal("100")
+        commission_base = week_total  # already filtered to relevant categories w/ standard prices
+        commission = (rate * commission_base).quantize(Decimal("0.01"))
+        piece_count = None
+
+    # Count unliquidated orders (only those that have relevant items)
+    unliq_order_ids = set()
+    for day in days:
+        for o in day.orders:
+            if not o.is_liquidated:
+                unliq_order_ids.add(o.order_id)
+    if op_type == "pintura":
+        unliquidated_count = 0 if liq_record else len(unliq_order_ids)
+    else:
+        unliquidated_count = len(unliq_order_ids)
 
     return schemas.LiqWeekResponse(
         operator_id=operator.id,
         operator_name=operator.name,
+        operator_type=op_type,
         commission_rate=operator.commission_rate,
         week_start=str(ws),
         week_end=str(we),
         days=days,
         week_total=week_total,
-        week_services=len(qualifying),
+        commission_base=commission_base,
+        week_services=total_services,
+        piece_count=piece_count,
         commission_amount=commission,
         is_liquidated=liq_record is not None,
         unliquidated_count=unliquidated_count,
@@ -95,8 +175,8 @@ def _build_week_response(
     )
 
 
-def _fetch_qualifying(op_id: int, ws: date, we: date, db: Session) -> list:
-    orders = (
+def _fetch_qualifying(op_id: int, ws: date, we: date, db: Session, op_type: str = "detallado") -> list:
+    base_q = (
         db.query(models.ServiceOrder)
         .options(
             joinedload(models.ServiceOrder.items),
@@ -104,13 +184,22 @@ def _fetch_qualifying(op_id: int, ws: date, we: date, db: Session) -> list:
             joinedload(models.ServiceOrder.patio_entry),
         )
         .filter(
-            models.ServiceOrder.operator_id == op_id,
             models.ServiceOrder.date >= ws,
             models.ServiceOrder.date <= we,
         )
-        .all()
     )
-    return [o for o in orders if o.patio_entry and o.patio_entry.status in QUALIFYING_STATUSES]
+    if op_type == "pintura":
+        # All orders with at least one pintura item, regardless of assigned operator
+        orders = base_q.all()
+        return [
+            o for o in orders
+            if o.patio_entry
+            and o.patio_entry.status in QUALIFYING_STATUSES
+            and any(_cat(i) == "pintura" for i in o.items)
+        ]
+    else:
+        orders = base_q.filter(models.ServiceOrder.operator_id == op_id).all()
+        return [o for o in orders if o.patio_entry and o.patio_entry.status in QUALIFYING_STATUSES]
 
 
 @router.get("/{op_id}/week", response_model=schemas.LiqWeekResponse)
@@ -121,7 +210,8 @@ def get_week(op_id: int, week_start: str = Query(...), db: Session = Depends(get
 
     ws = date.fromisoformat(week_start)
     we = ws + timedelta(days=6)
-    qualifying = _fetch_qualifying(op_id, ws, we, db)
+    op_type = operator.operator_type or "detallado"
+    qualifying = _fetch_qualifying(op_id, ws, we, db, op_type)
     liq = db.query(models.WeekLiquidation).filter_by(operator_id=op_id, week_start=ws).first()
 
     return _build_week_response(operator, ws, we, qualifying, liq)
@@ -140,19 +230,46 @@ def liquidate_week(
 
     ws = date.fromisoformat(week_start)
     we = ws + timedelta(days=6)
+    op_type = operator.operator_type or "detallado"
 
-    qualifying = _fetch_qualifying(op_id, ws, we, db)
-    # Only process orders that haven't been liquidated yet
-    unliquidated = [o for o in qualifying if o.week_liquidation_id is None]
+    qualifying = _fetch_qualifying(op_id, ws, we, db, op_type)
+    existing   = db.query(models.WeekLiquidation).filter_by(operator_id=op_id, week_start=ws).first()
 
-    existing = db.query(models.WeekLiquidation).filter_by(operator_id=op_id, week_start=ws).first()
+    # For pintura: no per-order tracking — just check if already liquidated
+    if op_type == "pintura":
+        if existing:
+            return _build_week_response(operator, ws, we, qualifying, existing)
+        unliquidated = qualifying
+    else:
+        unliquidated = [o for o in qualifying if o.week_liquidation_id is None]
+        if not unliquidated:
+            return _build_week_response(operator, ws, we, qualifying, existing)
 
-    if not unliquidated:
-        return _build_week_response(operator, ws, we, qualifying, existing)
+    # ── Commission calculation (uses standard_price, filtered by category) ────
+    relevant_cats = CATEGORY_MAP.get(op_type, DETALLADO_CATEGORIES)
 
-    rate = Decimal(str(operator.commission_rate)) / Decimal("100")
-    new_gross = sum((o.total or Decimal("0")) for o in unliquidated)
-    new_commission = (rate * new_gross).quantize(Decimal("0.01"))
+    if op_type == "pintura":
+        liq_piece_count = sum(
+            _pintura_pieces(_std(item))
+            for o in unliquidated for item in o.items
+            if _cat(item) in relevant_cats
+        )
+        new_commission = (liq_piece_count * PINTURA_PIECE_RATE).quantize(Decimal("0.01"))
+        new_commission_base = sum(
+            _std(item)
+            for o in unliquidated for item in o.items
+            if _cat(item) in relevant_cats
+        )
+    else:
+        rate = Decimal(str(operator.commission_rate)) / Decimal("100")
+        new_commission_base = sum(
+            _std(item)
+            for o in unliquidated for item in o.items
+            if _cat(item) in relevant_cats
+        )
+        new_commission = (rate * new_commission_base).quantize(Decimal("0.01"))
+
+    new_gross = new_commission_base  # for the liquidation record
 
     # Process operator→company abonos
     total_abonos = Decimal("0")
@@ -273,7 +390,7 @@ def liquidate_week(
         ).update({"liquidation_id": liq.id}, synchronize_session=False)
         db.commit()
 
-    qualifying = _fetch_qualifying(op_id, ws, we, db)
+    qualifying = _fetch_qualifying(op_id, ws, we, db, op_type)
     return _build_week_response(operator, ws, we, qualifying, liq)
 
 
@@ -332,13 +449,24 @@ def get_report(
         de = min(ds + timedelta(days=6), real_today)
         period_label = f"Semana del {ds.strftime('%d/%m')} al {de.strftime('%d/%m/%Y')}"
 
-    qualifying = _fetch_qualifying(op_id, ds, de, db)
+    op_type = operator.operator_type or "detallado"
+    relevant_cats = CATEGORY_MAP.get(op_type, DETALLADO_CATEGORIES)
+    qualifying = _fetch_qualifying(op_id, ds, de, db, op_type)
     rate = Decimal(str(operator.commission_rate)) / Decimal("100")
-    gross_total = sum((o.total or Decimal("0")) for o in qualifying)
-    commission = (rate * gross_total).quantize(Decimal("0.01"))
 
-    orders = [
-        schemas.ReportOrder(
+    # Build report orders with filtered items + standard prices
+    orders = []
+    gross_total = Decimal("0")
+    total_pieces = Decimal("0")
+    for o in sorted(qualifying, key=lambda x: x.date):
+        filtered = [i for i in o.items if _cat(i) in relevant_cats]
+        if not filtered:
+            continue
+        order_total = sum(_std(i) for i in filtered)
+        gross_total += order_total
+        order_pieces = sum(_pintura_pieces(_std(i)) for i in filtered) if op_type == "pintura" else Decimal("0")
+        total_pieces += order_pieces
+        orders.append(schemas.ReportOrder(
             order_number=o.order_number,
             date=str(o.date),
             vehicle_plate=o.vehicle.plate,
@@ -347,18 +475,21 @@ def get_report(
             items=[
                 schemas.ReportOrderItem(
                     service_name=i.service_name,
-                    service_category=i.service_category,
-                    unit_price=i.unit_price,
+                    service_category=_cat(i),
+                    unit_price=_std(i),
                     quantity=i.quantity,
-                    subtotal=i.subtotal,
+                    subtotal=_std(i),
                 )
-                for i in o.items
+                for i in filtered
             ],
-            total=o.total or Decimal("0"),
+            total=order_total,
             is_liquidated=o.week_liquidation_id is not None,
-        )
-        for o in sorted(qualifying, key=lambda x: x.date)
-    ]
+        ))
+
+    if op_type == "pintura":
+        commission = (total_pieces * PINTURA_PIECE_RATE).quantize(Decimal("0.01"))
+    else:
+        commission = (rate * gross_total).quantize(Decimal("0.01"))
 
     # ── Per-week liquidation status (Sunday-based weeks) ──────────────────────
     # Find the first Sunday on or before ds
@@ -369,7 +500,10 @@ def get_report(
         ws_end = cur + timedelta(days=6)
         liq = db.query(models.WeekLiquidation).filter_by(operator_id=op_id, week_start=cur).first()
         week_orders = [o for o in qualifying if cur <= o.date <= ws_end]
-        wk_gross = sum((o.total or Decimal("0")) for o in week_orders)
+        # Compute filtered gross for this week
+        wk_gross = Decimal("0")
+        for wo in week_orders:
+            wk_gross += sum(_std(i) for i in wo.items if _cat(i) in relevant_cats)
         wk_comm  = (rate * wk_gross).quantize(Decimal("0.01"))
         # Week is fully liquidated only when ALL its orders are stamped
         all_liquidated = len(week_orders) > 0 and all(o.week_liquidation_id is not None for o in week_orders)
