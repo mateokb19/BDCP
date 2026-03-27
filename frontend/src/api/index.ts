@@ -326,6 +326,7 @@ export interface ApiReportOrder {
   vehicle_model?: string
   items:         ApiReportOrderItem[]
   total:         string
+  piece_count?:  string
   is_liquidated: boolean
 }
 
@@ -335,6 +336,7 @@ export interface ApiReportWeekStatus {
   is_liquidated:       boolean
   week_gross:          string
   week_commission:     string
+  week_pieces?:        string
   net_amount?:         string
   payment_cash?:       string
   payment_datafono?:   string
@@ -353,6 +355,7 @@ export interface ApiReportPendingDebt {
 export interface ApiReportResponse {
   operator_id:        number
   operator_name:      string
+  operator_type:      string
   commission_rate:    string
   period_label:       string
   date_start:         string
@@ -360,6 +363,7 @@ export interface ApiReportResponse {
   orders:             ApiReportOrder[]
   total_services:     number
   gross_total:        string
+  total_pieces?:      string
   commission_amount:  string
   week_statuses:      ApiReportWeekStatus[]
   pending_debts:      ApiReportPendingDebt[]
@@ -522,6 +526,10 @@ export const api = {
       apiFetch<ApiDebt>(`/liquidation/debts/${debtId}/paid`, { method: 'PATCH' }),
     liquidate: (opId: number, weekStart: string, payload: LiquidatePayload) =>
       apiFetch<ApiLiqWeekResponse>(`/liquidation/${opId}/liquidate?week_start=${weekStart}`, { method: 'POST', body: JSON.stringify(payload) }),
+    getPending: (opId: number) =>
+      apiFetch<ApiLiqWeekResponse>(`/liquidation/${opId}/pending`),
+    liquidatePending: (opId: number, payload: LiquidatePayload) =>
+      apiFetch<ApiLiqWeekResponse>(`/liquidation/${opId}/liquidate-pending`, { method: 'POST', body: JSON.stringify(payload) }),
     getReport: (opId: number, period: 'week' | 'month', refDate?: string) => {
       const qs = new URLSearchParams({ period })
       if (refDate) qs.set('ref_date', refDate)

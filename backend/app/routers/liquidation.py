@@ -53,13 +53,16 @@ def _build_week_response(
     we: date,
     qualifying: list,
     liq_record: models.WeekLiquidation | None,
+    op_liq_ids: set[int] | None = None,
 ) -> schemas.LiqWeekResponse:
     op_type = operator.operator_type or "detallado"
     relevant_cats = CATEGORY_MAP.get(op_type, DETALLADO_CATEGORIES)
 
     days_map: dict[date, list] = {}
-    for i in range(7):
-        days_map[ws + timedelta(days=i)] = []
+    cur = ws
+    while cur <= we:
+        days_map[cur] = []
+        cur += timedelta(days=1)
 
     for order in qualifying:
         d = order.date if isinstance(order.date, date) else date.fromisoformat(str(order.date))
@@ -112,7 +115,10 @@ def _build_week_response(
                 items=item_schemas,
                 total=order_total,
                 piece_count=order_pieces if op_type == "pintura" else None,
-                is_liquidated=o.week_liquidation_id is not None,
+                is_liquidated=(
+                    o.week_liquidation_id is not None
+                    and (op_liq_ids is None or o.week_liquidation_id in op_liq_ids)
+                ),
             ))
             day_total += order_total
             total_piece_count += order_pieces
@@ -145,10 +151,7 @@ def _build_week_response(
         for o in day.orders:
             if not o.is_liquidated:
                 unliq_order_ids.add(o.order_id)
-    if op_type == "pintura":
-        unliquidated_count = 0 if liq_record else len(unliq_order_ids)
-    else:
-        unliquidated_count = len(unliq_order_ids)
+    unliquidated_count = len(unliq_order_ids)
 
     return schemas.LiqWeekResponse(
         operator_id=operator.id,
@@ -173,6 +176,12 @@ def _build_week_response(
         payment_bancolombia_amount=liq_record.payment_bancolombia if liq_record else None,
         amount_pending=liq_record.amount_pending if liq_record else None,
     )
+
+
+def _fetch_all_qualifying(op_id: int, db: Session, op_type: str = "detallado") -> list:
+    """Like _fetch_qualifying but with no date filter — returns all qualifying orders ever."""
+    from app.tz import today_bogota
+    return _fetch_qualifying(op_id, date(2020, 1, 1), today_bogota(), db, op_type)
 
 
 def _fetch_qualifying(op_id: int, ws: date, we: date, db: Session, op_type: str = "detallado") -> list:
@@ -213,8 +222,11 @@ def get_week(op_id: int, week_start: str = Query(...), db: Session = Depends(get
     op_type = operator.operator_type or "detallado"
     qualifying = _fetch_qualifying(op_id, ws, we, db, op_type)
     liq = db.query(models.WeekLiquidation).filter_by(operator_id=op_id, week_start=ws).first()
+    op_liq_ids = {
+        r.id for r in db.query(models.WeekLiquidation.id).filter_by(operator_id=op_id).all()
+    }
 
-    return _build_week_response(operator, ws, we, qualifying, liq)
+    return _build_week_response(operator, ws, we, qualifying, liq, op_liq_ids)
 
 
 @router.post("/{op_id}/liquidate", response_model=schemas.LiqWeekResponse)
@@ -234,16 +246,14 @@ def liquidate_week(
 
     qualifying = _fetch_qualifying(op_id, ws, we, db, op_type)
     existing   = db.query(models.WeekLiquidation).filter_by(operator_id=op_id, week_start=ws).first()
+    op_liq_ids = {
+        r.id for r in db.query(models.WeekLiquidation.id).filter_by(operator_id=op_id).all()
+    }
 
-    # For pintura: no per-order tracking — just check if already liquidated
-    if op_type == "pintura":
-        if existing:
-            return _build_week_response(operator, ws, we, qualifying, existing)
-        unliquidated = qualifying
-    else:
-        unliquidated = [o for o in qualifying if o.week_liquidation_id is None]
-        if not unliquidated:
-            return _build_week_response(operator, ws, we, qualifying, existing)
+    # Filter to orders not yet liquidated by this operator
+    unliquidated = [o for o in qualifying if o.week_liquidation_id not in op_liq_ids]
+    if not unliquidated:
+        return _build_week_response(operator, ws, we, qualifying, existing, op_liq_ids)
 
     # ── Commission calculation (uses standard_price, filtered by category) ────
     relevant_cats = CATEGORY_MAP.get(op_type, DETALLADO_CATEGORIES)
@@ -341,7 +351,7 @@ def liquidate_week(
         except IntegrityError:
             db.rollback()
             existing = db.query(models.WeekLiquidation).filter_by(operator_id=op_id, week_start=ws).first()
-            return _build_week_response(operator, ws, we, qualifying, existing)
+            return _build_week_response(operator, ws, we, qualifying, existing, op_liq_ids)
 
     # Stamp unliquidated orders with this liquidation's id
     for o in unliquidated:
@@ -391,7 +401,239 @@ def liquidate_week(
         db.commit()
 
     qualifying = _fetch_qualifying(op_id, ws, we, db, op_type)
-    return _build_week_response(operator, ws, we, qualifying, liq)
+    op_liq_ids = {
+        r.id for r in db.query(models.WeekLiquidation.id).filter_by(operator_id=op_id).all()
+    }
+    return _build_week_response(operator, ws, we, qualifying, liq, op_liq_ids)
+
+
+@router.get("/{op_id}/pending", response_model=schemas.LiqWeekResponse)
+def get_all_pending(op_id: int, db: Session = Depends(get_db)):
+    """Return all unliquidated qualifying orders for an operator (across all weeks)."""
+    operator = db.query(models.Operator).filter_by(id=op_id).first()
+    if not operator:
+        raise HTTPException(404, "Operario no encontrado")
+    op_type = operator.operator_type or "detallado"
+    qualifying = _fetch_all_qualifying(op_id, db, op_type)
+    op_liq_ids = {r.id for r in db.query(models.WeekLiquidation.id).filter_by(operator_id=op_id).all()}
+    unliquidated = [o for o in qualifying if o.week_liquidation_id not in op_liq_ids]
+
+    from app.tz import today_bogota
+    today = today_bogota()
+    if not unliquidated:
+        return _build_week_response(operator, today, today, [], None, op_liq_ids)
+
+    def _ord_date(o) -> date:
+        return o.date if isinstance(o.date, date) else date.fromisoformat(str(o.date))
+
+    min_date = min(_ord_date(o) for o in unliquidated)
+    return _build_week_response(operator, min_date, today, unliquidated, None, op_liq_ids)
+
+
+@router.post("/{op_id}/liquidate-pending", response_model=schemas.LiqWeekResponse)
+def liquidate_all_pending(
+    op_id: int,
+    body: schemas.LiquidatePayload = schemas.LiquidatePayload(),
+    db: Session = Depends(get_db),
+):
+    """Liquidate ALL unliquidated orders for an operator at once (across all weeks)."""
+    from collections import defaultdict
+    from app.tz import today_bogota
+
+    operator = db.query(models.Operator).filter_by(id=op_id).first()
+    if not operator:
+        raise HTTPException(404, "Operario no encontrado")
+
+    op_type = operator.operator_type or "detallado"
+    relevant_cats = CATEGORY_MAP.get(op_type, DETALLADO_CATEGORIES)
+
+    qualifying = _fetch_all_qualifying(op_id, db, op_type)
+    op_liq_ids = {r.id for r in db.query(models.WeekLiquidation.id).filter_by(operator_id=op_id).all()}
+    unliquidated = [o for o in qualifying if o.week_liquidation_id not in op_liq_ids]
+
+    today = today_bogota()
+    if not unliquidated:
+        return _build_week_response(operator, today, today, qualifying, None, op_liq_ids)
+
+    def _ord_date(o) -> date:
+        return o.date if isinstance(o.date, date) else date.fromisoformat(str(o.date))
+
+    def _week_start(d: date) -> date:
+        return d - timedelta(days=d.isoweekday() % 7)
+
+    # ── Commission per week ───────────────────────────────────────────────────
+    weeks_orders: dict[date, list] = defaultdict(list)
+    for o in unliquidated:
+        weeks_orders[_week_start(_ord_date(o))].append(o)
+
+    week_commissions: dict[date, Decimal] = {}
+    week_gross_map:   dict[date, Decimal] = {}
+    total_commission = Decimal("0")
+    rate = Decimal(str(operator.commission_rate)) / Decimal("100")
+
+    for ws, orders in weeks_orders.items():
+        if op_type == "pintura":
+            pieces = sum(
+                _pintura_pieces(_std(i))
+                for o in orders for i in o.items if _cat(i) in relevant_cats
+            )
+            comm = (pieces * PINTURA_PIECE_RATE).quantize(Decimal("0.01"))
+            gross = sum(_std(i) for o in orders for i in o.items if _cat(i) in relevant_cats)
+        else:
+            gross = sum(_std(i) for o in orders for i in o.items if _cat(i) in relevant_cats)
+            comm  = (rate * gross).quantize(Decimal("0.01"))
+        week_commissions[ws] = comm
+        week_gross_map[ws]   = gross
+        total_commission += comm
+
+    # ── Abonos operario→empresa ───────────────────────────────────────────────
+    total_abonos = Decimal("0")
+    for abono in body.abonos:
+        if abono.amount <= 0:
+            continue
+        debt = db.query(models.Debt).filter_by(id=abono.debt_id, operator_id=op_id).first()
+        if not debt or debt.direction != "operario_empresa":
+            continue
+        remaining = debt.amount - (debt.paid_amount or Decimal("0"))
+        pay = min(abono.amount, remaining)
+        db.add(models.DebtPayment(debt_id=debt.id, amount=pay))
+        debt.paid_amount = (debt.paid_amount or Decimal("0")) + pay
+        if debt.paid_amount >= debt.amount:
+            debt.paid = True
+        total_abonos += pay
+
+    # ── Empresa→operario settlements ─────────────────────────────────────────
+    total_settled = Decimal("0")
+    for settlement in body.company_settlements:
+        if settlement.amount <= 0:
+            continue
+        debt = db.query(models.Debt).filter_by(id=settlement.debt_id, operator_id=op_id).first()
+        if not debt or debt.direction != "empresa_operario":
+            continue
+        remaining = debt.amount - (debt.paid_amount or Decimal("0"))
+        pay = min(settlement.amount, remaining)
+        db.add(models.DebtPayment(debt_id=debt.id, amount=pay))
+        debt.paid_amount = (debt.paid_amount or Decimal("0")) + pay
+        if debt.paid_amount >= debt.amount:
+            debt.paid = True
+        total_settled += pay
+
+    db.flush()
+
+    net_amount   = (total_commission - total_abonos + total_settled).quantize(Decimal("0.01"))
+    total_paid   = (body.payment_cash + body.payment_datafono + body.payment_nequi + body.payment_bancolombia).quantize(Decimal("0.01"))
+    amount_pending = max(Decimal("0"), net_amount - total_paid).quantize(Decimal("0.01"))
+
+    # ── Create one WeekLiquidation per week (payments distributed proportionally) ─
+    sorted_weeks = sorted(weeks_orders.keys())
+    all_liq_ids: list[int] = []
+    last_liq_id: int | None = None
+
+    for idx, ws in enumerate(sorted_weeks):
+        we = ws + timedelta(days=6)
+        orders = weeks_orders[ws]
+
+        if total_commission > 0:
+            ratio = week_commissions[ws] / total_commission
+        else:
+            ratio = Decimal("1") / len(sorted_weeks)
+
+        # Give the last week the remainder to avoid floating-point drift
+        if idx == len(sorted_weeks) - 1:
+            already_paid = sum(
+                (body.payment_cash + body.payment_datafono + body.payment_nequi + body.payment_bancolombia)
+                * (week_commissions[w] / total_commission)
+                for w in sorted_weeks[:-1]
+            ).quantize(Decimal("0.01")) if total_commission > 0 else Decimal("0")
+            week_cash        = (body.payment_cash        - sum((body.payment_cash        * week_commissions[w] / total_commission).quantize(Decimal("0.01")) for w in sorted_weeks[:-1])).quantize(Decimal("0.01"))
+            week_datafono    = (body.payment_datafono    - sum((body.payment_datafono    * week_commissions[w] / total_commission).quantize(Decimal("0.01")) for w in sorted_weeks[:-1])).quantize(Decimal("0.01"))
+            week_nequi       = (body.payment_nequi       - sum((body.payment_nequi       * week_commissions[w] / total_commission).quantize(Decimal("0.01")) for w in sorted_weeks[:-1])).quantize(Decimal("0.01"))
+            week_bancolombia = (body.payment_bancolombia - sum((body.payment_bancolombia * week_commissions[w] / total_commission).quantize(Decimal("0.01")) for w in sorted_weeks[:-1])).quantize(Decimal("0.01"))
+            week_pending     = (amount_pending           - sum((amount_pending           * week_commissions[w] / total_commission).quantize(Decimal("0.01")) for w in sorted_weeks[:-1])).quantize(Decimal("0.01"))
+            week_net         = (net_amount               - sum((net_amount               * week_commissions[w] / total_commission).quantize(Decimal("0.01")) for w in sorted_weeks[:-1])).quantize(Decimal("0.01"))
+        else:
+            week_cash        = (body.payment_cash        * ratio).quantize(Decimal("0.01"))
+            week_datafono    = (body.payment_datafono    * ratio).quantize(Decimal("0.01"))
+            week_nequi       = (body.payment_nequi       * ratio).quantize(Decimal("0.01"))
+            week_bancolombia = (body.payment_bancolombia * ratio).quantize(Decimal("0.01"))
+            week_pending     = (amount_pending           * ratio).quantize(Decimal("0.01"))
+            week_net         = (net_amount               * ratio).quantize(Decimal("0.01"))
+
+        existing = db.query(models.WeekLiquidation).filter_by(operator_id=op_id, week_start=ws).first()
+        if existing:
+            existing.total_amount      = (existing.total_amount      or Decimal("0")) + week_gross_map[ws]
+            existing.commission_amount = (existing.commission_amount or Decimal("0")) + week_commissions[ws]
+            existing.net_amount        = (existing.net_amount        or Decimal("0")) + week_net
+            existing.payment_cash      = (existing.payment_cash      or Decimal("0")) + week_cash
+            existing.payment_datafono  = (existing.payment_datafono  or Decimal("0")) + week_datafono
+            existing.payment_nequi     = (existing.payment_nequi     or Decimal("0")) + week_nequi
+            existing.payment_bancolombia = (existing.payment_bancolombia or Decimal("0")) + week_bancolombia
+            existing.amount_pending    = (existing.amount_pending    or Decimal("0")) + week_pending
+            liq = existing
+        else:
+            liq = models.WeekLiquidation(
+                operator_id=op_id, week_start=ws,
+                total_amount=week_gross_map[ws],
+                commission_amount=week_commissions[ws],
+                net_amount=week_net,
+                payment_cash=week_cash,
+                payment_datafono=week_datafono,
+                payment_nequi=week_nequi,
+                payment_bancolombia=week_bancolombia,
+                amount_pending=week_pending,
+            )
+            db.add(liq)
+            try:
+                db.flush()
+            except IntegrityError:
+                db.rollback()
+                liq = db.query(models.WeekLiquidation).filter_by(operator_id=op_id, week_start=ws).first()
+
+        for o in orders:
+            o.week_liquidation_id = liq.id
+        all_liq_ids.append(liq.id)
+        last_liq_id = liq.id
+
+    # ── Pending debt ──────────────────────────────────────────────────────────
+    if amount_pending > 0:
+        db.add(models.Debt(
+            operator_id=op_id,
+            direction="empresa_operario",
+            amount=amount_pending,
+            description=f"Pendiente liquidación {today}",
+        ))
+
+    db.commit()
+
+    # ── Expense records (one per method, not per week) ────────────────────────
+    for amt, label in [
+        (body.payment_cash,        "Efectivo"),
+        (body.payment_datafono,    "Datáfono"),
+        (body.payment_nequi,       "Nequi"),
+        (body.payment_bancolombia, "Bancolombia"),
+    ]:
+        if amt > 0:
+            db.add(models.Expense(
+                date=today,
+                amount=amt,
+                category="Salarios",
+                description=f"Pago operario {operator.name}",
+                payment_method=label,
+            ))
+    db.commit()
+
+    # ── Link debt payments to last liquidation ────────────────────────────────
+    all_debt_ids = [a.debt_id for a in body.abonos] + [s.debt_id for s in body.company_settlements]
+    if all_debt_ids and last_liq_id:
+        db.query(models.DebtPayment).filter(
+            models.DebtPayment.liquidation_id.is_(None),
+            models.DebtPayment.debt_id.in_(all_debt_ids),
+        ).update({"liquidation_id": last_liq_id}, synchronize_session=False)
+        db.commit()
+
+    # ── Return updated view ───────────────────────────────────────────────────
+    op_liq_ids = {r.id for r in db.query(models.WeekLiquidation.id).filter_by(operator_id=op_id).all()}
+    return _build_week_response(operator, today, today, [], None, op_liq_ids)
 
 
 @router.get("/{op_id}/debts", response_model=list[schemas.DebtOut])
@@ -453,6 +695,9 @@ def get_report(
     relevant_cats = CATEGORY_MAP.get(op_type, DETALLADO_CATEGORIES)
     qualifying = _fetch_qualifying(op_id, ds, de, db, op_type)
     rate = Decimal(str(operator.commission_rate)) / Decimal("100")
+    op_liq_ids = {
+        r.id for r in db.query(models.WeekLiquidation.id).filter_by(operator_id=op_id).all()
+    }
 
     # Build report orders with filtered items + standard prices
     orders = []
@@ -483,7 +728,8 @@ def get_report(
                 for i in filtered
             ],
             total=order_total,
-            is_liquidated=o.week_liquidation_id is not None,
+            piece_count=order_pieces if op_type == "pintura" else None,
+            is_liquidated=o.week_liquidation_id in op_liq_ids,
         ))
 
     if op_type == "pintura":
@@ -502,17 +748,26 @@ def get_report(
         week_orders = [o for o in qualifying if cur <= o.date <= ws_end]
         # Compute filtered gross for this week
         wk_gross = Decimal("0")
+        wk_pieces = Decimal("0")
         for wo in week_orders:
-            wk_gross += sum(_std(i) for i in wo.items if _cat(i) in relevant_cats)
-        wk_comm  = (rate * wk_gross).quantize(Decimal("0.01"))
-        # Week is fully liquidated only when ALL its orders are stamped
-        all_liquidated = len(week_orders) > 0 and all(o.week_liquidation_id is not None for o in week_orders)
+            for i in wo.items:
+                if _cat(i) in relevant_cats:
+                    wk_gross += _std(i)
+                    if op_type == "pintura":
+                        wk_pieces += _pintura_pieces(_std(i))
+        if op_type == "pintura":
+            wk_comm = (wk_pieces * PINTURA_PIECE_RATE).quantize(Decimal("0.01"))
+        else:
+            wk_comm = (rate * wk_gross).quantize(Decimal("0.01"))
+        # Week is fully liquidated only when ALL its orders are stamped with this operator's liq
+        all_liquidated = len(week_orders) > 0 and all(o.week_liquidation_id in op_liq_ids for o in week_orders)
         week_statuses.append(schemas.ReportWeekStatus(
             week_start=str(cur),
             week_end=str(ws_end),
             is_liquidated=all_liquidated,
             week_gross=wk_gross,
             week_commission=wk_comm,
+            week_pieces=wk_pieces if op_type == "pintura" else None,
             net_amount=liq.net_amount if liq else None,
             payment_cash=liq.payment_cash if liq else None,
             payment_datafono=liq.payment_datafono if liq else None,
@@ -544,6 +799,7 @@ def get_report(
     return schemas.ReportResponse(
         operator_id=operator.id,
         operator_name=operator.name,
+        operator_type=op_type,
         commission_rate=operator.commission_rate,
         period_label=period_label,
         date_start=str(ds),
@@ -551,6 +807,7 @@ def get_report(
         orders=orders,
         total_services=len(qualifying),
         gross_total=gross_total,
+        total_pieces=total_pieces if op_type == "pintura" else None,
         commission_amount=commission,
         week_statuses=week_statuses,
         pending_debts=pending_debts,

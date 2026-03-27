@@ -39,6 +39,8 @@ export default function LiquidacionPage() {
   const [openDays,    setOpenDays]    = useState<Set<string>>(new Set())
   const [addDebtOpen, setAddDebtOpen] = useState(false)
   const [liquidarOpen, setLiquidarOpen] = useState(false)
+  const [pendingData,  setPendingData]  = useState<ApiLiqWeekResponse | null>(null)
+  const [pendingLoading, setPendingLoading] = useState(false)
   const [reportModalOpen, setReportModalOpen] = useState(false)
   const [customMonthOpen, setCustomMonthOpen] = useState(false)
   const [customMonthValue, setCustomMonthValue] = useState(() => {
@@ -190,13 +192,18 @@ export default function LiquidacionPage() {
   }
 
   async function handleLiquidate(payload: LiquidatePayload) {
-    if (!selectedOp || !weekData) return
-    const updated = await api.liquidation.liquidate(selectedOp, weekData.week_start, payload)
-    setWeekData(updated)
-    // Refresh debts as they may have changed
-    const updatedDebts = await api.liquidation.listDebts(selectedOp)
+    if (!selectedOp) return
+    await api.liquidation.liquidatePending(selectedOp, payload)
+    // Refresh week view and debts
+    const ws = format(getWeekStart(weekOffset), 'yyyy-MM-dd')
+    const [updatedWeek, updatedDebts] = await Promise.all([
+      api.liquidation.getWeek(selectedOp, ws),
+      api.liquidation.listDebts(selectedOp),
+    ])
+    setWeekData(updatedWeek)
+    setPendingData(null)
     setDebts(updatedDebts)
-    toast.success('Semana liquidada correctamente')
+    toast.success('Liquidación completada')
   }
 
   async function downloadReport(period: 'week' | 'month', refDate: string) {
@@ -295,12 +302,12 @@ export default function LiquidacionPage() {
         />
 
         {/* Liquidar modal */}
-        {operator && weekData && (
+        {operator && pendingData && (
           <LiquidarModal
             open={liquidarOpen}
             onClose={() => setLiquidarOpen(false)}
             operator={operator}
-            weekData={weekData}
+            weekData={pendingData}
             debts={debts}
             onConfirm={handleLiquidate}
           />
@@ -454,7 +461,20 @@ export default function LiquidacionPage() {
           setWeekOffset={setWeekOffset}
           openDays={openDays}
           toggleDay={toggleDay}
-          onLiquidarClick={() => setLiquidarOpen(true)}
+          pendingLoading={pendingLoading}
+          onLiquidarClick={async () => {
+            if (!selectedOp) return
+            setPendingLoading(true)
+            try {
+              const data = await api.liquidation.getPending(selectedOp)
+              setPendingData(data)
+              setLiquidarOpen(true)
+            } catch {
+              toast.error('Error al cargar servicios pendientes')
+            } finally {
+              setPendingLoading(false)
+            }
+          }}
         />
 
         <DebtPanel
