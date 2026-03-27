@@ -47,6 +47,25 @@ def _pintura_pieces(standard_price: Decimal) -> Decimal:
     return Decimal("0")
 
 
+def _real_pending(liq_record: models.WeekLiquidation | None, db: Session | None) -> Decimal | None:
+    """Return the actual remaining pending amount for a liquidation record.
+
+    If the linked debt exists and has been (partially) paid, reflects those payments.
+    Falls back to liq_record.amount_pending if no linked debt found.
+    """
+    if not liq_record:
+        return None
+    if db is not None and liq_record.id is not None:
+        debt = db.query(models.Debt).filter_by(
+            week_liquidation_id=liq_record.id,
+            direction="empresa_operario",
+        ).first()
+        if debt is not None:
+            remaining = debt.amount - (debt.paid_amount or Decimal("0"))
+            return max(Decimal("0"), remaining)
+    return liq_record.amount_pending
+
+
 def _build_week_response(
     operator: models.Operator,
     ws: date,
@@ -54,6 +73,7 @@ def _build_week_response(
     qualifying: list,
     liq_record: models.WeekLiquidation | None,
     op_liq_ids: set[int] | None = None,
+    db: Session | None = None,
 ) -> schemas.LiqWeekResponse:
     op_type = operator.operator_type or "detallado"
     relevant_cats = CATEGORY_MAP.get(op_type, DETALLADO_CATEGORIES)
@@ -174,7 +194,7 @@ def _build_week_response(
         payment_datafono_amount=liq_record.payment_datafono if liq_record else None,
         payment_nequi_amount=liq_record.payment_nequi if liq_record else None,
         payment_bancolombia_amount=liq_record.payment_bancolombia if liq_record else None,
-        amount_pending=liq_record.amount_pending if liq_record else None,
+        amount_pending=_real_pending(liq_record, db),
     )
 
 
@@ -226,7 +246,7 @@ def get_week(op_id: int, week_start: str = Query(...), db: Session = Depends(get
         r.id for r in db.query(models.WeekLiquidation.id).filter_by(operator_id=op_id).all()
     }
 
-    return _build_week_response(operator, ws, we, qualifying, liq, op_liq_ids)
+    return _build_week_response(operator, ws, we, qualifying, liq, op_liq_ids, db=db)
 
 
 @router.post("/{op_id}/liquidate", response_model=schemas.LiqWeekResponse)
@@ -253,7 +273,7 @@ def liquidate_week(
     # Filter to orders not yet liquidated by this operator
     unliquidated = [o for o in qualifying if o.week_liquidation_id not in op_liq_ids]
     if not unliquidated:
-        return _build_week_response(operator, ws, we, qualifying, existing, op_liq_ids)
+        return _build_week_response(operator, ws, we, qualifying, existing, op_liq_ids, db=db)
 
     # ── Commission calculation (uses standard_price, filtered by category) ────
     relevant_cats = CATEGORY_MAP.get(op_type, DETALLADO_CATEGORIES)
@@ -351,7 +371,7 @@ def liquidate_week(
         except IntegrityError:
             db.rollback()
             existing = db.query(models.WeekLiquidation).filter_by(operator_id=op_id, week_start=ws).first()
-            return _build_week_response(operator, ws, we, qualifying, existing, op_liq_ids)
+            return _build_week_response(operator, ws, we, qualifying, existing, op_liq_ids, db=db)
 
     # Stamp unliquidated orders with this liquidation's id
     for o in unliquidated:
@@ -364,6 +384,7 @@ def liquidate_week(
             direction="empresa_operario",
             amount=amount_pending,
             description=f"Pendiente liquidación semana {week_start}",
+            week_liquidation_id=liq.id,
         )
         db.add(pending_debt)
 
@@ -404,7 +425,7 @@ def liquidate_week(
     op_liq_ids = {
         r.id for r in db.query(models.WeekLiquidation.id).filter_by(operator_id=op_id).all()
     }
-    return _build_week_response(operator, ws, we, qualifying, liq, op_liq_ids)
+    return _build_week_response(operator, ws, we, qualifying, liq, op_liq_ids, db=db)
 
 
 @router.get("/{op_id}/pending", response_model=schemas.LiqWeekResponse)
@@ -421,13 +442,13 @@ def get_all_pending(op_id: int, db: Session = Depends(get_db)):
     from app.tz import today_bogota
     today = today_bogota()
     if not unliquidated:
-        return _build_week_response(operator, today, today, [], None, op_liq_ids)
+        return _build_week_response(operator, today, today, [], None, op_liq_ids, db=db)
 
     def _ord_date(o) -> date:
         return o.date if isinstance(o.date, date) else date.fromisoformat(str(o.date))
 
     min_date = min(_ord_date(o) for o in unliquidated)
-    return _build_week_response(operator, min_date, today, unliquidated, None, op_liq_ids)
+    return _build_week_response(operator, min_date, today, unliquidated, None, op_liq_ids, db=db)
 
 
 @router.post("/{op_id}/liquidate-pending", response_model=schemas.LiqWeekResponse)
@@ -453,7 +474,7 @@ def liquidate_all_pending(
 
     today = today_bogota()
     if not unliquidated:
-        return _build_week_response(operator, today, today, qualifying, None, op_liq_ids)
+        return _build_week_response(operator, today, today, qualifying, None, op_liq_ids, db=db)
 
     def _ord_date(o) -> date:
         return o.date if isinstance(o.date, date) else date.fromisoformat(str(o.date))
@@ -602,6 +623,7 @@ def liquidate_all_pending(
             direction="empresa_operario",
             amount=amount_pending,
             description=f"Pendiente liquidación {today}",
+            week_liquidation_id=last_liq_id,
         ))
 
     db.commit()
@@ -634,7 +656,7 @@ def liquidate_all_pending(
 
     # ── Return updated view ───────────────────────────────────────────────────
     op_liq_ids = {r.id for r in db.query(models.WeekLiquidation.id).filter_by(operator_id=op_id).all()}
-    return _build_week_response(operator, today, today, [], None, op_liq_ids)
+    return _build_week_response(operator, today, today, [], None, op_liq_ids, db=db)
 
 
 @router.get("/{op_id}/debts", response_model=list[schemas.DebtOut])

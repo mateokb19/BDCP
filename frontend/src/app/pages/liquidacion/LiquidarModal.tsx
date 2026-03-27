@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
-  Banknote, Phone, CreditCard, TrendingUp, TrendingDown, Check, X,
+  Banknote, Phone, CreditCard, TrendingUp, TrendingDown, Check, X, Scissors,
 } from 'lucide-react'
 import { format, parseISO } from 'date-fns'
 import { es } from 'date-fns/locale'
@@ -44,6 +44,8 @@ export function LiquidarModal({ open, onClose, operator: _operator, weekData, de
   const [paySelected,   setPaySelected]   = useState<Set<string>>(new Set())
   const [payAmounts,    setPayAmounts]    = useState<Record<string, string>>({})
   const [submitting,    setSubmitting]    = useState(false)
+  const [partialMode,   setPartialMode]   = useState(false)
+  const [partialInput,  setPartialInput]  = useState('')
 
   // Reset when modal opens
   useEffect(() => {
@@ -59,6 +61,8 @@ export function LiquidarModal({ open, onClose, operator: _operator, weekData, de
     setSettleInputs(si)
     setPaySelected(new Set())
     setPayAmounts({})
+    setPartialMode(false)
+    setPartialInput('')
   }, [open])
 
   const totalAbonos  = unpaidOpOwes.reduce((s, d) => s + (Number(abonoInputs[d.id]) || 0), 0)
@@ -66,9 +70,15 @@ export function LiquidarModal({ open, onClose, operator: _operator, weekData, de
     s + (settleInputs[d.id]?.include ? (Number(settleInputs[d.id]?.amount) || 0) : 0), 0)
   const netAmount    = commission - totalAbonos + totalSettled
 
+  // Partial payment: cap what the user commits to paying now
+  const parsedPartial = Number(parseCOP(partialInput)) || 0
+  const effectiveNet  = partialMode
+    ? Math.min(Math.max(0, parsedPartial), netAmount)
+    : netAmount
+
   function getPayAmount(key: string): number {
     if (!paySelected.has(key)) return 0
-    if (paySelected.size === 1) return Math.max(0, netAmount)
+    if (paySelected.size === 1) return Math.max(0, effectiveNet)
     return Number(payAmounts[key]) || 0
   }
 
@@ -82,6 +92,12 @@ export function LiquidarModal({ open, onClose, operator: _operator, weekData, de
       else next.add(key)
       return next
     })
+    setPayAmounts({})
+  }
+
+  function togglePartialMode() {
+    setPartialMode(p => !p)
+    setPartialInput('')
     setPayAmounts({})
   }
 
@@ -284,7 +300,50 @@ export function LiquidarModal({ open, onClose, operator: _operator, weekData, de
 
               {/* Método de pago */}
               <div className="space-y-3">
-                <p className="text-xs font-semibold text-gray-300 uppercase tracking-wider">Método de pago</p>
+                <div className="flex items-center justify-between">
+                  <p className="text-xs font-semibold text-gray-300 uppercase tracking-wider">Método de pago</p>
+                  <button
+                    type="button"
+                    onClick={togglePartialMode}
+                    className={cn(
+                      'flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-xs transition-all',
+                      partialMode
+                        ? 'border-orange-500/40 bg-orange-500/10 text-orange-300'
+                        : 'border-white/10 bg-white/5 text-gray-400 hover:border-white/20 hover:text-gray-300'
+                    )}
+                  >
+                    <Scissors size={11} />
+                    Pago parcial
+                    {partialMode && <Check size={11} />}
+                  </button>
+                </div>
+
+                {/* Partial amount input */}
+                {partialMode && (
+                  <div className="rounded-xl border border-orange-500/20 bg-orange-500/5 px-4 py-3 space-y-2">
+                    <p className="text-xs text-orange-300/80">Ingresa cuánto vas a pagar ahora. El resto quedará como deuda hacia el operario.</p>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-gray-400 shrink-0">Monto a pagar:</span>
+                      <input
+                        type="text" inputMode="numeric"
+                        placeholder={`Máx $${cop(netAmount)}`}
+                        value={fmtCOP(partialInput)}
+                        onChange={e => {
+                          const raw = parseCOP(e.target.value)
+                          const capped = raw === '' ? '' : String(Math.min(Number(raw), netAmount))
+                          setPartialInput(capped)
+                          setPayAmounts({})
+                        }}
+                        className="flex-1 rounded-lg border border-orange-500/30 bg-white/5 px-3 py-1.5 text-sm text-gray-100 placeholder:text-gray-600 focus:border-orange-400/60 focus:outline-none"
+                      />
+                    </div>
+                    {parsedPartial > 0 && parsedPartial < netAmount && (
+                      <p className="text-xs text-orange-400 font-medium">
+                        Deuda que quedará: ${cop(netAmount - Math.min(parsedPartial, netAmount))}
+                      </p>
+                    )}
+                  </div>
+                )}
 
                 {/* Method checkboxes */}
                 <div className="grid grid-cols-2 gap-2">
@@ -326,7 +385,7 @@ export function LiquidarModal({ open, onClose, operator: _operator, weekData, de
                             const otherTotal = PAY_METHODS
                               .filter(o => paySelected.has(o.key) && o.key !== m.key)
                               .reduce((s, o) => s + (Number(payAmounts[o.key]) || 0), 0)
-                            const capped = Math.min(raw, Math.max(0, netAmount - otherTotal))
+                            const capped = Math.min(raw, Math.max(0, effectiveNet - otherTotal))
                             setPayAmounts(p => ({ ...p, [m.key]: String(capped) }))
                           }}
                           onWheel={e => e.currentTarget.blur()}
@@ -367,10 +426,13 @@ export function LiquidarModal({ open, onClose, operator: _operator, weekData, de
               <Button
                 variant="primary" size="md" className="w-full"
                 onClick={handleConfirm}
-                disabled={submitting || paySelected.size === 0}
+                disabled={submitting || paySelected.size === 0 || (partialMode && parsedPartial <= 0)}
               >
                 <Banknote size={16} />
-                {submitting ? 'Procesando...' : paySelected.size === 0 ? 'Selecciona un método de pago' : 'Confirmar liquidación'}
+                {submitting ? 'Procesando...'
+                  : paySelected.size === 0 ? 'Selecciona un método de pago'
+                  : partialMode && parsedPartial <= 0 ? 'Ingresa el monto parcial'
+                  : 'Confirmar liquidación'}
               </Button>
             </div>
           </motion.div>

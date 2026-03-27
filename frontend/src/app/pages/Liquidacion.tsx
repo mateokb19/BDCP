@@ -462,13 +462,18 @@ export default function LiquidacionPage() {
           openDays={openDays}
           toggleDay={toggleDay}
           pendingLoading={pendingLoading}
+          noPending={pendingData !== null && pendingData.unliquidated_count === 0}
           onLiquidarClick={async () => {
             if (!selectedOp) return
             setPendingLoading(true)
             try {
               const data = await api.liquidation.getPending(selectedOp)
               setPendingData(data)
-              setLiquidarOpen(true)
+              if (data.unliquidated_count === 0) {
+                toast.info('No hay servicios pendientes por liquidar')
+              } else {
+                setLiquidarOpen(true)
+              }
             } catch {
               toast.error('Error al cargar servicios pendientes')
             } finally {

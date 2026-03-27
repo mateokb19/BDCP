@@ -20,6 +20,7 @@ interface WeekPanelProps {
   toggleDay: (dateStr: string) => void
   onLiquidarClick: () => void
   pendingLoading?: boolean
+  noPending?: boolean
 }
 
 export function WeekPanel({
@@ -31,6 +32,7 @@ export function WeekPanel({
   toggleDay,
   onLiquidarClick,
   pendingLoading = false,
+  noPending = false,
 }: WeekPanelProps) {
   const weekStart = getWeekStart(weekOffset)
   const weekEnd   = addDays(weekStart, 6)
@@ -140,13 +142,13 @@ export function WeekPanel({
               </div>
             )}
             <Button
-              variant="primary"
+              variant={noPending ? 'secondary' : 'primary'}
               size="md" className="w-full"
               onClick={onLiquidarClick}
-              disabled={pendingLoading}
+              disabled={pendingLoading || noPending}
             >
               <Banknote size={16} />
-              {pendingLoading ? 'Cargando...' : 'Liquidar servicios pendientes'}
+              {pendingLoading ? 'Cargando...' : noPending ? 'Todo liquidado' : 'Liquidar servicios pendientes'}
             </Button>
           </div>
         </>

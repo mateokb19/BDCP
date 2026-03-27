@@ -221,14 +221,15 @@ class DebtDirectionEnum(str, enum.Enum):
 class Debt(Base):
     __tablename__ = "debts"
 
-    id          = Column(Integer, primary_key=True)
-    operator_id = Column(Integer, ForeignKey("operators.id", ondelete="CASCADE"), nullable=False, index=True)
-    direction   = Column(_enum(DebtDirectionEnum, "debt_direction"), nullable=False)
-    amount      = Column(Numeric(12, 2), nullable=False)
-    description = Column(String(200))
-    paid        = Column(Boolean, nullable=False, default=False)
-    paid_amount = Column(Numeric(12, 2), nullable=False, default=0)
-    created_at  = Column(DateTime, server_default=func.now(), nullable=False)
+    id                  = Column(Integer, primary_key=True)
+    operator_id         = Column(Integer, ForeignKey("operators.id", ondelete="CASCADE"), nullable=False, index=True)
+    direction           = Column(_enum(DebtDirectionEnum, "debt_direction"), nullable=False)
+    amount              = Column(Numeric(12, 2), nullable=False)
+    description         = Column(String(200))
+    paid                = Column(Boolean, nullable=False, default=False)
+    paid_amount         = Column(Numeric(12, 2), nullable=False, default=0)
+    created_at          = Column(DateTime, server_default=func.now(), nullable=False)
+    week_liquidation_id = Column(Integer, ForeignKey("week_liquidations.id", ondelete="SET NULL"), nullable=True)
 
     operator = relationship("Operator")
     payments = relationship("DebtPayment", back_populates="debt", cascade="all, delete-orphan")

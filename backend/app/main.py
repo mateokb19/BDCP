@@ -73,6 +73,10 @@ with engine.connect() as _conn:
     _conn.execute(text(
         "UPDATE service_order_items SET standard_price = unit_price WHERE standard_price IS NULL"
     ))
+    _conn.execute(text(
+        "ALTER TABLE debts ADD COLUMN IF NOT EXISTS "
+        "week_liquidation_id INTEGER REFERENCES week_liquidations(id) ON DELETE SET NULL"
+    ))
     # Remove legacy detallado operator if present
     _conn.execute(text(
         "DELETE FROM operators WHERE name = 'Jose Domingo Lindarte' AND operator_type = 'detallado'"
