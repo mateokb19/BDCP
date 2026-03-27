@@ -530,6 +530,8 @@ export const api = {
       apiFetch<ApiLiqWeekResponse>(`/liquidation/${opId}/pending`),
     liquidatePending: (opId: number, payload: LiquidatePayload) =>
       apiFetch<ApiLiqWeekResponse>(`/liquidation/${opId}/liquidate-pending`, { method: 'POST', body: JSON.stringify(payload) }),
+    payDebts: (opId: number, payload: LiquidatePayload) =>
+      apiFetch<ApiDebt[]>(`/liquidation/${opId}/pay-debts`, { method: 'POST', body: JSON.stringify(payload) }),
     getReport: (opId: number, period: 'week' | 'month', refDate?: string) => {
       const qs = new URLSearchParams({ period })
       if (refDate) qs.set('ref_date', refDate)

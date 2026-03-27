@@ -659,6 +659,74 @@ def liquidate_all_pending(
     return _build_week_response(operator, today, today, [], None, op_liq_ids, db=db)
 
 
+@router.post("/{op_id}/pay-debts", response_model=list[schemas.DebtOut])
+def pay_empresa_debts(
+    op_id: int,
+    body: schemas.LiquidatePayload = schemas.LiquidatePayload(),
+    db: Session = Depends(get_db),
+):
+    """Pay empresa→operario debts (company paying operator) with payment methods.
+    Applies total payment to unpaid debts oldest-first. Creates Expense records."""
+    from app.tz import today_bogota
+    operator = db.query(models.Operator).filter_by(id=op_id).first()
+    if not operator:
+        raise HTTPException(404, "Operario no encontrado")
+
+    total_payment = (
+        body.payment_cash + body.payment_datafono +
+        body.payment_nequi + body.payment_bancolombia
+    ).quantize(Decimal("0.01"))
+    if total_payment <= 0:
+        raise HTTPException(400, "Monto de pago debe ser mayor a 0")
+
+    # Load unpaid empresa→operario debts oldest first
+    unpaid_debts = (
+        db.query(models.Debt)
+        .options(joinedload(models.Debt.payments))
+        .filter_by(operator_id=op_id, direction="empresa_operario", paid=False)
+        .order_by(models.Debt.created_at.asc())
+        .all()
+    )
+
+    remaining_payment = total_payment
+    for debt in unpaid_debts:
+        if remaining_payment <= 0:
+            break
+        debt_remaining = debt.amount - (debt.paid_amount or Decimal("0"))
+        pay = min(remaining_payment, debt_remaining)
+        db.add(models.DebtPayment(debt_id=debt.id, amount=pay))
+        debt.paid_amount = (debt.paid_amount or Decimal("0")) + pay
+        if debt.paid_amount >= debt.amount:
+            debt.paid = True
+        remaining_payment -= pay
+
+    today = today_bogota()
+    for amt, label in [
+        (body.payment_cash,        "Efectivo"),
+        (body.payment_datafono,    "Datáfono"),
+        (body.payment_nequi,       "Nequi"),
+        (body.payment_bancolombia, "Bancolombia"),
+    ]:
+        if amt > 0:
+            db.add(models.Expense(
+                date=today,
+                amount=amt,
+                category="Salarios",
+                description=f"Pago deuda operario {operator.name}",
+                payment_method=label,
+            ))
+
+    db.commit()
+
+    return (
+        db.query(models.Debt)
+        .options(joinedload(models.Debt.payments))
+        .filter_by(operator_id=op_id)
+        .order_by(models.Debt.created_at.desc())
+        .all()
+    )
+
+
 @router.get("/{op_id}/debts", response_model=list[schemas.DebtOut])
 def list_debts(op_id: int, db: Session = Depends(get_db)):
     return (

@@ -18,6 +18,7 @@ import {
 } from './liquidacion/helpers'
 import { buildReportHtml } from './liquidacion/reportTemplate'
 import { LiquidarModal }  from './liquidacion/LiquidarModal'
+import { PayDebtModal }   from './liquidacion/PayDebtModal'
 import { ReportModals }   from './liquidacion/ReportModals'
 import { WeekPanel }      from './liquidacion/WeekPanel'
 import { DebtPanel }      from './liquidacion/DebtPanel'
@@ -41,6 +42,7 @@ export default function LiquidacionPage() {
   const [liquidarOpen, setLiquidarOpen] = useState(false)
   const [pendingData,  setPendingData]  = useState<ApiLiqWeekResponse | null>(null)
   const [pendingLoading, setPendingLoading] = useState(false)
+  const [payDebtOpen,  setPayDebtOpen]  = useState(false)
   const [reportModalOpen, setReportModalOpen] = useState(false)
   const [customMonthOpen, setCustomMonthOpen] = useState(false)
   const [customMonthValue, setCustomMonthValue] = useState(() => {
@@ -185,10 +187,31 @@ export default function LiquidacionPage() {
     try {
       const updated = await api.liquidation.markDebtPaid(debtId)
       setDebts(prev => prev.map(d => d.id === debtId ? updated : d))
+      // refresh week view so amount_pending updates
+      if (selectedOp) {
+        const ws = format(getWeekStart(weekOffset), 'yyyy-MM-dd')
+        api.liquidation.getWeek(selectedOp, ws).then(setWeekData).catch(() => {})
+        api.liquidation.getPending(selectedOp).then(setPendingData).catch(() => {})
+      }
       toast.success('Marcada como pagada')
     } catch {
       toast.error('Error al actualizar deuda')
     }
+  }
+
+  async function handlePayDebt(payload: LiquidatePayload) {
+    if (!selectedOp) return
+    const updatedDebts = await api.liquidation.payDebts(selectedOp, payload)
+    setDebts(updatedDebts)
+    // refresh week view so amount_pending updates
+    const ws = format(getWeekStart(weekOffset), 'yyyy-MM-dd')
+    const [updatedWeek, updatedPending] = await Promise.all([
+      api.liquidation.getWeek(selectedOp, ws),
+      api.liquidation.getPending(selectedOp),
+    ])
+    setWeekData(updatedWeek)
+    setPendingData(updatedPending)
+    toast.success('Pago registrado')
   }
 
   async function handleLiquidate(payload: LiquidatePayload) {
@@ -310,6 +333,18 @@ export default function LiquidacionPage() {
             weekData={pendingData}
             debts={debts}
             onConfirm={handleLiquidate}
+          />
+        )}
+
+        {/* Pay debt modal */}
+        {operator && (
+          <PayDebtModal
+            open={payDebtOpen}
+            onClose={() => setPayDebtOpen(false)}
+            totalOwed={debts
+              .filter(d => d.direction === 'empresa_operario' && !d.paid)
+              .reduce((s, d) => s + Number(d.amount) - Number(d.paid_amount), 0)}
+            onConfirm={handlePayDebt}
           />
         )}
 
@@ -491,6 +526,7 @@ export default function LiquidacionPage() {
           setDebtForm={setDebtForm}
           onAddDebt={handleAddDebt}
           onMarkPaid={handleMarkPaid}
+          onPayDebt={() => setPayDebtOpen(true)}
         />
       </div>
     )
