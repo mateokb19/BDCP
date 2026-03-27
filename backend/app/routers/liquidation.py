@@ -538,19 +538,20 @@ def liquidate_all_pending(
         else:
             ratio = Decimal("1") / len(sorted_weeks)
 
-        # Give the last week the remainder to avoid floating-point drift
+        # Give the last week the remainder to avoid rounding drift
         if idx == len(sorted_weeks) - 1:
-            already_paid = sum(
-                (body.payment_cash + body.payment_datafono + body.payment_nequi + body.payment_bancolombia)
-                * (week_commissions[w] / total_commission)
-                for w in sorted_weeks[:-1]
-            ).quantize(Decimal("0.01")) if total_commission > 0 else Decimal("0")
-            week_cash        = (body.payment_cash        - sum((body.payment_cash        * week_commissions[w] / total_commission).quantize(Decimal("0.01")) for w in sorted_weeks[:-1])).quantize(Decimal("0.01"))
-            week_datafono    = (body.payment_datafono    - sum((body.payment_datafono    * week_commissions[w] / total_commission).quantize(Decimal("0.01")) for w in sorted_weeks[:-1])).quantize(Decimal("0.01"))
-            week_nequi       = (body.payment_nequi       - sum((body.payment_nequi       * week_commissions[w] / total_commission).quantize(Decimal("0.01")) for w in sorted_weeks[:-1])).quantize(Decimal("0.01"))
-            week_bancolombia = (body.payment_bancolombia - sum((body.payment_bancolombia * week_commissions[w] / total_commission).quantize(Decimal("0.01")) for w in sorted_weeks[:-1])).quantize(Decimal("0.01"))
-            week_pending     = (amount_pending           - sum((amount_pending           * week_commissions[w] / total_commission).quantize(Decimal("0.01")) for w in sorted_weeks[:-1])).quantize(Decimal("0.01"))
-            week_net         = (net_amount               - sum((net_amount               * week_commissions[w] / total_commission).quantize(Decimal("0.01")) for w in sorted_weeks[:-1])).quantize(Decimal("0.01"))
+            def _prev_sum(base: Decimal) -> Decimal:
+                return sum(
+                    ((base * week_commissions[w] / total_commission).quantize(Decimal("0.01"))
+                     for w in sorted_weeks[:-1]),
+                    Decimal("0"),
+                ) if total_commission > 0 else Decimal("0")
+            week_cash        = (body.payment_cash        - _prev_sum(body.payment_cash)).quantize(Decimal("0.01"))
+            week_datafono    = (body.payment_datafono    - _prev_sum(body.payment_datafono)).quantize(Decimal("0.01"))
+            week_nequi       = (body.payment_nequi       - _prev_sum(body.payment_nequi)).quantize(Decimal("0.01"))
+            week_bancolombia = (body.payment_bancolombia - _prev_sum(body.payment_bancolombia)).quantize(Decimal("0.01"))
+            week_pending     = (amount_pending           - _prev_sum(amount_pending)).quantize(Decimal("0.01"))
+            week_net         = (net_amount               - _prev_sum(net_amount)).quantize(Decimal("0.01"))
         else:
             week_cash        = (body.payment_cash        * ratio).quantize(Decimal("0.01"))
             week_datafono    = (body.payment_datafono    * ratio).quantize(Decimal("0.01"))
