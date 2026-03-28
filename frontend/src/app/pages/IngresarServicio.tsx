@@ -316,8 +316,15 @@ export default function IngresarServicio() {
 
   const selectedServiceObjs = form.selectedServices.map(id => services.find(s => s.id === id)!).filter(Boolean)
 
+  const latWithNoPrice = selectedServiceObjs.filter(s => {
+    if (s.category !== 'latoneria') return false
+    const custom = form.customPrices[s.id]
+    const price = custom !== undefined && custom !== '' ? Number(custom) : Number(s.price_automovil)
+    return price <= 0
+  })
+
   async function handleConfirm() {
-    if (!vehicleType || submitting) return
+    if (!vehicleType || submitting || latWithNoPrice.length > 0) return
     setSubmitting(true)
     try {
       // Custom price overrides (skip if service is warranty — warranty takes precedence)
@@ -1110,8 +1117,8 @@ export default function IngresarServicio() {
                     ← Editar
                   </Button>
                   <Button variant="primary" size="lg" className="flex-1" onClick={handleConfirm}
-                    disabled={submitting}>
-                    {submitting ? 'Guardando...' : <><Check size={18} /> Confirmar Orden</>}
+                    disabled={submitting || latWithNoPrice.length > 0}>
+                    {submitting ? 'Guardando...' : latWithNoPrice.length > 0 ? 'Ingresa el precio de latonería' : <><Check size={18} /> Confirmar Orden</>}
                   </Button>
                 </div>
               </GlassCard>

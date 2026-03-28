@@ -78,6 +78,7 @@ export default function LiquidacionPage() {
     const ws = format(getWeekStart(weekOffset), 'yyyy-MM-dd')
     setWeekLoading(true)
     setWeekData(null)
+    setPendingData(null)
     api.liquidation.getWeek(selectedOp, ws)
       .then(setWeekData)
       .catch(() => toast.error('Error al cargar datos de semana'))

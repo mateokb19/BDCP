@@ -84,6 +84,8 @@ def advance_status(id: int, payload: schemas.AdvancePayload = schemas.AdvancePay
         entry.order.payment_nequi       = payload.payment_nequi
         entry.order.payment_bancolombia = payload.payment_bancolombia
         entry.order.paid                = True
+        if payload.latoneria_operator_pay is not None:
+            entry.order.latoneria_operator_pay = payload.latoneria_operator_pay
 
     db.commit()
     db.refresh(entry)

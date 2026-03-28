@@ -456,6 +456,7 @@ export default function EstadoPatio() {
   // Payment modal state (delivery)
   const [paymentEntry, setPaymentEntry] = useState<ApiPatioEntry | null>(null)
   const [payMethods,   setPayMethods]   = useState<Record<string, string>>({})
+  const [latPay,       setLatPay]       = useState('')
   const [delivering,   setDelivering]   = useState(false)
   const [factura,      setFactura]      = useState(false)
   const [facturaData,  setFacturaData]  = useState({
@@ -542,10 +543,32 @@ export default function EstadoPatio() {
 
   async function advanceStatus(entry: ApiPatioEntry) {
     if (entry.status === 'esperando' && !entry.order?.operator_id) {
+      // Determine required operator type from service categories
+      const categories = (entry.order?.items ?? []).map(i => i.service_category)
+      const requiredType =
+        categories.length > 0 && categories.every(c => c === 'pintura')   ? 'pintura'   :
+        categories.length > 0 && categories.every(c => c === 'latoneria') ? 'latoneria' :
+        'detallado'
+
+      // Fetch fresh active operators filtered by the required type
+      const allOps = await api.operators.list().catch(() => [] as typeof operators)
+      const filtered = allOps.filter(o => (o.operator_type ?? 'detallado') === requiredType)
+
+      // If only one operator available for this type, auto-assign without showing picker
+      if (filtered.length === 1) {
+        try {
+          await api.patio.edit(entry.id, { operator_id: filtered[0].id })
+          const updated = await api.patio.advance(entry.id)
+          setEntries(prev => prev.map(e => e.id === updated.id ? updated : e))
+          toast.success(`${updated.vehicle?.plate ?? 'Vehículo'} → En Proceso`)
+        } catch (err) {
+          toast.error(err instanceof Error ? err.message : 'Error al iniciar proceso')
+        }
+        return
+      }
+      setActiveOperators(filtered)
       setOperatorPickEntry(entry)
       setPickedOpId('')
-      // Fetch fresh active operators so recently-deactivated ones don't appear
-      api.operators.list().then(ops => setActiveOperators(ops.filter(o => (o.operator_type ?? 'detallado') === 'detallado'))).catch(() => {})
       return
     }
     // Intercept delivery to collect payment info
@@ -559,6 +582,7 @@ export default function EstadoPatio() {
       }
       setPaymentEntry(entry)
       setPayMethods({})
+      setLatPay('')
       setFactura(false)
       setFacturaData({
         tipo:      'persona_natural',
@@ -599,9 +623,14 @@ export default function EstadoPatio() {
         payment[keyToField[k]] = Number(payMethods[k]) || 0
       }
     }
+    const hasLatoneria = (paymentEntry.order?.items ?? []).some(i => i.service_category === 'latoneria')
+    const advancePayload: Parameters<typeof api.patio.advance>[1] = {
+      ...payment,
+      ...(hasLatoneria && latPay ? { latoneria_operator_pay: Number(parseCOP(latPay)) } : {}),
+    }
     setDelivering(true)
     try {
-      const updated = await api.patio.advance(paymentEntry.id, payment)
+      const updated = await api.patio.advance(paymentEntry.id, advancePayload)
       setEntries(prev => prev.map(e => e.id === updated.id ? updated : e))
       // Persist factura data keyed by order id
       if (factura && facturaData.id_number && paymentEntry.order?.id) {
@@ -964,6 +993,10 @@ export default function EstadoPatio() {
 
           const inputCls = "w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2.5 text-sm text-gray-100 focus:border-yellow-500/50 focus:outline-none focus:ring-2 focus:ring-yellow-500/20"
 
+          const latItems = (paymentEntry.order?.items ?? []).filter(i => i.service_category === 'latoneria')
+          const hasLatoneria = latItems.length > 0
+          const latClientTotal = latItems.reduce((s, i) => s + Number(i.unit_price) * i.quantity, 0)
+
           const checkedKeys = Object.keys(payMethods)
           const isMulti     = checkedKeys.length > 1
           const covered     = isMulti ? checkedKeys.reduce((s, k) => s + (Number(payMethods[k]) || 0), 0) : restante
@@ -1075,6 +1108,29 @@ export default function EstadoPatio() {
                       </div>
                     )}
                   </>
+                )}
+
+                {/* Latonería operator pay */}
+                {hasLatoneria && (
+                  <div className="rounded-xl border border-blue-500/25 bg-blue-500/5 px-4 py-3 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <p className="text-xs text-blue-400 font-medium uppercase tracking-wider">Pago al operario de latonería</p>
+                      <span className="text-xs text-gray-500">máx. <span className="text-gray-300 font-medium">${latClientTotal.toLocaleString('es-CO')}</span></span>
+                    </div>
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      placeholder="$0"
+                      value={latPay ? `$${fmtCOP(latPay)}` : ''}
+                      onChange={e => {
+                        const raw = parseCOP(e.target.value)
+                        if (raw === '') { setLatPay(''); return }
+                        setLatPay(String(Math.min(Number(raw), latClientTotal)))
+                      }}
+                      className="w-full rounded-xl border border-blue-500/30 bg-white/5 px-3 py-2.5 text-sm text-gray-100 focus:border-blue-500/60 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                    />
+                    <p className="text-[11px] text-gray-600">Total latonería cobrado al cliente: <span className="text-gray-400">${latClientTotal.toLocaleString('es-CO')}</span></p>
+                  </div>
                 )}
 
                 {/* Facturación electrónica */}
@@ -1233,7 +1289,7 @@ export default function EstadoPatio() {
                   </Button>
                   <Button variant="primary" size="md" className="flex-1"
                     onClick={confirmDelivery}
-                    disabled={delivering || (restante > 0 && Object.keys(payMethods).length === 0)}>
+                    disabled={delivering || (restante > 0 && Object.keys(payMethods).length === 0) || (hasLatoneria && !latPay)}>
                     {delivering ? 'Entregando...' : 'Confirmar Entrega'}
                   </Button>
                 </div>

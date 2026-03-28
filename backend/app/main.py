@@ -77,6 +77,17 @@ with engine.connect() as _conn:
         "ALTER TABLE debts ADD COLUMN IF NOT EXISTS "
         "week_liquidation_id INTEGER REFERENCES week_liquidations(id) ON DELETE SET NULL"
     ))
+    _conn.execute(text(
+        "ALTER TABLE service_orders ADD COLUMN IF NOT EXISTS latoneria_operator_pay NUMERIC(12,2)"
+    ))
+    _conn.execute(text(
+        "ALTER TABLE service_orders ADD COLUMN IF NOT EXISTS "
+        "latoneria_liquidation_id INTEGER REFERENCES week_liquidations(id) ON DELETE SET NULL"
+    ))
+    _conn.execute(text(
+        "ALTER TABLE service_orders ADD COLUMN IF NOT EXISTS "
+        "pintura_liquidation_id INTEGER REFERENCES week_liquidations(id) ON DELETE SET NULL"
+    ))
     # Remove legacy detallado operator if present
     _conn.execute(text(
         "DELETE FROM operators WHERE name = 'Jose Domingo Lindarte' AND operator_type = 'detallado'"
@@ -168,15 +179,21 @@ def _seed_if_empty() -> None:
     """Insert base data on first start; resync services if the catalog changed."""
     db = SessionLocal()
     try:
-        if db.query(models.Operator).count() == 0:
-            db.add_all([
-                models.Operator(name="Carlos Mora",        phone="555-0001", commission_rate=30, operator_type="detallado"),
-                models.Operator(name="Francisco Currea",   phone="555-0002", commission_rate=30, operator_type="detallado"),
-                models.Operator(name="Luis Lopez",         phone="555-0003", commission_rate=30, operator_type="detallado"),
-                models.Operator(name="Jose D. Lindarte",   commission_rate=30, operator_type="pintura"),
-                models.Operator(name="Enrique Rodríguez",  commission_rate=30, operator_type="latoneria"),
-            ])
-            db.commit()
+        # Seed each detallado operator individually in case migrations already added
+        # the specialist operators (Jose / Enrique) before this function ran.
+        for name, phone, rate, op_type in [
+            ("Carlos Mora",       "555-0001", 30, "detallado"),
+            ("Francisco Currea",  "555-0002", 30, "detallado"),
+            ("Luis Lopez",        "555-0003", 30, "detallado"),
+            ("Jose D. Lindarte",  None,       30, "pintura"),
+            ("Enrique Rodríguez", None,       30, "latoneria"),
+        ]:
+            if not db.query(models.Operator).filter_by(name=name).first():
+                db.add(models.Operator(
+                    name=name, phone=phone,
+                    commission_rate=rate, operator_type=op_type,
+                ))
+        db.commit()
 
         if db.query(models.Service).count() != _EXPECTED_SERVICES:
             db.query(models.Service).delete()

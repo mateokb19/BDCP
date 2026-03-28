@@ -61,6 +61,7 @@ export interface ApiOrder {
   payment_datafono: string
   payment_nequi: string
   payment_bancolombia: string
+  latoneria_operator_pay?: string
   items: ApiOrderItem[]
 }
 
@@ -161,6 +162,7 @@ export interface ApiLiqWeekOrder {
   items:         ApiLiqWeekOrderItem[]
   total:         string
   piece_count?:  string
+  latoneria_operator_pay?: string
   is_liquidated: boolean
 }
 
@@ -319,15 +321,16 @@ export interface ApiReportOrderItem {
 }
 
 export interface ApiReportOrder {
-  order_number:  string
-  date:          string
-  vehicle_plate: string
-  vehicle_brand?: string
-  vehicle_model?: string
-  items:         ApiReportOrderItem[]
-  total:         string
-  piece_count?:  string
-  is_liquidated: boolean
+  order_number:           string
+  date:                   string
+  vehicle_plate:          string
+  vehicle_brand?:         string
+  vehicle_model?:         string
+  items:                  ApiReportOrderItem[]
+  total:                  string
+  piece_count?:           string
+  latoneria_operator_pay?: string
+  is_liquidated:          boolean
 }
 
 export interface ApiReportWeekStatus {
@@ -482,7 +485,7 @@ export const api = {
   },
   patio: {
     list: () => apiFetch<ApiPatioEntry[]>('/patio'),
-    advance: (id: number, payment?: { payment_cash: number; payment_datafono: number; payment_nequi: number; payment_bancolombia: number }) =>
+    advance: (id: number, payment?: { payment_cash: number; payment_datafono: number; payment_nequi: number; payment_bancolombia: number; latoneria_operator_pay?: number }) =>
       apiFetch<ApiPatioEntry>(`/patio/${id}/advance`, { method: 'POST', body: JSON.stringify(payment ?? {}) }),
     edit: (id: number, payload: PatioPatchPayload) =>
       apiFetch<ApiPatioEntry>(`/patio/${id}`, { method: 'PATCH', body: JSON.stringify(payload) }),

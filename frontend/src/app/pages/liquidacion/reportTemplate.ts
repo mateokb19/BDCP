@@ -22,6 +22,7 @@ function buildWeekSection(
   r: ApiReportResponse,
   rate: number,
   isPintura: boolean,
+  isLatoneria: boolean,
 ): string {
   const weekOrders = r.orders.filter(o => o.date >= w.week_start && o.date <= w.week_end)
 
@@ -29,7 +30,11 @@ function buildWeekSection(
   const serviceRows = weekOrders.flatMap(o => {
     const vehicle    = [o.vehicle_brand, o.vehicle_model].filter(Boolean).join(' ') || '—'
     const orderPieces = Number(o.piece_count ?? 0)
-    const orderComm   = isPintura ? orderPieces * PIECE_RATE : Number(o.total) * rate / 100
+    const orderComm   = isPintura
+      ? orderPieces * PIECE_RATE
+      : isLatoneria
+      ? Number(o.latoneria_operator_pay ?? 0)
+      : Number(o.total) * rate / 100
 
     const orderBadge = o.is_liquidated
       ? `<span style="background:#dcfce7;color:#166534;font-size:10px;font-weight:700;padding:2px 8px;border-radius:999px;margin-left:8px;">&#10003; LIQUIDADO</span>`
@@ -47,12 +52,14 @@ function buildWeekSection(
       `<tr>
         <td style="padding:5px 10px 5px 20px;font-size:13px;color:#333;">${escapeHtml(i.service_name)}</td>
         <td style="padding:5px 10px;text-align:right;font-size:13px;color:#444;">${fmt(i.subtotal)}</td>
-        <td style="padding:5px 10px;text-align:right;font-size:13px;color:#d97706;font-weight:500;">${isPintura ? '—' : fmt(Number(i.subtotal) * rate / 100)}</td>
+        <td style="padding:5px 10px;text-align:right;font-size:13px;color:#d97706;font-weight:500;">${isPintura || isLatoneria ? '—' : fmt(Number(i.subtotal) * rate / 100)}</td>
       </tr>`
     ).join('')
 
     const commCell = isPintura
       ? `${orderPieces} pieza${orderPieces !== 1 ? 's' : ''} = ${fmt(orderComm)}`
+      : isLatoneria
+      ? `Pago: ${fmt(orderComm)}`
       : fmt(orderComm)
 
     const orderTotal = `<tr style="border-top:1px dashed #ddd;background:#fafafa;">
@@ -85,9 +92,13 @@ function buildWeekSection(
   const unliqOrders = weekOrders.filter(o => !o.is_liquidated)
   const liqComm     = isPintura
     ? liqOrders.reduce((s, o) => s + Number(o.piece_count ?? 0), 0) * PIECE_RATE
+    : isLatoneria
+    ? liqOrders.reduce((s, o) => s + Number(o.latoneria_operator_pay ?? 0), 0)
     : liqOrders.reduce((s, o) => s + Number(o.total), 0) * rate / 100
   const unliqComm   = isPintura
     ? unliqOrders.reduce((s, o) => s + Number(o.piece_count ?? 0), 0) * PIECE_RATE
+    : isLatoneria
+    ? unliqOrders.reduce((s, o) => s + Number(o.latoneria_operator_pay ?? 0), 0)
     : unliqOrders.reduce((s, o) => s + Number(o.total), 0) * rate / 100
 
   const payRows = [
@@ -159,6 +170,8 @@ function buildWeekSection(
   const weekPieces = Number(w.week_pieces ?? 0)
   const commLabel  = isPintura
     ? `${weekPieces} pieza${weekPieces !== 1 ? 's' : ''} × $90.000`
+    : isLatoneria
+    ? `Pago acordado al operario de latonería`
     : `Comision del operario (${rate}%)`
 
   const summaryRows = `
@@ -173,7 +186,7 @@ function buildWeekSection(
       <td style="padding:4px 10px;text-align:right;font-size:14px;font-weight:700;color:#d97706;">${fmt(w.week_commission)}</td>
     </tr>`
 
-  const commColHeader = isPintura ? 'Piezas / Comision' : 'Comision'
+  const commColHeader = isPintura ? 'Piezas / Comision' : isLatoneria ? 'Pago operario' : 'Comision'
 
   return `
     <div style="margin-bottom:32px;border:1px solid #e5e5e5;border-radius:8px;overflow:hidden;">
@@ -201,12 +214,13 @@ function buildWeekSection(
 
 export function buildReportHtml(r: ApiReportResponse): string {
   const today     = new Date().toLocaleDateString('es-CO', { day: '2-digit', month: 'long', year: 'numeric' })
-  const rate      = Number(r.commission_rate)
-  const isPintura = r.operator_type === 'pintura'
+  const rate        = Number(r.commission_rate)
+  const isPintura   = r.operator_type === 'pintura'
+  const isLatoneria = r.operator_type === 'latoneria'
 
   const weekSections = r.week_statuses
     .filter(w => Number(w.week_gross) > 0 || w.is_liquidated)
-    .map(w => buildWeekSection(w, r, rate, isPintura))
+    .map(w => buildWeekSection(w, r, rate, isPintura, isLatoneria))
     .join('')
 
   const debtRows = r.pending_debts.map(d =>
@@ -220,12 +234,18 @@ export function buildReportHtml(r: ApiReportResponse): string {
 
   const opSubtitle = isPintura
     ? `Tarifa: $90.000/pieza`
+    : isLatoneria
+    ? `Pago por servicio acordado`
     : `Comision: ${rate}%`
   const opCommDetail = isPintura
     ? `${Number(r.total_pieces ?? 0)} piezas · Comision: ${fmt(r.commission_amount)}`
+    : isLatoneria
+    ? `Total pago operario: ${fmt(r.commission_amount)}`
     : `Comision: ${fmt(r.commission_amount)}`
   const totalCommLabel = isPintura
     ? `${Number(r.total_pieces ?? 0)} piezas × $90.000/pieza`
+    : isLatoneria
+    ? `Total pago acordado (latonería)`
     : `Comision total (${rate}%)`
 
   return `<!DOCTYPE html>

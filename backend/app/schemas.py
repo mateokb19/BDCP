@@ -176,6 +176,7 @@ class OrderOut(OrmBase):
     payment_datafono:    Decimal
     payment_nequi:       Decimal
     payment_bancolombia: Decimal
+    latoneria_operator_pay: Optional[Decimal] = None
     items:               list[OrderItemOut]
 
 
@@ -203,6 +204,7 @@ class AdvancePayload(BaseModel):
     payment_datafono:    Decimal = Decimal("0")
     payment_nequi:       Decimal = Decimal("0")
     payment_bancolombia: Decimal = Decimal("0")
+    latoneria_operator_pay: Optional[Decimal] = None
 
 
 class PatioPatch(BaseModel):
@@ -360,6 +362,7 @@ class LiqWeekOrder(BaseModel):
     items:         List[LiqWeekOrderItem]
     total:         Decimal
     piece_count:   Optional[Decimal] = None
+    latoneria_operator_pay: Optional[Decimal] = None
     is_liquidated: bool
 
 
@@ -446,14 +449,16 @@ class ReportOrderItem(BaseModel):
 
 
 class ReportOrder(BaseModel):
-    order_number:  str
-    date:          str
-    vehicle_plate: str
-    vehicle_brand: Optional[str]
-    vehicle_model: Optional[str]
-    items:         List[ReportOrderItem]
-    total:         Decimal
-    is_liquidated: bool
+    order_number:          str
+    date:                  str
+    vehicle_plate:         str
+    vehicle_brand:         Optional[str]
+    vehicle_model:         Optional[str]
+    items:                 List[ReportOrderItem]
+    total:                 Decimal
+    piece_count:           Optional[Decimal] = None
+    latoneria_operator_pay: Optional[Decimal] = None
+    is_liquidated:         bool
 
 
 class ReportWeekStatus(BaseModel):
@@ -462,6 +467,7 @@ class ReportWeekStatus(BaseModel):
     is_liquidated:        bool
     week_gross:           Decimal
     week_commission:      Decimal
+    week_pieces:          Optional[Decimal] = None
     net_amount:           Optional[Decimal] = None
     payment_cash:         Optional[Decimal] = None
     payment_datafono:     Optional[Decimal] = None
@@ -480,6 +486,7 @@ class ReportPendingDebt(BaseModel):
 class ReportResponse(BaseModel):
     operator_id:         int
     operator_name:       str
+    operator_type:       str
     commission_rate:     Decimal
     period_label:        str
     date_start:          str
@@ -487,6 +494,7 @@ class ReportResponse(BaseModel):
     orders:              List[ReportOrder]
     total_services:      int
     gross_total:         Decimal
+    total_pieces:        Optional[Decimal] = None
     commission_amount:   Decimal
     week_statuses:       List[ReportWeekStatus]
     pending_debts:       List[ReportPendingDebt]

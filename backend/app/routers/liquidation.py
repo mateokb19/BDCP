@@ -66,6 +66,32 @@ def _real_pending(liq_record: models.WeekLiquidation | None, db: Session | None)
     return liq_record.amount_pending
 
 
+def _liq_col(op_type: str) -> str:
+    """Return the order column name used to track liquidation for this operator type."""
+    if op_type == "latoneria":
+        return "latoneria_liquidation_id"
+    if op_type == "pintura":
+        return "pintura_liquidation_id"
+    return "week_liquidation_id"
+
+
+def _get_liq_id(order, op_type: str):
+    """Return the order's liquidation-tracking column value for this operator type."""
+    return getattr(order, _liq_col(op_type))
+
+
+def _is_liquidated(order, op_type: str, op_liq_ids: set | None) -> bool:
+    liq_id = _get_liq_id(order, op_type)
+    if liq_id is None:
+        return False
+    return op_liq_ids is None or liq_id in op_liq_ids
+
+
+def _stamp_order(order, op_type: str, liq_id: int) -> None:
+    """Stamp the appropriate liquidation-tracking column on an order."""
+    setattr(order, _liq_col(op_type), liq_id)
+
+
 def _build_week_response(
     operator: models.Operator,
     ws: date,
@@ -135,10 +161,8 @@ def _build_week_response(
                 items=item_schemas,
                 total=order_total,
                 piece_count=order_pieces if op_type == "pintura" else None,
-                is_liquidated=(
-                    o.week_liquidation_id is not None
-                    and (op_liq_ids is None or o.week_liquidation_id in op_liq_ids)
-                ),
+                latoneria_operator_pay=o.latoneria_operator_pay if op_type == "latoneria" else None,
+                is_liquidated=_is_liquidated(o, op_type, op_liq_ids),
             ))
             day_total += order_total
             total_piece_count += order_pieces
@@ -159,6 +183,16 @@ def _build_week_response(
         commission_base = week_total
         commission = (total_piece_count * PINTURA_PIECE_RATE).quantize(Decimal("0.01"))
         piece_count: Decimal | None = total_piece_count
+    elif op_type == "latoneria":
+        # Commission = sum of manually entered latoneria_operator_pay at delivery
+        commission_base = week_total
+        commission = sum(
+            [o.latoneria_operator_pay or Decimal("0")
+             for o in qualifying
+             if any(_cat(i) in relevant_cats for i in o.items)],
+            Decimal("0"),
+        ).quantize(Decimal("0.01"))
+        piece_count = None
     else:
         rate = Decimal(str(operator.commission_rate)) / Decimal("100")
         commission_base = week_total  # already filtered to relevant categories w/ standard prices
@@ -217,14 +251,15 @@ def _fetch_qualifying(op_id: int, ws: date, we: date, db: Session, op_type: str 
             models.ServiceOrder.date <= we,
         )
     )
-    if op_type == "pintura":
-        # All orders with at least one pintura item, regardless of assigned operator
+    if op_type in ("pintura", "latoneria"):
+        # All orders with at least one relevant item, regardless of assigned operator
+        relevant = CATEGORY_MAP.get(op_type, set())
         orders = base_q.all()
         return [
             o for o in orders
             if o.patio_entry
             and o.patio_entry.status in QUALIFYING_STATUSES
-            and any(_cat(i) == "pintura" for i in o.items)
+            and any(_cat(i) in relevant for i in o.items)
         ]
     else:
         orders = base_q.filter(models.ServiceOrder.operator_id == op_id).all()
@@ -271,7 +306,7 @@ def liquidate_week(
     }
 
     # Filter to orders not yet liquidated by this operator
-    unliquidated = [o for o in qualifying if o.week_liquidation_id not in op_liq_ids]
+    unliquidated = [o for o in qualifying if not _is_liquidated(o, op_type, op_liq_ids)]
     if not unliquidated:
         return _build_week_response(operator, ws, we, qualifying, existing, op_liq_ids, db=db)
 
@@ -290,6 +325,17 @@ def liquidate_week(
             for o in unliquidated for item in o.items
             if _cat(item) in relevant_cats
         )
+    elif op_type == "latoneria":
+        new_commission_base = sum(
+            [_std(item)
+             for o in unliquidated for item in o.items
+             if _cat(item) in relevant_cats],
+            Decimal("0"),
+        )
+        new_commission = sum(
+            [o.latoneria_operator_pay or Decimal("0") for o in unliquidated],
+            Decimal("0"),
+        ).quantize(Decimal("0.01"))
     else:
         rate = Decimal(str(operator.commission_rate)) / Decimal("100")
         new_commission_base = sum(
@@ -375,7 +421,7 @@ def liquidate_week(
 
     # Stamp unliquidated orders with this liquidation's id
     for o in unliquidated:
-        o.week_liquidation_id = liq.id
+        _stamp_order(o, op_type, liq.id)
 
     # Auto-create empresa→operario debt for any pending amount
     if amount_pending > 0:
@@ -437,7 +483,7 @@ def get_all_pending(op_id: int, db: Session = Depends(get_db)):
     op_type = operator.operator_type or "detallado"
     qualifying = _fetch_all_qualifying(op_id, db, op_type)
     op_liq_ids = {r.id for r in db.query(models.WeekLiquidation.id).filter_by(operator_id=op_id).all()}
-    unliquidated = [o for o in qualifying if o.week_liquidation_id not in op_liq_ids]
+    unliquidated = [o for o in qualifying if not _is_liquidated(o, op_type, op_liq_ids)]
 
     from app.tz import today_bogota
     today = today_bogota()
@@ -470,7 +516,7 @@ def liquidate_all_pending(
 
     qualifying = _fetch_all_qualifying(op_id, db, op_type)
     op_liq_ids = {r.id for r in db.query(models.WeekLiquidation.id).filter_by(operator_id=op_id).all()}
-    unliquidated = [o for o in qualifying if o.week_liquidation_id not in op_liq_ids]
+    unliquidated = [o for o in qualifying if not _is_liquidated(o, op_type, op_liq_ids)]
 
     today = today_bogota()
     if not unliquidated:
@@ -500,6 +546,12 @@ def liquidate_all_pending(
             )
             comm = (pieces * PINTURA_PIECE_RATE).quantize(Decimal("0.01"))
             gross = sum(_std(i) for o in orders for i in o.items if _cat(i) in relevant_cats)
+        elif op_type == "latoneria":
+            gross = sum(_std(i) for o in orders for i in o.items if _cat(i) in relevant_cats)
+            comm = sum(
+                [o.latoneria_operator_pay or Decimal("0") for o in orders],
+                Decimal("0"),
+            ).quantize(Decimal("0.01"))
         else:
             gross = sum(_std(i) for o in orders for i in o.items if _cat(i) in relevant_cats)
             comm  = (rate * gross).quantize(Decimal("0.01"))
@@ -612,7 +664,7 @@ def liquidate_all_pending(
                 liq = db.query(models.WeekLiquidation).filter_by(operator_id=op_id, week_start=ws).first()
 
         for o in orders:
-            o.week_liquidation_id = liq.id
+            _stamp_order(o, op_type, liq.id)
         all_liq_ids.append(liq.id)
         last_liq_id = liq.id
 
@@ -820,11 +872,16 @@ def get_report(
             ],
             total=order_total,
             piece_count=order_pieces if op_type == "pintura" else None,
-            is_liquidated=o.week_liquidation_id in op_liq_ids,
+            latoneria_operator_pay=o.latoneria_operator_pay if op_type == "latoneria" else None,
+            is_liquidated=_is_liquidated(o, op_type, op_liq_ids),
         ))
 
     if op_type == "pintura":
         commission = (total_pieces * PINTURA_PIECE_RATE).quantize(Decimal("0.01"))
+    elif op_type == "latoneria":
+        commission = sum(
+            o.latoneria_operator_pay or Decimal("0") for o in qualifying
+        ).quantize(Decimal("0.01"))
     else:
         commission = (rate * gross_total).quantize(Decimal("0.01"))
 
@@ -848,10 +905,16 @@ def get_report(
                         wk_pieces += _pintura_pieces(_std(i))
         if op_type == "pintura":
             wk_comm = (wk_pieces * PINTURA_PIECE_RATE).quantize(Decimal("0.01"))
+        elif op_type == "latoneria":
+            wk_comm = sum(
+                o.latoneria_operator_pay or Decimal("0") for o in week_orders
+            ).quantize(Decimal("0.01"))
         else:
             wk_comm = (rate * wk_gross).quantize(Decimal("0.01"))
         # Week is fully liquidated only when ALL its orders are stamped with this operator's liq
-        all_liquidated = len(week_orders) > 0 and all(o.week_liquidation_id in op_liq_ids for o in week_orders)
+        all_liquidated = len(week_orders) > 0 and all(
+            _is_liquidated(o, op_type, op_liq_ids) for o in week_orders
+        )
         week_statuses.append(schemas.ReportWeekStatus(
             week_start=str(cur),
             week_end=str(ws_end),

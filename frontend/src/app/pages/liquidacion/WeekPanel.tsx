@@ -75,6 +75,8 @@ export function WeekPanel({
                 : { label: 'Total', value: `$${cop(weekData.week_total)}` },
               weekData.operator_type === 'pintura'
                 ? { label: `${weekData.piece_count ?? 0} piezas × $90.000`, value: `$${cop(weekData.commission_amount)}`, highlight: true }
+                : weekData.operator_type === 'latoneria'
+                ? { label: 'Pago latonería', value: `$${cop(weekData.commission_amount)}`, highlight: true }
                 : { label: `Com. ${Number(weekData.commission_rate)}%`, value: `$${cop(weekData.commission_amount)}`, highlight: true },
             ].map(item => (
               <GlassCard key={item.label} padding className="text-center !px-2 !py-3">
