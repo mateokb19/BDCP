@@ -56,8 +56,14 @@ class ServiceOut(OrmBase):
 # ── Vehicle ──────────────────────────────────────────────────────────────────────
 
 class VehicleClientOut(OrmBase):
-    name:  str
-    phone: Optional[str]
+    id:                   int
+    name:                 str
+    phone:                Optional[str]
+    email:                Optional[str]
+    tipo_persona:         Optional[str]
+    tipo_identificacion:  Optional[str]
+    identificacion:       Optional[str]
+    dv:                   Optional[str]
 
 
 class VehicleOut(OrmBase):

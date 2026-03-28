@@ -20,7 +20,7 @@ def _get_entry_or_404(id: int, db: Session) -> models.PatioEntry:
     entry = (
         db.query(models.PatioEntry)
         .options(
-            joinedload(models.PatioEntry.vehicle),
+            joinedload(models.PatioEntry.vehicle).joinedload(models.Vehicle.client),
             joinedload(models.PatioEntry.order).joinedload(models.ServiceOrder.items),
         )
         .filter(models.PatioEntry.id == id)
@@ -38,7 +38,7 @@ def list_patio(
 ):
     """List patio entries. Optionally filter by status."""
     q = db.query(models.PatioEntry).options(
-        joinedload(models.PatioEntry.vehicle),
+        joinedload(models.PatioEntry.vehicle).joinedload(models.Vehicle.client),
         joinedload(models.PatioEntry.order).joinedload(models.ServiceOrder.items),
     )
     if status:

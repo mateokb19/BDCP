@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { motion, AnimatePresence, LayoutGroup } from 'framer-motion'
-import { Clock, ArrowRight, Wrench, Pencil, X, ChevronDown, Calendar, Phone, User, ChevronUp, Banknote, CreditCard, Check } from 'lucide-react'
+import { Clock, ArrowRight, Wrench, Pencil, X, ChevronDown, Calendar, Phone, User, ChevronUp, Banknote, CreditCard, Check, Car } from 'lucide-react'
 import { toast } from 'sonner'
 import { format, parseISO } from 'date-fns'
 import { PageHeader } from '@/app/components/ui/PageHeader'
@@ -167,6 +167,11 @@ function PatioCard({ entry, opName, facturaRecord, onAdvance, onEdit, onUpdate }
             </div>
           </div>
           <div className="ml-auto shrink-0 flex items-center gap-1.5">
+            {entry.notes && (
+              <span className="flex items-center rounded-full bg-orange-500/15 border border-orange-500/30 px-2 py-0.5 text-[10px] font-semibold text-orange-400 leading-none">
+                ⚠
+              </span>
+            )}
             {facturaRecord && (
               <span className="flex items-center gap-1 rounded-full bg-blue-500/15 border border-blue-500/30 px-2 py-0.5 text-[10px] font-semibold text-blue-400 leading-none">
                 <svg viewBox="0 0 14 14" className="w-3 h-3 fill-current shrink-0" xmlns="http://www.w3.org/2000/svg">
@@ -303,6 +308,14 @@ function PatioCard({ entry, opName, facturaRecord, onAdvance, onEdit, onUpdate }
                       <span>{client.phone}</span>
                     </div>
                   )}
+                </div>
+              )}
+
+              {/* Damage notes */}
+              {entry.notes && (
+                <div className="flex gap-2 rounded-xl bg-orange-500/8 border border-orange-500/20 px-3 py-2">
+                  <span className="text-orange-400 text-xs shrink-0 font-medium mt-0.5">⚠</span>
+                  <p className="text-xs text-orange-300 leading-relaxed whitespace-pre-wrap">{entry.notes}</p>
                 </div>
               )}
 
@@ -450,6 +463,7 @@ export default function EstadoPatio() {
   // Operator picker modal state
   const [operatorPickEntry, setOperatorPickEntry] = useState<ApiPatioEntry | null>(null)
   const [pickedOpId, setPickedOpId]               = useState('')
+  const [entryNotes, setEntryNotes]               = useState('')
   const [picking, setPicking]                     = useState(false)
   const [activeOperators, setActiveOperators]     = useState(operators.filter(o => (o.operator_type ?? 'detallado') === 'detallado'))
 
@@ -569,6 +583,7 @@ export default function EstadoPatio() {
       setActiveOperators(filtered)
       setOperatorPickEntry(entry)
       setPickedOpId('')
+      setEntryNotes(entry.notes ?? '')
       return
     }
     // Intercept delivery to collect payment info
@@ -583,15 +598,17 @@ export default function EstadoPatio() {
       setPaymentEntry(entry)
       setPayMethods({})
       setLatPay('')
-      setFactura(false)
+      const savedClient = entry.vehicle?.client
+      const hasSavedFactura = !!(savedClient?.tipo_persona && savedClient?.identificacion)
+      setFactura(hasSavedFactura)
       setFacturaData({
-        tipo:      'persona_natural',
-        id_type:   'CC',
-        id_number: '',
-        dv:        '',
-        name:      entry.vehicle?.client?.name  ?? '',
-        phone:     entry.vehicle?.client?.phone ?? '',
-        email:     '',
+        tipo:      (savedClient?.tipo_persona as 'persona_natural' | 'empresa') ?? 'persona_natural',
+        id_type:   savedClient?.tipo_identificacion ?? 'CC',
+        id_number: savedClient?.identificacion ?? '',
+        dv:        savedClient?.dv ?? '',
+        name:      savedClient?.name  ?? '',
+        phone:     savedClient?.phone ?? '',
+        email:     savedClient?.email ?? '',
       })
       return
     }
@@ -632,11 +649,21 @@ export default function EstadoPatio() {
     try {
       const updated = await api.patio.advance(paymentEntry.id, advancePayload)
       setEntries(prev => prev.map(e => e.id === updated.id ? updated : e))
-      // Persist factura data keyed by order id
+      // Persist factura data keyed by order id (localStorage) and to client profile (API)
       if (factura && facturaData.id_number && paymentEntry.order?.id) {
         const next = { ...facturaRecords, [paymentEntry.order.id]: facturaData as FacturaRecord }
         setFacturaRecords(next)
         localStorage.setItem(FACTURA_KEY, JSON.stringify(next))
+        const clientId = paymentEntry.vehicle?.client?.id
+        if (clientId) {
+          api.clients.patch(clientId, {
+            tipo_persona:        facturaData.tipo,
+            tipo_identificacion: facturaData.id_type,
+            identificacion:      facturaData.id_number,
+            dv:                  facturaData.dv || undefined,
+            email:               facturaData.email || undefined,
+          }).catch(() => {}) // non-blocking
+        }
       }
       toast.success(`${updated.vehicle?.plate ?? 'Vehículo'} entregado`)
       setPaymentEntry(null)
@@ -651,7 +678,7 @@ export default function EstadoPatio() {
     if (!operatorPickEntry || !pickedOpId) return
     setPicking(true)
     try {
-      await api.patio.edit(operatorPickEntry.id, { operator_id: Number(pickedOpId) })
+      await api.patio.edit(operatorPickEntry.id, { operator_id: Number(pickedOpId), notes: entryNotes || null })
       const updated = await api.patio.advance(operatorPickEntry.id)
       setEntries(prev => prev.map(e => e.id === updated.id ? updated : e))
       toast.success(`${updated.vehicle?.plate ?? 'Vehículo'} → En Proceso`)
@@ -698,9 +725,25 @@ export default function EstadoPatio() {
         ))}
       </div>
 
-      {/* Kanban */}
+      {/* Kanban + Minimap */}
+      {(() => {
+        const CAP = 12
+        const active = entries.filter(e => e.status !== 'entregado').length
+        const occ = Math.min(active, CAP)
+        const ov  = Math.max(0, active - CAP)
+        const cc  = active >= CAP ? 'text-red-400' : active >= 9 ? 'text-yellow-400' : 'text-green-400'
+        const bc  = active >= CAP ? 'bg-red-500'  : active >= 9 ? 'bg-yellow-500'   : 'bg-green-500'
+        const SP = [
+          { x: 25, y: 93 }, { x: 25, y: 83 },
+          { x: 65, y: 88 },
+          { x: 25, y: 69 }, { x: 25, y: 58 }, { x: 25, y: 48 }, { x: 25, y: 39 },
+          { x: 65, y: 67 }, { x: 65, y: 54 }, { x: 65, y: 42 },
+          { x: 25, y: 18 }, { x: 65, y: 18 },
+        ]
+        return (
+          <div className="flex gap-4 items-start">
       <LayoutGroup>
-        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+        <div className="flex-1 grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
           {COLUMNS.map(col => {
             const colEntries = entries.filter(e => e.status === col.status)
             return (
@@ -760,6 +803,45 @@ export default function EstadoPatio() {
           })}
         </div>
       </LayoutGroup>
+
+            {/* Minimap — sticky panel to the right of kanban, xl only */}
+            <div className="hidden xl:flex flex-col gap-2 sticky top-4 shrink-0 rounded-2xl border border-white/8 bg-white/[0.03] p-3" style={{ width: 200 }}>
+              <div className="flex items-center gap-1">
+                <span className="text-[10px] font-medium text-gray-500">Bodega</span>
+                <span className={cn('text-[10px] font-bold tabular-nums', cc)}>{active}/{CAP}</span>
+                {ov > 0 && <span className="text-[9px] font-semibold bg-red-500/15 border border-red-500/30 text-red-400 rounded-full px-1 leading-none py-0.5">+{ov}</span>}
+                <div className="flex-1 h-0.5 rounded-full bg-white/8 overflow-hidden">
+                  <motion.div animate={{ width: `${Math.min(100, (active / CAP) * 100)}%` }} transition={{ duration: 0.5 }} className={cn('h-full rounded-full', bc)} />
+                </div>
+              </div>
+              <div className="relative w-full rounded border border-white/10 bg-gray-950 overflow-hidden" style={{ height: 180 }}>
+                <div className="absolute top-0 left-0 border-r border-b border-white/10" style={{ width: '38%', height: '35%' }} />
+                <div className="absolute border-y border-white/10" style={{ top: '35%', left: 0, right: 0, height: '37%' }} />
+                {SP.map((pos, i) => {
+                  const occupied = i < occ
+                  return (
+                    <div key={i} className="absolute"
+                         style={{ left: `${pos.x}%`, top: `${pos.y}%`, transform: 'translate(-50%,-50%)', width: 10, height: 10 }}>
+                      <AnimatePresence mode="wait">
+                        {occupied ? (
+                          <motion.div key="occ"
+                            initial={{ scale: 0, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0, opacity: 0 }}
+                            transition={{ type: 'spring', stiffness: 400, damping: 22 }}
+                            className="w-full h-full rounded-sm bg-yellow-400/70" />
+                        ) : (
+                          <motion.div key="emp"
+                            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+                            className="w-full h-full rounded-sm border border-white/15" />
+                        )}
+                      </AnimatePresence>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          </div>
+        )
+      })()}
 
       {/* Edit Modal */}
       <AnimatePresence>
@@ -1330,6 +1412,18 @@ export default function EstadoPatio() {
                   ...activeOperators.map(op => ({ value: String(op.id), label: op.name })),
                 ]}
               />
+              <div className="space-y-1">
+                <label className="block text-xs font-medium text-gray-400">
+                  Daños / piezas faltantes <span className="text-gray-600 font-normal">(opcional)</span>
+                </label>
+                <textarea
+                  rows={3}
+                  placeholder="Ej: Rayón en puerta trasera derecha, tapón de gasolina roto..."
+                  value={entryNotes}
+                  onChange={e => setEntryNotes(e.target.value)}
+                  className="w-full rounded-xl bg-white/5 border border-white/10 text-sm text-white placeholder-gray-600 px-3 py-2 resize-none focus:outline-none focus:ring-1 focus:ring-yellow-500/50"
+                />
+              </div>
               <div className="flex gap-3 pt-1">
                 <Button variant="secondary" size="md" className="flex-1" onClick={() => setOperatorPickEntry(null)}>
                   Cancelar

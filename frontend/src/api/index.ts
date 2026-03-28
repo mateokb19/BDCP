@@ -32,7 +32,16 @@ export interface ApiVehicle {
   plate: string
   color?: string
   client_id?: number
-  client?: { name: string; phone?: string }
+  client?: {
+    id: number
+    name: string
+    phone?: string
+    email?: string
+    tipo_persona?: string
+    tipo_identificacion?: string
+    identificacion?: string
+    dv?: string
+  }
 }
 
 export interface ApiOrderItem {
