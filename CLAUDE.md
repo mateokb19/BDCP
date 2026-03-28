@@ -11,9 +11,11 @@ docker compose up --build      # first run (builds images + seeds DB)
 docker compose up              # subsequent runs
 ```
 
-- Frontend: http://localhost:5173
-- Backend API + Swagger: http://localhost:8000/docs
+- Frontend: http://localhost:28001
+- Backend API + Swagger: http://localhost:28000/docs
 - PostgreSQL: localhost:5432 (user: postgres, pass: bdcpolo123, db: bdcpolo)
+
+Docker port mapping: host 28000 → container 8000 (backend), host 28001 → container 5173 (frontend).
 
 ## Architecture
 
@@ -98,6 +100,8 @@ All routes are prefixed `/api/v1/`.
 | GET    | `/history` | Order history — `date_filter=YYYY-MM-DD` (single day, default today), OR `date_from`+`date_to` (range for PDF export), optional `search` (plate/client/order number) |
 | GET    | `/liquidation/{op_id}/week?week_start=YYYY-MM-DD` | Weekly liquidation data (7 days, qualifying orders) |
 | POST   | `/liquidation/{op_id}/liquidate?week_start=YYYY-MM-DD` | Confirm liquidation: process abonos, settlements, payment methods, auto-create pending debts + expense records |
+| GET    | `/liquidation/{op_id}/pending` | Count unliquidated orders for the operator (used to enable/disable the liquidate button) |
+| POST   | `/liquidation/{op_id}/liquidate-pending` | Liquidate all pending orders across all weeks at once |
 | GET    | `/liquidation/{op_id}/debts` | List all debts for an operator (with payment history) |
 | POST   | `/liquidation/{op_id}/debts` | Create a new debt |
 | PATCH  | `/liquidation/debts/{debt_id}/paid` | Mark debt as fully paid |
@@ -174,6 +178,9 @@ ALTER TABLE service_orders ADD COLUMN IF NOT EXISTS payment_nequi NUMERIC(12,2) 
 ALTER TABLE service_orders ADD COLUMN IF NOT EXISTS payment_bancolombia NUMERIC(12,2) NOT NULL DEFAULT 0;
 ALTER TABLE expenses ADD COLUMN IF NOT EXISTS payment_method VARCHAR(50);
 ALTER TABLE service_orders ADD COLUMN IF NOT EXISTS downpayment_method VARCHAR(50);
+ALTER TABLE service_orders ADD COLUMN IF NOT EXISTS latoneria_operator_pay NUMERIC(12,2);
+ALTER TABLE service_orders ADD COLUMN IF NOT EXISTS latoneria_liquidation_id INTEGER REFERENCES week_liquidations(id) ON DELETE SET NULL;
+ALTER TABLE service_orders ADD COLUMN IF NOT EXISTS pintura_liquidation_id INTEGER REFERENCES week_liquidations(id) ON DELETE SET NULL;
 ALTER TABLE week_liquidations ALTER COLUMN payment_transfer SET DEFAULT 0;  -- legacy column, no longer written
 ALTER TABLE week_liquidations ADD COLUMN IF NOT EXISTS payment_datafono NUMERIC(12,2) NOT NULL DEFAULT 0;
 ALTER TABLE week_liquidations ADD COLUMN IF NOT EXISTS payment_nequi NUMERIC(12,2) NOT NULL DEFAULT 0;
@@ -243,7 +250,7 @@ Each operator has an `operator_type` that determines which service categories co
 |---|---|---|
 | `detallado` | exterior, interior, ceramico, correccion_pintura | `commission_rate` % × sum of **standard (catalog) prices** — discounts are ignored |
 | `pintura` | pintura | `piece_count` × $90,000 per piece ($220k = ½ pieza, $430k = 1, $860k = 2) |
-| `latoneria` | latoneria | TBD |
+| `latoneria` | latoneria | `sum(service_orders.latoneria_operator_pay)` — manually entered at delivery, not a percentage |
 | `ppf` | ppf | TBD |
 | `polarizado` | polarizado | TBD |
 
@@ -251,6 +258,28 @@ Current operators:
 - **Detallado**: Carlos Mora, Francisco Currea, Luis Lopez (commission_rate: 30%)
 - **Pintura**: Jose D. Lindarte
 - **Latonería**: Enrique Rodríguez
+
+### Per-operator liquidation tracking columns
+
+A single `service_order` can contain items from multiple operator categories (mixed orders). To allow each operator type to independently track liquidation without overwriting each other:
+
+| `operator_type` | Column stamped on `service_orders` |
+|---|---|
+| `detallado` | `week_liquidation_id` |
+| `pintura` | `pintura_liquidation_id` |
+| `latoneria` | `latoneria_liquidation_id` |
+
+Backend helpers in `liquidation.py`:
+- `_liq_col(op_type)` → returns the correct column name
+- `_get_liq_id(order, op_type)` → reads the column value
+- `_is_liquidated(order, op_type, op_liq_ids)` → True if column is set and in the operator's liquidation set
+- `_stamp_order(order, op_type, liq_id)` → writes the liquidation ID to the correct column
+
+This prevents the bug where liquidating Jose (pintura) on a mixed order would overwrite Carlos's (detallado) `week_liquidation_id`, making Carlos's order reappear as unliquidated.
+
+### `latoneria_operator_pay` on `service_orders`
+
+Manually entered at delivery time (EstadoPatio advance to `entregado`). Shown when the order has any latoneria items. Capped at the client-facing latoneria total. Stored as `NUMERIC(12,2) NULLABLE`. Used by the latoneria liquidation endpoint as the operator's commission for that order.
 
 ### `standard_price` on `service_order_items`
 
@@ -309,6 +338,8 @@ Key implementation details:
 - Backend endpoint: `GET /api/v1/liquidation/{op_id}/report?period=week|month&ref_date=YYYY-MM-DD`
   - Defined in `backend/app/routers/liquidation.py` → `def get_report(...)`
   - Response schema: `ReportResponse` in `backend/app/schemas.py`
+- **Latoneria PDF**: commission column shows `latoneria_operator_pay` per order (not a % calculation). Labels read "Pago acordado" instead of "Comisión (X%)". Template branches on `isLatoneria` flag in `reportTemplate.ts`.
+- Template extracted to `frontend/src/app/pages/liquidacion/reportTemplate.ts`; `Liquidacion.tsx` calls `printReport(r, isLatoneria)`.
 
 ## Ingresos / Egresos
 
@@ -350,7 +381,7 @@ Key implementation details:
 - **AppContext** provides only `services`, `operators`, `loading`, and `createOrder()`. No global patio/ceramic/liquidation state — each page fetches its own data.
 - **Password gate** for Liquidacion uses `useState` (not sessionStorage) — resets on page refresh.
 - **`native_enum=False`** on all SQLAlchemy Enums → stored as VARCHAR. Column widths expanded to VARCHAR(30) for `category` columns after adding `correccion_pintura`.
-- **`_seed_if_empty()`** reseeds services if `count != 54` (restart-to-update pattern). Operators seeded only if table is empty. 54 services span 8 categories: exterior (11), interior (9), correccion_pintura (4), ceramico (5), ppf (2), polarizado (2), pintura (11), latoneria (10).
+- **`_seed_if_empty()`** reseeds services if `count != 54` (restart-to-update pattern). Operators are seeded with per-name INSERT-if-missing (not `count == 0`), so new operators can be added to the seed list without wiping existing data. 54 services span 8 categories: exterior (11), interior (9), correccion_pintura (4), ceramico (5), ppf (2), polarizado (2), pintura (11), latoneria (10).
 - **Ceramic treatments**: auto-created in `POST /orders` for every `ceramico` service; `operator_id` synced on `PATCH /patio/{id}` if operator changes.
 - **Week starts on Sunday** (`weekStartsOn: 0` in date-fns). `week_start` param is always the Sunday ISO date.
 - **Backend API prefix**: `/api/v1/` — all routers mounted under this prefix in `main.py`.
@@ -386,6 +417,8 @@ Key implementation details:
 - **`orders.py`** duplicate check: queries for an existing non-delivered `PatioEntry` for the same vehicle before creating the order; raises HTTP 409 if found.
 - **Historial PDF export**: "Descargar" button in `/historial` opens a modal with Hoy / Ayer / Elegir semana / Elegir mes options. Week/month pickers use hidden `<input type="week/month">` triggered via `useRef` + `.showPicker()`. Sends `date_from`+`date_to` to `GET /history`. PDF generated client-side as a Blob URL (same pattern as liquidation report): one row per order, services joined with `<br>`.
 - **`week_liquidations.payment_transfer` trap**: this column has no DB-level DEFAULT in older DBs (was populated via SQLAlchemy Python-side `default=0`). After removing it from the model, INSERTs omit it and fail with `NotNullViolation` — silently caught by the `IntegrityError` handler, making liquidation appear to succeed but save nothing. Fix: `ALTER COLUMN payment_transfer SET DEFAULT 0` (already in `main.py` migrations).
+- **`pendingData` stale state in Liquidacion**: `pendingData` (result of `GET /liquidation/{op_id}/pending`) must be reset to `null` when the selected operator or week changes. Without this, switching from a fully-liquidated operator leaves `unliquidated_count=0` which disables the "Liquidar semana" button for the next operator. Fixed with `setPendingData(null)` in the `useEffect([selectedOp, weekOffset])`.
+- **Latoneria price validation**: `IngresarServicio` computes `latWithNoPrice` — true when any selected latoneria service has no custom price entered. Confirm button is disabled with label "Ingresa el precio de latonería" in that case.
 
 ## Common commands
 
@@ -408,4 +441,10 @@ docker compose exec backend python -c "from app.database import SessionLocal; fr
 
 # Run backend outside Docker (needs local PostgreSQL)
 cd backend && python -m uvicorn app.main:app --reload --port 8000
+
+# Run end-to-end test (backend must be running at localhost:28000)
+cd backend && python test_e2e.py
+
+# Reset DB completely (WARNING: deletes all data) then rebuild
+docker compose down -v && docker compose up -d
 ```
