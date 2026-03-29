@@ -101,7 +101,7 @@ export interface OrderCreatePayload {
   operator_id?: number | null
   service_ids: number[]
   notes?: string
-  item_overrides?: { service_id: number; unit_price: number }[]
+  item_overrides?: { service_id: number; unit_price: number; custom_name?: string }[]
   scheduled_delivery_at?: string
   downpayment?: number
   downpayment_method?: string
@@ -173,6 +173,8 @@ export interface ApiLiqWeekOrder {
   piece_count?:  string
   latoneria_operator_pay?: string
   is_liquidated: boolean
+  commission_base?: string
+  ceramic_bonus?:   string
 }
 
 export interface ApiLiqWeekDay {
@@ -205,6 +207,7 @@ export interface ApiLiqWeekResponse {
   payment_nequi_amount?:        string
   payment_bancolombia_amount?:  string
   amount_pending?:              string
+  ceramic_bonus_total?:         string
 }
 
 export interface ApiDebtPayment {
@@ -340,6 +343,8 @@ export interface ApiReportOrder {
   piece_count?:           string
   latoneria_operator_pay?: string
   is_liquidated:          boolean
+  commission_base?:       string
+  ceramic_bonus?:         string
 }
 
 export interface ApiReportWeekStatus {

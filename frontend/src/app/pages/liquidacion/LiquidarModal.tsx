@@ -29,7 +29,10 @@ export function LiquidarModal({ open, onClose, operator: _operator, weekData, de
     ? unliqOrders.reduce((s, o) => s + Number(o.piece_count ?? 0), 0) * 90000
     : weekData.operator_type === 'latoneria'
     ? unliqOrders.reduce((s, o) => s + Number(o.latoneria_operator_pay ?? 0), 0)
-    : Math.round(unliqGross * Number(weekData.commission_rate)) / 100
+    : unliqOrders.reduce((s, o) =>
+        s + Number(o.commission_base ?? o.total) * Number(weekData.commission_rate) / 100
+          + Number(o.ceramic_bonus ?? 0)
+      , 0)
 
   const unpaidOpOwes      = debts.filter(d => d.direction === 'operario_empresa' && !d.paid)
   const unpaidCompanyOwes = debts.filter(d => d.direction === 'empresa_operario' && !d.paid)

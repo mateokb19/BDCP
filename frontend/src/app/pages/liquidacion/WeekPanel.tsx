@@ -88,6 +88,13 @@ export function WeekPanel({
             ))}
           </div>
 
+          {weekData.operator_type === 'detallado' && Number(weekData.ceramic_bonus_total ?? 0) > 0 && (
+            <div className="flex justify-between text-xs text-amber-400/80 px-1 -mt-1">
+              <span>Bonos cerámicos</span>
+              <span>+${cop(weekData.ceramic_bonus_total!)}</span>
+            </div>
+          )}
+
           <div className="space-y-2">
             {weekData.is_liquidated && (
               <div className="space-y-1.5">
@@ -195,11 +202,17 @@ export function WeekPanel({
                                 · {pieces} pieza{pieces !== 1 ? 's' : ''} × $90.000
                               </span>
                             ) : null
-                          })() : Number(day.day_total) > 0 && weekData.operator_type !== 'latoneria' ? (
-                            <span className="text-yellow-500 ml-2">
-                              · comisión ${cop((Number(day.day_total) * Number(weekData.commission_rate) / 100).toFixed(0))}
-                            </span>
-                          ) : null}
+                          })() : Number(day.day_total) > 0 && weekData.operator_type !== 'latoneria' ? (() => {
+                            const dayComm = day.orders.reduce((s, o) =>
+                              s + Number(o.commission_base ?? o.total) * Number(weekData.commission_rate) / 100
+                                + Number(o.ceramic_bonus ?? 0)
+                            , 0)
+                            return (
+                              <span className="text-yellow-500 ml-2">
+                                · comisión ${cop(dayComm.toFixed(0))}
+                              </span>
+                            )
+                          })() : null}
                         </p>
                       </>
                     ) : (

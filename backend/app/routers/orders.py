@@ -100,18 +100,20 @@ def create_order(payload: schemas.OrderCreate, db: Session = Depends(get_db)):
         )
 
     # 4. Build order items with price snapshot (overrides supported)
-    override_map = {ov.service_id: ov.unit_price for ov in payload.item_overrides}
+    override_map = {ov.service_id: ov for ov in payload.item_overrides}
     subtotal = Decimal("0.00")
     discount = Decimal("0.00")
     item_rows = []
     for svc in services:
+        ov        = override_map.get(svc.id)
         std_price = _get_service_price(svc, payload.vehicle_type)
-        price     = override_map.get(svc.id, std_price)
+        price     = ov.unit_price if ov else std_price
+        name      = (ov.custom_name or svc.name) if ov else svc.name
         if price < std_price:
             discount += std_price - price
         item_rows.append(models.ServiceOrderItem(
             service_id=svc.id,
-            service_name=svc.name,
+            service_name=name,
             service_category=svc.category,
             unit_price=price,
             standard_price=std_price,

@@ -24,6 +24,7 @@ class ServiceCategoryEnum(str, enum.Enum):
     pintura             = "pintura"
     ppf                 = "ppf"
     polarizado          = "polarizado"
+    otro                = "otro"
 
 class OrderStatusEnum(str, enum.Enum):
     pendiente  = "pendiente"

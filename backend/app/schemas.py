@@ -89,8 +89,9 @@ class OrderItemIn(BaseModel):
 
 
 class ItemOverride(BaseModel):
-    service_id: int
-    unit_price: Decimal
+    service_id:  int
+    unit_price:  Decimal
+    custom_name: Optional[str] = None
 
 
 class OrderCreate(BaseModel):
@@ -370,6 +371,8 @@ class LiqWeekOrder(BaseModel):
     piece_count:   Optional[Decimal] = None
     latoneria_operator_pay: Optional[Decimal] = None
     is_liquidated: bool
+    commission_base: Optional[Decimal] = None  # Signature-adjusted base for ceramics
+    ceramic_bonus:   Optional[Decimal] = None  # flat application bonus for ceramic items
 
 
 class LiqWeekDay(BaseModel):
@@ -389,7 +392,7 @@ class LiqWeekResponse(BaseModel):
     week_end:                 str
     days:                     List[LiqWeekDay]
     week_total:               Decimal
-    commission_base:          Decimal           # detallado: only detallado items; pintura: pintura items total
+    commission_base:          Decimal           # detallado: Signature-adjusted base; pintura: pintura items total
     week_services:            int
     piece_count:              Optional[Decimal]  # pintura only
     commission_amount:        Decimal
@@ -402,6 +405,7 @@ class LiqWeekResponse(BaseModel):
     payment_nequi_amount:        Optional[Decimal]
     payment_bancolombia_amount:  Optional[Decimal]
     amount_pending:              Optional[Decimal]
+    ceramic_bonus_total:         Optional[Decimal] = None  # total flat bonuses for ceramic items
 
 
 class DebtPaymentOut(OrmBase):
@@ -465,6 +469,8 @@ class ReportOrder(BaseModel):
     piece_count:           Optional[Decimal] = None
     latoneria_operator_pay: Optional[Decimal] = None
     is_liquidated:         bool
+    commission_base:       Optional[Decimal] = None
+    ceramic_bonus:         Optional[Decimal] = None
 
 
 class ReportWeekStatus(BaseModel):

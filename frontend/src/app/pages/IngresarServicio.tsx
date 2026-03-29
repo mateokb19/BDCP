@@ -1,6 +1,6 @@
 import { useState, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Car, Truck, Bike, Check, ChevronRight, Search, User, Phone, Palette, Hash, Calendar, Pencil, AlertTriangle, ShieldCheck, Sparkles, Wrench, Paintbrush, Shield, Layers } from 'lucide-react'
+import { Car, Truck, Bike, Check, ChevronRight, Search, User, Phone, Palette, Hash, Calendar, Pencil, AlertTriangle, ShieldCheck, Sparkles, Wrench, Paintbrush, Shield, Layers, Plus, X } from 'lucide-react'
 import { useNavigate, useLocation } from 'react-router'
 import { toast } from 'sonner'
 import { Button } from '@/app/components/ui/Button'
@@ -106,42 +106,88 @@ const AREA_CATEGORIES: Record<AreaId, string[]> = {
 
 const BRANDS = [
   'Toyota', 'Honda', 'Ford', 'Chevrolet', 'Nissan', 'Mazda', 'Volkswagen',
-  'Hyundai', 'Kia', 'Renault', 'Peugeot', 'Suzuki', 'Jeep', 'RAM',
-  'BMW', 'Mercedes-Benz', 'Audi', 'Volvo', 'Porsche', 'Land Rover',
-  'Subaru', 'Mitsubishi', 'Fiat', 'BYD', 'Chery', 'JAC',
+  'Hyundai', 'Kia', 'Renault', 'Peugeot', 'Citroën', 'Suzuki', 'Jeep', 'RAM', 'Dodge',
+  'BMW', 'Mercedes-Benz', 'Audi', 'Volvo', 'Porsche', 'Land Rover', 'Range Rover', 'Mini', 'Lexus',
+  'Subaru', 'Mitsubishi', 'Fiat', 'Seat', 'Cupra', 'Skoda',
+  'BYD', 'Chery', 'JAC', 'Jetour', 'GAC Aion', 'Zeekr', 'Fang Cheng Bao', 'SsangYong',
+  'Tesla',
 ]
 
 const MODELS_BY_BRAND: Record<string, string[]> = {
-  Toyota:          ['Corolla', 'Hilux', 'Camry', 'RAV4', 'Fortuner', 'Land Cruiser', 'Yaris', 'Rush', 'SW4'],
-  Honda:           ['Civic', 'CR-V', 'Fit', 'HR-V', 'Accord', 'Pilot', 'WR-V'],
-  Ford:            ['F-150', 'Ranger', 'Explorer', 'Escape', 'Bronco', 'Mustang', 'Territory', 'Edge'],
-  Chevrolet:       ['Silverado', 'Colorado', 'Tahoe', 'Equinox', 'Traverse', 'Spark', 'Trax', 'Blazer', 'Captiva'],
-  Nissan:          ['Sentra', 'Frontier', 'X-Trail', 'Versa', 'Kicks', 'Pathfinder', 'Murano', 'NP300'],
-  Mazda:           ['CX-5', 'Mazda3', 'CX-9', 'CX-3', 'CX-30', 'BT-50', 'MX-5'],
-  Volkswagen:      ['Jetta', 'Golf', 'Tiguan', 'Polo', 'Passat', 'Amarok', 'T-Cross', 'Taos'],
-  Hyundai:         ['Tucson', 'Santa Fe', 'Elantra', 'Creta', 'Accent', 'Ioniq', 'Palisade', 'Venue'],
-  Kia:             ['Sportage', 'Sorento', 'Picanto', 'Seltos', 'Rio', 'Telluride', 'Stinger', 'Soul'],
-  Renault:         ['Sandero', 'Logan', 'Duster', 'Captur', 'Koleos', 'Kwid', 'Symbol', 'Stepway', 'Oroch'],
-  Peugeot:         ['208', '301', '308', '2008', '3008', '508', '5008'],
-  Suzuki:          ['Swift', 'Vitara', 'Grand Vitara', 'Baleno', 'Jimny', 'S-Cross', 'Ertiga'],
-  Jeep:            ['Wrangler', 'Cherokee', 'Grand Cherokee', 'Compass', 'Renegade', 'Gladiator'],
-  RAM:             ['700', '1500', '2500', 'ProMaster'],
-  BMW:             ['3 Series', '5 Series', 'X3', 'X5', 'X1', 'X7', '7 Series', 'M3', 'M5'],
-  'Mercedes-Benz': ['C-Class', 'E-Class', 'GLA', 'GLC', 'GLE', 'A-Class', 'S-Class', 'CLA'],
-  Audi:            ['A4', 'Q5', 'A3', 'Q3', 'A6', 'Q7', 'Q8', 'e-tron'],
-  Volvo:           ['XC40', 'XC60', 'XC90', 'S60', 'V60', 'C40'],
-  Porsche:         ['Cayenne', 'Macan', '911', 'Panamera', 'Taycan', 'Cayenne E-Hybrid'],
-  'Land Rover':    ['Discovery', 'Defender', 'Range Rover', 'Freelander', 'Evoque', 'Velar'],
-  Subaru:          ['Impreza', 'Forester', 'Outback', 'XV', 'Legacy', 'WRX'],
-  Mitsubishi:      ['Outlander', 'Montero', 'L200', 'Eclipse Cross', 'Lancer', 'ASX'],
-  Fiat:            ['Argo', 'Pulse', 'Toro', 'Strada', 'Mobi', 'Cronos'],
-  BYD:             ['Han', 'Tang', 'Atto 3', 'Dolphin', 'Song Plus', 'Seal'],
-  Chery:           ['Tiggo 2', 'Tiggo 4', 'Tiggo 7', 'Arrizo 5', 'Tiggo 8'],
-  JAC:             ['S3', 'S5', 'T6', 'T8', 'JS4', 'Sei 2'],
+  Toyota:           ['Corolla', 'Hilux', 'Camry', 'RAV4', 'Fortuner', 'Land Cruiser', 'Yaris', 'Rush', 'SW4'],
+  Honda:            ['Civic', 'CR-V', 'Fit', 'HR-V', 'Accord', 'Pilot', 'WR-V'],
+  Ford:             ['F-150', 'Ranger', 'Explorer', 'Escape', 'Bronco', 'Mustang', 'Territory', 'Edge'],
+  Chevrolet:        ['Silverado', 'Colorado', 'Tahoe', 'Equinox', 'Traverse', 'Spark', 'Trax', 'Blazer', 'Captiva'],
+  Nissan:           ['Sentra', 'Frontier', 'X-Trail', 'Versa', 'Kicks', 'Pathfinder', 'Murano', 'NP300'],
+  Mazda:            ['CX-5', 'Mazda3', 'CX-9', 'CX-3', 'CX-30', 'BT-50', 'MX-5'],
+  Volkswagen:       ['Jetta', 'Golf', 'Tiguan', 'Polo', 'Passat', 'Amarok', 'T-Cross', 'Taos'],
+  Hyundai:          ['Tucson', 'Santa Fe', 'Elantra', 'Creta', 'Accent', 'Ioniq', 'Palisade', 'Venue'],
+  Kia:              ['Sportage', 'Sorento', 'Picanto', 'Seltos', 'Rio', 'Telluride', 'Stinger', 'Soul'],
+  Renault:          ['Sandero', 'Logan', 'Duster', 'Captur', 'Koleos', 'Kwid', 'Symbol', 'Stepway', 'Oroch'],
+  Peugeot:          ['208', '301', '308', '2008', '3008', '508', '5008'],
+  'Citroën':        ['C3', 'C4', 'C5 Aircross', 'C3 Picasso', 'Berlingo', 'Jumper'],
+  Suzuki:           ['Swift', 'Vitara', 'Grand Vitara', 'Baleno', 'Jimny', 'S-Cross', 'Ertiga'],
+  Jeep:             ['Wrangler', 'Cherokee', 'Grand Cherokee', 'Compass', 'Renegade', 'Gladiator'],
+  RAM:              ['700', '1500', '2500', 'ProMaster'],
+  Dodge:            ['Challenger', 'Charger', 'Durango', 'Journey', 'Ram 1500'],
+  BMW:              ['3 Series', '5 Series', 'X3', 'X5', 'X1', 'X7', '7 Series', 'M3', 'M5'],
+  'Mercedes-Benz':  ['C-Class', 'E-Class', 'GLA', 'GLC', 'GLE', 'A-Class', 'S-Class', 'CLA'],
+  Audi:             ['A4', 'Q5', 'A3', 'Q3', 'A6', 'Q7', 'Q8', 'e-tron'],
+  Volvo:            ['XC40', 'XC60', 'XC90', 'S60', 'V60', 'C40'],
+  Porsche:          ['Cayenne', 'Macan', '911', 'Panamera', 'Taycan', 'Cayenne E-Hybrid'],
+  'Land Rover':     ['Discovery', 'Defender', 'Freelander'],
+  'Range Rover':    ['Range Rover', 'Sport', 'Evoque', 'Velar', 'Autobiography', 'SE'],
+  Mini:             ['Cooper', 'Countryman', 'Clubman', 'Convertible', 'Paceman'],
+  Lexus:            ['NX', 'RX', 'UX', 'IS', 'ES', 'GX', 'LX', 'LC'],
+  Subaru:           ['Impreza', 'Forester', 'Outback', 'XV', 'Legacy', 'WRX'],
+  Mitsubishi:       ['Outlander', 'Montero', 'L200', 'Eclipse Cross', 'Lancer', 'ASX'],
+  Fiat:             ['Argo', 'Pulse', 'Toro', 'Strada', 'Mobi', 'Cronos'],
+  Seat:             ['Ibiza', 'León', 'Arona', 'Ateca', 'Tarraco', 'Alhambra'],
+  Cupra:            ['Formentor', 'Born', 'Leon', 'Ateca'],
+  Skoda:            ['Octavia', 'Fabia', 'Superb', 'Karoq', 'Kodiaq', 'Kamiq'],
+  BYD:              ['Han', 'Tang', 'Atto 3', 'Dolphin', 'Song Plus', 'Seal'],
+  Chery:            ['Tiggo 2', 'Tiggo 4', 'Tiggo 7', 'Arrizo 5', 'Tiggo 8'],
+  JAC:              ['S3', 'S5', 'T6', 'T8', 'JS4', 'Sei 2'],
+  Jetour:           ['X70', 'X70S', 'X90', 'Dashing', 'T2'],
+  'GAC Aion':       ['S', 'Y', 'V', 'LX Plus', 'Hyper GT'],
+  Zeekr:            ['001', '007', 'X', '009'],
+  'Fang Cheng Bao': ['5', '8'],
+  SsangYong:        ['Rexton', 'Tivoli', 'Musso', 'Torres', 'Korando'],
+  Tesla:            ['Model 3', 'Model Y', 'Model S', 'Model X', 'Cybertruck'],
 }
 
-function getModelSuggestions(brand: string, query: string): string[] {
-  const models = MODELS_BY_BRAND[brand] ?? Object.values(MODELS_BY_BRAND).flat()
+const MOTO_BRANDS = [
+  'Yamaha', 'AKT', 'Bajaj', 'Suzuki', 'Honda', 'Victory', 'TVS', 'Hero',
+  'KTM', 'Kymco', 'Ceronte', 'Royal Enfield', 'Benelli', 'Fratelli',
+  'BMW', 'Vaisand', 'Starker', 'Ducati', 'Piaggio', 'Ayco',
+]
+
+const MOTO_MODELS_BY_BRAND: Record<string, string[]> = {
+  Yamaha:          ['YBR 125', 'MT-03', 'R3', 'FZ 150', 'Crypton', 'Hacer 150', 'Aerox', 'MT-07'],
+  AKT:             ['TTR 200', 'NKD 125', 'Flex 125', 'Dynamic 125', 'CR5'],
+  Bajaj:           ['Pulsar NS 200', 'Pulsar 150', 'Pulsar NS 160', 'Dominar 400', 'Boxer'],
+  Suzuki:          ['GN 125', 'Gixxer 150', 'GSX-R 150', 'DR 200'],
+  Honda:           ['CB 190R', 'CB 125F', 'Wave 110', 'CG 150', 'XR 150L', 'CB 300R', 'PCX 125'],
+  Victory:         ['Judge', 'Cross Country', 'Cross Roads', 'Hammer', 'Magnum'],
+  TVS:             ['Apache RTR 200', 'Apache RTR 160', 'Star Sport', 'Ntorq 125'],
+  Hero:            ['Hunk 150R', 'Ignitor 125', 'Dash 110', 'Xpulse 200'],
+  KTM:             ['Duke 200', 'Duke 390', 'RC 200', 'Adventure 390', 'EXC 300'],
+  Kymco:           ['AK 550', 'Downtown 350', 'Agility 125', 'Xciting 400'],
+  Ceronte:         ['Xtreme 200', 'Chopper 250'],
+  'Royal Enfield': ['Classic 350', 'Meteor 350', 'Himalayan', 'Thunderbird', 'Bullet 350'],
+  Benelli:         ['TRK 502', 'BN 302', 'Leoncino 500', 'TNT 135', '752S'],
+  Fratelli:        ['FT 150', 'FT 200'],
+  BMW:             ['G 310 R', 'G 310 GS', 'F 850 GS', 'R 1250 GS', 'S 1000 RR'],
+  Vaisand:         ['VS 150', 'VS 200'],
+  Starker:         ['Urban 125', 'Street 150', 'Eco 100'],
+  Ducati:          ['Panigale V4', 'Monster', 'Multistrada', 'Scrambler', 'Diavel'],
+  Piaggio:         ['Vespa 150', 'Liberty 150', 'MP3', 'Beverly 300'],
+  Ayco:            ['GTS 200', 'GTS 150', 'Tekken 250'],
+}
+
+function getModelSuggestions(brand: string, query: string, isMoto = false): string[] {
+  const dict = isMoto ? MOTO_MODELS_BY_BRAND : MODELS_BY_BRAND
+  const models = dict[brand] ?? Object.values(dict).flat()
   return models.filter(m => m.toLowerCase().includes(query.toLowerCase())).slice(0, 6)
 }
 
@@ -181,16 +227,22 @@ export default function IngresarServicio() {
     customPrices: {}, warrantyServiceIds: [], downpayment: '', downpaymentMethod: '', isWarranty: false,
   })
 
+  // Custom "otro" services
+  const [customServices, setCustomServices] = useState<{ name: string; price: string }[]>([])
+  const [otroOpen, setOtroOpen] = useState(false)
+  const otroSlots = services.filter(s => s.category === 'otro')
+
   // Brand autocomplete
   const [brandQuery, setBrandQuery]     = useState(fromAppt?.brand ?? '')
   const [showBrandSug, setShowBrandSug] = useState(false)
   const brandRef = useRef<HTMLDivElement>(null)
-  const filteredBrands = BRANDS.filter(b => b.toLowerCase().includes(brandQuery.toLowerCase()))
+  const activeBrands   = vehicleType === 'moto' ? MOTO_BRANDS : BRANDS
+  const filteredBrands = activeBrands.filter(b => b.toLowerCase().includes(brandQuery.toLowerCase()))
 
   // Model autocomplete
   const [showModelSug, setShowModelSug] = useState(false)
   const modelRef = useRef<HTMLDivElement>(null)
-  const modelSuggestions = getModelSuggestions(form.brand, form.model)
+  const modelSuggestions = getModelSuggestions(form.brand, form.model, vehicleType === 'moto')
 
   // Price editing
   const [editingPriceId, setEditingPriceId] = useState<number | null>(null)
@@ -302,14 +354,18 @@ export default function IngresarServicio() {
     return getStandardPrice(service) * qty
   }
 
+  const customServicesTotal = customServices.reduce((sum, cs) => {
+    const n = Number(parseCOP(cs.price))
+    return sum + (cs.name && n > 0 ? n : 0)
+  }, 0)
   const total = form.selectedServices.reduce((sum, id) => {
     const s = services.find(s => s.id === id)
     return sum + (s ? getEffectivePrice(s) : 0)
-  }, 0)
+  }, 0) + customServicesTotal
   const standardTotal = form.selectedServices.reduce((sum, id) => {
     const s = services.find(s => s.id === id)
     return sum + (s ? getStandardPrice(s) : 0)
-  }, 0)
+  }, 0) + customServicesTotal
   const totalDiscount = standardTotal - total
   const abonoAmt = Number(form.downpayment) || 0
   const restante = Math.max(0, total - abonoAmt)
@@ -322,9 +378,11 @@ export default function IngresarServicio() {
     const price = custom !== undefined && custom !== '' ? Number(custom) : Number(s.price_automovil)
     return price <= 0
   })
+  // Custom service has name but no price — block confirm
+  const customWithNoPrice = customServices.filter(cs => cs.name && !Number(parseCOP(cs.price)))
 
   async function handleConfirm() {
-    if (!vehicleType || submitting || latWithNoPrice.length > 0) return
+    if (!vehicleType || submitting || latWithNoPrice.length > 0 || customWithNoPrice.length > 0) return
     setSubmitting(true)
     try {
       // Custom price overrides (skip if service is warranty — warranty takes precedence)
@@ -348,7 +406,17 @@ export default function IngresarServicio() {
         .filter(id => form.selectedServices.includes(id))
         .map(id => ({ service_id: id, unit_price: 0 }))
 
-      const itemOverrides = [...customOverrides, ...warrantyOverrides]
+      // Custom "otro" service overrides — each needs a unique slot service_id
+      const validCustom = customServices.filter(cs => cs.name && Number(parseCOP(cs.price)) > 0)
+      const customIds   = validCustom.map((_, i) => otroSlots[i]?.id).filter(Boolean) as number[]
+      const customOverridesOtro = validCustom.map((cs, i) => ({
+        service_id:  otroSlots[i].id,
+        unit_price:  Number(parseCOP(cs.price)),
+        custom_name: cs.name.trim(),
+      }))
+
+      const itemOverrides = [...customOverrides, ...warrantyOverrides, ...customOverridesOtro]
+      const allServiceIds = [...form.selectedServices, ...customIds]
 
       const scheduledDeliveryAt = form.deliveryDate
         ? `${form.deliveryDate}T${form.deliveryTime || '00:00'}:00`
@@ -362,7 +430,7 @@ export default function IngresarServicio() {
         color:        form.color,
         clientName:   form.clientName,
         clientPhone:  form.clientPhone,
-        serviceIds:   form.selectedServices,
+        serviceIds:   allServiceIds,
         notes:        form.notes || undefined,
         scheduledDeliveryAt,
         downpayment:       abonoAmt > 0 ? abonoAmt : undefined,
@@ -379,6 +447,7 @@ export default function IngresarServicio() {
       }
       setStep(1); setPrevStep(1); setVehicleType(null); setExpandedAreas(new Set()); setPartQuantities({})
       setForm({ plate: '', brand: '', model: '', color: '', clientName: '', clientPhone: '', selectedServices: [], notes: '', deliveryDate: '', deliveryTime: '', customPrices: {}, warrantyServiceIds: [], downpayment: '', downpaymentMethod: '', isWarranty: false })
+      setCustomServices([]); setOtroOpen(false)
       setBrandQuery('')
       navigate('/')
     } catch (err) {
@@ -761,6 +830,73 @@ export default function IngresarServicio() {
                     })}
                     </AnimatePresence>
 
+                    {/* ── Otros Servicios ──────────────────────────────── */}
+                    {otroSlots.length > 0 && (
+                      <div className="rounded-xl border border-white/8 overflow-hidden">
+                        <button
+                          type="button"
+                          onClick={() => setOtroOpen(v => !v)}
+                          className="group w-full flex items-center gap-3 px-3 py-2.5 bg-white/[0.03] hover:bg-white/[0.05] transition-colors"
+                        >
+                          <span className="shrink-0 text-gray-400 group-hover:text-gray-300"><Plus size={15} /></span>
+                          <span className="flex-1 text-sm font-medium text-gray-300 text-left">Otros servicios</span>
+                          {customServices.filter(cs => cs.name && Number(parseCOP(cs.price)) > 0).length > 0 && (
+                            <span className="text-xs text-yellow-400 font-medium">
+                              {customServices.filter(cs => cs.name && Number(parseCOP(cs.price)) > 0).length} sel.
+                            </span>
+                          )}
+                          <ChevronRight size={14} className={cn('text-gray-600 transition-transform shrink-0', otroOpen && 'rotate-90')} />
+                        </button>
+                        <AnimatePresence initial={false}>
+                          {otroOpen && (
+                            <motion.div
+                              initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }}
+                              transition={{ duration: 0.2 }} className="overflow-hidden"
+                            >
+                              <div className="p-3 pt-2 border-t border-white/5 space-y-2">
+                                <p className="text-[11px] text-gray-600">Para servicios ocasionales como domicilio, traslado, etc. Máximo {otroSlots.length}.</p>
+                                {customServices.map((cs, i) => (
+                                  <div key={i} className="flex items-center gap-2">
+                                    <input
+                                      type="text"
+                                      placeholder="Nombre del servicio"
+                                      value={cs.name}
+                                      maxLength={80}
+                                      onChange={e => setCustomServices(prev => prev.map((x, j) => j === i ? { ...x, name: e.target.value } : x))}
+                                      className="flex-1 rounded-lg border border-white/10 bg-white/5 px-2.5 py-1.5 text-sm text-gray-100 focus:border-yellow-500/50 focus:outline-none focus:ring-1 focus:ring-yellow-500/20 min-w-0"
+                                    />
+                                    <div className="relative shrink-0">
+                                      <span className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-500 text-xs">$</span>
+                                      <input
+                                        type="text" inputMode="numeric"
+                                        placeholder="0"
+                                        value={fmtCOP(cs.price)}
+                                        onWheel={e => e.currentTarget.blur()}
+                                        onChange={e => setCustomServices(prev => prev.map((x, j) => j === i ? { ...x, price: parseCOP(e.target.value) } : x))}
+                                        className="w-28 rounded-lg border border-white/10 bg-white/5 pl-5 pr-2 py-1.5 text-sm text-gray-100 focus:border-yellow-500/50 focus:outline-none focus:ring-1 focus:ring-yellow-500/20"
+                                      />
+                                    </div>
+                                    <button type="button" onClick={() => setCustomServices(prev => prev.filter((_, j) => j !== i))}
+                                      className="shrink-0 p-1 rounded-md text-gray-600 hover:text-red-400 hover:bg-red-500/10 transition-colors">
+                                      <X size={14} />
+                                    </button>
+                                  </div>
+                                ))}
+                                {customServices.length < otroSlots.length && (
+                                  <button type="button"
+                                    onClick={() => setCustomServices(prev => [...prev, { name: '', price: '' }])}
+                                    className="flex items-center gap-1.5 text-xs text-yellow-400 hover:text-yellow-300 transition-colors mt-1"
+                                  >
+                                    <Plus size={12} /> Agregar servicio
+                                  </button>
+                                )}
+                              </div>
+                            </motion.div>
+                          )}
+                        </AnimatePresence>
+                      </div>
+                    )}
+
                   </div>
                 </div>
 
@@ -770,7 +906,7 @@ export default function IngresarServicio() {
                     <h3 className="text-sm font-semibold text-yellow-400 uppercase tracking-wider mb-4">Resumen</h3>
 
                     <div className="flex-1 space-y-2 overflow-y-auto">
-                      {selectedServiceObjs.length === 0 ? (
+                      {selectedServiceObjs.length === 0 && customServices.filter(cs => cs.name).length === 0 ? (
                         <p className="text-sm text-gray-600 italic">Selecciona servicios...</p>
                       ) : (
                         <AnimatePresence>
@@ -780,6 +916,16 @@ export default function IngresarServicio() {
                               className="flex justify-between items-center py-2 border-b border-white/6">
                               <span className="text-sm text-gray-300">{s.name}</span>
                               <span className="text-sm font-medium text-yellow-400">${Number(getEffectivePrice(s)).toLocaleString('es-CO')}</span>
+                            </motion.div>
+                          ))}
+                          {customServices.filter(cs => cs.name).map((cs, i) => (
+                            <motion.div key={`otro-${i}`}
+                              initial={{ opacity: 0, x: 10 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 10 }}
+                              className="flex justify-between items-center py-2 border-b border-white/6">
+                              <span className="text-sm text-gray-300">{cs.name || '—'}</span>
+                              <span className="text-sm font-medium text-yellow-400">
+                                {Number(parseCOP(cs.price)) > 0 ? `$${Number(parseCOP(cs.price)).toLocaleString('es-CO')}` : '—'}
+                              </span>
                             </motion.div>
                           ))}
                         </AnimatePresence>
@@ -1006,6 +1152,16 @@ export default function IngresarServicio() {
                         </div>
                       )
                     })}
+                    {/* Custom "otro" services in step 3 */}
+                    {customServices.filter(cs => cs.name && Number(parseCOP(cs.price)) > 0).map((cs, i) => (
+                      <div key={`otro-${i}`} className="rounded-xl border border-white/6 bg-white/[0.02] px-3 py-2.5">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <Badge variant="gray">Otro</Badge>
+                          <span className="flex-1 text-sm text-gray-200 truncate">{cs.name}</span>
+                          <span className="text-sm font-medium text-yellow-400 shrink-0">${Number(parseCOP(cs.price)).toLocaleString('es-CO')}</span>
+                        </div>
+                      </div>
+                    ))}
                   </div>
 
                   {/* Totals */}
@@ -1117,8 +1273,11 @@ export default function IngresarServicio() {
                     ← Editar
                   </Button>
                   <Button variant="primary" size="lg" className="flex-1" onClick={handleConfirm}
-                    disabled={submitting || latWithNoPrice.length > 0}>
-                    {submitting ? 'Guardando...' : latWithNoPrice.length > 0 ? 'Ingresa el precio de latonería' : <><Check size={18} /> Confirmar Orden</>}
+                    disabled={submitting || latWithNoPrice.length > 0 || customWithNoPrice.length > 0}>
+                    {submitting ? 'Guardando...'
+                      : latWithNoPrice.length > 0 ? 'Ingresa el precio de latonería'
+                      : customWithNoPrice.length > 0 ? 'Ingresa el precio del servicio adicional'
+                      : <><Check size={18} /> Confirmar Orden</>}
                   </Button>
                 </div>
               </GlassCard>

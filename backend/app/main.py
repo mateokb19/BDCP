@@ -106,7 +106,7 @@ with engine.connect() as _conn:
     _conn.commit()
 
 
-_EXPECTED_SERVICES = 55
+_EXPECTED_SERVICES = 60
 
 _SERVICES_SEED = [
     # ── Servicios Básicos / Exterior ─────────────────────────────────────
@@ -172,6 +172,12 @@ _SERVICES_SEED = [
     dict(category="latoneria", name="Desmonte/Monte de Bumper",   price_automovil=110000, price_camion_estandar=110000, price_camion_xl=110000),
     dict(category="latoneria", name="PDR",                        price_automovil=200000, price_camion_estandar=200000, price_camion_xl=200000),
     dict(category="latoneria", name="Arreglo Rin",                price_automovil=250000, price_camion_estandar=250000, price_camion_xl=250000),
+    # ── Otros servicios (slots para servicios personalizados) ────────────────
+    dict(category="otro", name="Otro servicio 1", price_automovil=0, price_camion_estandar=0, price_camion_xl=0),
+    dict(category="otro", name="Otro servicio 2", price_automovil=0, price_camion_estandar=0, price_camion_xl=0),
+    dict(category="otro", name="Otro servicio 3", price_automovil=0, price_camion_estandar=0, price_camion_xl=0),
+    dict(category="otro", name="Otro servicio 4", price_automovil=0, price_camion_estandar=0, price_camion_xl=0),
+    dict(category="otro", name="Otro servicio 5", price_automovil=0, price_camion_estandar=0, price_camion_xl=0),
 ]
 
 

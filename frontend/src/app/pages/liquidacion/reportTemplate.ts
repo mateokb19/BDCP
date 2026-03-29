@@ -34,7 +34,7 @@ function buildWeekSection(
       ? orderPieces * PIECE_RATE
       : isLatoneria
       ? Number(o.latoneria_operator_pay ?? 0)
-      : Number(o.total) * rate / 100
+      : Number(o.commission_base ?? o.total) * rate / 100 + Number(o.ceramic_bonus ?? 0)
 
     const orderBadge = o.is_liquidated
       ? `<span style="background:#dcfce7;color:#166534;font-size:10px;font-weight:700;padding:2px 8px;border-radius:999px;margin-left:8px;">&#10003; LIQUIDADO</span>`
@@ -94,12 +94,12 @@ function buildWeekSection(
     ? liqOrders.reduce((s, o) => s + Number(o.piece_count ?? 0), 0) * PIECE_RATE
     : isLatoneria
     ? liqOrders.reduce((s, o) => s + Number(o.latoneria_operator_pay ?? 0), 0)
-    : liqOrders.reduce((s, o) => s + Number(o.total), 0) * rate / 100
+    : liqOrders.reduce((s, o) => s + Number(o.commission_base ?? o.total) * rate / 100 + Number(o.ceramic_bonus ?? 0), 0)
   const unliqComm   = isPintura
     ? unliqOrders.reduce((s, o) => s + Number(o.piece_count ?? 0), 0) * PIECE_RATE
     : isLatoneria
     ? unliqOrders.reduce((s, o) => s + Number(o.latoneria_operator_pay ?? 0), 0)
-    : unliqOrders.reduce((s, o) => s + Number(o.total), 0) * rate / 100
+    : unliqOrders.reduce((s, o) => s + Number(o.commission_base ?? o.total) * rate / 100 + Number(o.ceramic_bonus ?? 0), 0)
 
   const payRows = [
     ['Efectivo', cashAmt], ['Banco Caja Social', datafonoAmt],

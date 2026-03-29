@@ -23,39 +23,61 @@ const DAYS = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb']
 
 const BRANDS = [
   'Toyota', 'Honda', 'Ford', 'Chevrolet', 'Nissan', 'Mazda', 'Volkswagen',
-  'Hyundai', 'Kia', 'Renault', 'Peugeot', 'Suzuki', 'Jeep', 'RAM',
-  'BMW', 'Mercedes-Benz', 'Audi', 'Volvo', 'Porsche', 'Land Rover',
-  'Subaru', 'Mitsubishi', 'Fiat', 'BYD', 'Chery', 'JAC',
+  'Hyundai', 'Kia', 'Renault', 'Peugeot', 'Citroën', 'Suzuki', 'Jeep', 'RAM', 'Dodge',
+  'BMW', 'Mercedes-Benz', 'Audi', 'Volvo', 'Porsche', 'Land Rover', 'Range Rover', 'Mini', 'Lexus',
+  'Subaru', 'Mitsubishi', 'Fiat', 'Seat', 'Cupra', 'Skoda',
+  'BYD', 'Chery', 'JAC', 'Jetour', 'GAC Aion', 'Zeekr', 'Fang Cheng Bao', 'SsangYong',
+  'Tesla',
 ]
 
 const MODELS_BY_BRAND: Record<string, string[]> = {
-  Toyota:          ['Corolla', 'Hilux', 'Camry', 'RAV4', 'Fortuner', 'Land Cruiser', 'Yaris', 'Rush', 'SW4'],
-  Honda:           ['Civic', 'CR-V', 'Fit', 'HR-V', 'Accord', 'Pilot', 'WR-V'],
-  Ford:            ['F-150', 'Ranger', 'Explorer', 'Escape', 'Bronco', 'Mustang', 'Territory', 'Edge'],
-  Chevrolet:       ['Silverado', 'Colorado', 'Tahoe', 'Equinox', 'Traverse', 'Spark', 'Trax', 'Blazer', 'Captiva'],
-  Nissan:          ['Sentra', 'Frontier', 'X-Trail', 'Versa', 'Kicks', 'Pathfinder', 'Murano', 'NP300'],
-  Mazda:           ['CX-5', 'Mazda3', 'CX-9', 'CX-3', 'CX-30', 'BT-50', 'MX-5'],
-  Volkswagen:      ['Jetta', 'Golf', 'Tiguan', 'Polo', 'Passat', 'Amarok', 'T-Cross', 'Taos'],
-  Hyundai:         ['Tucson', 'Santa Fe', 'Elantra', 'Creta', 'Accent', 'Ioniq', 'Palisade', 'Venue'],
-  Kia:             ['Sportage', 'Sorento', 'Picanto', 'Seltos', 'Rio', 'Telluride', 'Stinger', 'Soul'],
-  Renault:         ['Sandero', 'Logan', 'Duster', 'Captur', 'Koleos', 'Kwid', 'Symbol', 'Stepway', 'Oroch'],
-  Peugeot:         ['208', '301', '308', '2008', '3008', '508', '5008'],
-  Suzuki:          ['Swift', 'Vitara', 'Grand Vitara', 'Baleno', 'Jimny', 'S-Cross', 'Ertiga'],
-  Jeep:            ['Wrangler', 'Cherokee', 'Grand Cherokee', 'Compass', 'Renegade', 'Gladiator'],
-  RAM:             ['700', '1500', '2500', 'ProMaster'],
-  BMW:             ['3 Series', '5 Series', 'X3', 'X5', 'X1', 'X7', '7 Series', 'M3', 'M5'],
-  'Mercedes-Benz': ['C-Class', 'E-Class', 'GLA', 'GLC', 'GLE', 'A-Class', 'S-Class', 'CLA'],
-  Audi:            ['A4', 'Q5', 'A3', 'Q3', 'A6', 'Q7', 'Q8', 'e-tron'],
-  Volvo:           ['XC40', 'XC60', 'XC90', 'S60', 'V60', 'C40'],
-  Porsche:         ['Cayenne', 'Macan', '911', 'Panamera', 'Taycan', 'Cayenne E-Hybrid'],
-  'Land Rover':    ['Discovery', 'Defender', 'Range Rover', 'Freelander', 'Evoque', 'Velar'],
-  Subaru:          ['Impreza', 'Forester', 'Outback', 'XV', 'Legacy', 'WRX'],
-  Mitsubishi:      ['Outlander', 'Montero', 'L200', 'Eclipse Cross', 'Lancer', 'ASX'],
-  Fiat:            ['Argo', 'Pulse', 'Toro', 'Strada', 'Mobi', 'Cronos'],
-  BYD:             ['Han', 'Tang', 'Atto 3', 'Dolphin', 'Song Plus', 'Seal'],
-  Chery:           ['Tiggo 2', 'Tiggo 4', 'Tiggo 7', 'Arrizo 5', 'Tiggo 8'],
-  JAC:             ['S3', 'S5', 'T6', 'T8', 'JS4', 'Sei 2'],
+  Toyota:           ['Corolla', 'Hilux', 'Camry', 'RAV4', 'Fortuner', 'Land Cruiser', 'Yaris', 'Rush', 'SW4'],
+  Honda:            ['Civic', 'CR-V', 'Fit', 'HR-V', 'Accord', 'Pilot', 'WR-V'],
+  Ford:             ['F-150', 'Ranger', 'Explorer', 'Escape', 'Bronco', 'Mustang', 'Territory', 'Edge'],
+  Chevrolet:        ['Silverado', 'Colorado', 'Tahoe', 'Equinox', 'Traverse', 'Spark', 'Trax', 'Blazer', 'Captiva'],
+  Nissan:           ['Sentra', 'Frontier', 'X-Trail', 'Versa', 'Kicks', 'Pathfinder', 'Murano', 'NP300'],
+  Mazda:            ['CX-5', 'Mazda3', 'CX-9', 'CX-3', 'CX-30', 'BT-50', 'MX-5'],
+  Volkswagen:       ['Jetta', 'Golf', 'Tiguan', 'Polo', 'Passat', 'Amarok', 'T-Cross', 'Taos'],
+  Hyundai:          ['Tucson', 'Santa Fe', 'Elantra', 'Creta', 'Accent', 'Ioniq', 'Palisade', 'Venue'],
+  Kia:              ['Sportage', 'Sorento', 'Picanto', 'Seltos', 'Rio', 'Telluride', 'Stinger', 'Soul'],
+  Renault:          ['Sandero', 'Logan', 'Duster', 'Captur', 'Koleos', 'Kwid', 'Symbol', 'Stepway', 'Oroch'],
+  Peugeot:          ['208', '301', '308', '2008', '3008', '508', '5008'],
+  'Citroën':        ['C3', 'C4', 'C5 Aircross', 'C3 Picasso', 'Berlingo', 'Jumper'],
+  Suzuki:           ['Swift', 'Vitara', 'Grand Vitara', 'Baleno', 'Jimny', 'S-Cross', 'Ertiga'],
+  Jeep:             ['Wrangler', 'Cherokee', 'Grand Cherokee', 'Compass', 'Renegade', 'Gladiator'],
+  RAM:              ['700', '1500', '2500', 'ProMaster'],
+  Dodge:            ['Challenger', 'Charger', 'Durango', 'Journey', 'Ram 1500'],
+  BMW:              ['3 Series', '5 Series', 'X3', 'X5', 'X1', 'X7', '7 Series', 'M3', 'M5'],
+  'Mercedes-Benz':  ['C-Class', 'E-Class', 'GLA', 'GLC', 'GLE', 'A-Class', 'S-Class', 'CLA'],
+  Audi:             ['A4', 'Q5', 'A3', 'Q3', 'A6', 'Q7', 'Q8', 'e-tron'],
+  Volvo:            ['XC40', 'XC60', 'XC90', 'S60', 'V60', 'C40'],
+  Porsche:          ['Cayenne', 'Macan', '911', 'Panamera', 'Taycan', 'Cayenne E-Hybrid'],
+  'Land Rover':     ['Discovery', 'Defender', 'Freelander'],
+  'Range Rover':    ['Range Rover', 'Sport', 'Evoque', 'Velar', 'Autobiography', 'SE'],
+  Mini:             ['Cooper', 'Countryman', 'Clubman', 'Convertible', 'Paceman'],
+  Lexus:            ['NX', 'RX', 'UX', 'IS', 'ES', 'GX', 'LX', 'LC'],
+  Subaru:           ['Impreza', 'Forester', 'Outback', 'XV', 'Legacy', 'WRX'],
+  Mitsubishi:       ['Outlander', 'Montero', 'L200', 'Eclipse Cross', 'Lancer', 'ASX'],
+  Fiat:             ['Argo', 'Pulse', 'Toro', 'Strada', 'Mobi', 'Cronos'],
+  Seat:             ['Ibiza', 'León', 'Arona', 'Ateca', 'Tarraco', 'Alhambra'],
+  Cupra:            ['Formentor', 'Born', 'Leon', 'Ateca'],
+  Skoda:            ['Octavia', 'Fabia', 'Superb', 'Karoq', 'Kodiaq', 'Kamiq'],
+  BYD:              ['Han', 'Tang', 'Atto 3', 'Dolphin', 'Song Plus', 'Seal'],
+  Chery:            ['Tiggo 2', 'Tiggo 4', 'Tiggo 7', 'Arrizo 5', 'Tiggo 8'],
+  JAC:              ['S3', 'S5', 'T6', 'T8', 'JS4', 'Sei 2'],
+  Jetour:           ['X70', 'X70S', 'X90', 'Dashing', 'T2'],
+  'GAC Aion':       ['S', 'Y', 'V', 'LX Plus', 'Hyper GT'],
+  Zeekr:            ['001', '007', 'X', '009'],
+  'Fang Cheng Bao': ['5', '8'],
+  SsangYong:        ['Rexton', 'Tivoli', 'Musso', 'Torres', 'Korando'],
+  Tesla:            ['Model 3', 'Model Y', 'Model S', 'Model X', 'Cybertruck'],
 }
+
+const MOTO_BRANDS = [
+  'Yamaha', 'AKT', 'Bajaj', 'Suzuki', 'Honda', 'Victory', 'TVS', 'Hero',
+  'KTM', 'Kymco', 'Ceronte', 'Royal Enfield', 'Benelli', 'Fratelli',
+  'BMW', 'Vaisand', 'Starker', 'Ducati', 'Piaggio', 'Ayco',
+]
 
 const STATUS_LABELS: Record<string, { label: string; color: string }> = {
   completada:  { label: 'Completada',  color: 'bg-green-500/15 text-green-400' },
@@ -508,7 +530,7 @@ export default function CalendarioCitas() {
                 onChange={e => setForm(p => ({ ...p, brand: e.target.value, model: '' }))}
                 className={selectCls}>
                 <option value="">— Seleccionar —</option>
-                {BRANDS.map(b => <option key={b} value={b}>{b}</option>)}
+                {(form.vehicleType === 'moto' ? MOTO_BRANDS : BRANDS).map(b => <option key={b} value={b}>{b}</option>)}
               </select>
             </div>
             <div className="flex flex-col gap-1.5">

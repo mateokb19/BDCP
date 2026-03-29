@@ -27,6 +27,25 @@ CATEGORY_MAP: dict[str, set[str]] = {
     "polarizado": {"polarizado"},
 }
 
+CERAMIC_BONUSES: dict[str, Decimal] = {
+    "Superior Shine +2":           Decimal("60000"),
+    "Superior Shine +5":           Decimal("80000"),
+    "Superior Shine +9":           Decimal("80000"),
+    "Superior Shine +9 EXCLUSIVE": Decimal("80000"),
+}
+
+
+def _signature_price(svc, vehicle_type) -> Decimal:
+    """Return the Signature correction service price for a given vehicle type."""
+    if svc is None:
+        return Decimal("0")
+    vt = vehicle_type.value if hasattr(vehicle_type, "value") else str(vehicle_type)
+    if vt == "camion_estandar" and svc.price_camion_estandar is not None:
+        return svc.price_camion_estandar
+    if vt == "camion_xl" and svc.price_camion_xl is not None:
+        return svc.price_camion_xl
+    return svc.price_automovil
+
 
 def _cat(item) -> str:
     """Return the category string of an item (handles both enum and plain str)."""
@@ -104,6 +123,12 @@ def _build_week_response(
     op_type = operator.operator_type or "detallado"
     relevant_cats = CATEGORY_MAP.get(op_type, DETALLADO_CATEGORIES)
 
+    # For detallado: ceramic commission uses Signature service price
+    signature_svc = (
+        db.query(models.Service).filter(models.Service.name == "Signature").first()
+        if db else None
+    )
+
     days_map: dict[date, list] = {}
     cur = ws
     while cur <= we:
@@ -118,6 +143,7 @@ def _build_week_response(
     week_total = Decimal("0")
     total_piece_count = Decimal("0")
     commission_base = Decimal("0")
+    week_ceramic_bonus = Decimal("0")
     total_services = 0
 
     days = []
@@ -137,6 +163,8 @@ def _build_week_response(
             item_schemas = []
             order_total = Decimal("0")
             order_pieces = Decimal("0")
+            order_comm_base = Decimal("0")
+            order_ceramic_bonus = Decimal("0")
             for item in filtered:
                 sp = _std(item)
                 item_schemas.append(schemas.LiqWeekOrderItem(
@@ -150,6 +178,11 @@ def _build_week_response(
                 order_total += sp
                 if op_type == "pintura":
                     order_pieces += _pintura_pieces(sp)
+                elif op_type not in ("latoneria",) and _cat(item) == "ceramico" and signature_svc:
+                    order_comm_base += _signature_price(signature_svc, o.vehicle.type)
+                    order_ceramic_bonus += CERAMIC_BONUSES.get(item.service_name, Decimal("0"))
+                else:
+                    order_comm_base += sp
 
             day_order_schemas.append(schemas.LiqWeekOrder(
                 order_id=o.id,
@@ -163,9 +196,12 @@ def _build_week_response(
                 piece_count=order_pieces if op_type == "pintura" else None,
                 latoneria_operator_pay=o.latoneria_operator_pay if op_type == "latoneria" else None,
                 is_liquidated=_is_liquidated(o, op_type, op_liq_ids),
+                commission_base=order_comm_base if op_type not in ("pintura", "latoneria") else None,
+                ceramic_bonus=order_ceramic_bonus if op_type not in ("pintura", "latoneria") else None,
             ))
             day_total += order_total
             total_piece_count += order_pieces
+            week_ceramic_bonus += order_ceramic_bonus
 
         total_services += len(day_order_schemas)
         week_total += day_total
@@ -195,8 +231,12 @@ def _build_week_response(
         piece_count = None
     else:
         rate = Decimal(str(operator.commission_rate)) / Decimal("100")
-        commission_base = week_total  # already filtered to relevant categories w/ standard prices
-        commission = (rate * commission_base).quantize(Decimal("0.01"))
+        # commission_base uses Signature price for ceramic items (accumulated per-order above)
+        commission_base = sum(
+            (o.commission_base or Decimal("0"))
+            for day in days for o in day.orders
+        )
+        commission = (rate * commission_base + week_ceramic_bonus).quantize(Decimal("0.01"))
         piece_count = None
 
     # Count unliquidated orders (only those that have relevant items)
@@ -229,6 +269,7 @@ def _build_week_response(
         payment_nequi_amount=liq_record.payment_nequi if liq_record else None,
         payment_bancolombia_amount=liq_record.payment_bancolombia if liq_record else None,
         amount_pending=_real_pending(liq_record, db),
+        ceramic_bonus_total=week_ceramic_bonus if week_ceramic_bonus else None,
     )
 
 
@@ -338,12 +379,19 @@ def liquidate_week(
         ).quantize(Decimal("0.01"))
     else:
         rate = Decimal(str(operator.commission_rate)) / Decimal("100")
-        new_commission_base = sum(
-            _std(item)
-            for o in unliquidated for item in o.items
-            if _cat(item) in relevant_cats
-        )
-        new_commission = (rate * new_commission_base).quantize(Decimal("0.01"))
+        signature_svc = db.query(models.Service).filter(models.Service.name == "Signature").first()
+        new_commission_base = Decimal("0")
+        new_ceramic_bonus = Decimal("0")
+        for o in unliquidated:
+            for item in o.items:
+                if _cat(item) not in relevant_cats:
+                    continue
+                if _cat(item) == "ceramico" and signature_svc:
+                    new_commission_base += _signature_price(signature_svc, o.vehicle.type)
+                    new_ceramic_bonus += CERAMIC_BONUSES.get(item.service_name, Decimal("0"))
+                else:
+                    new_commission_base += _std(item)
+        new_commission = (rate * new_commission_base + new_ceramic_bonus).quantize(Decimal("0.01"))
 
     new_gross = new_commission_base  # for the liquidation record
 
@@ -537,6 +585,7 @@ def liquidate_all_pending(
     week_gross_map:   dict[date, Decimal] = {}
     total_commission = Decimal("0")
     rate = Decimal(str(operator.commission_rate)) / Decimal("100")
+    signature_svc_lp = db.query(models.Service).filter(models.Service.name == "Signature").first() if op_type not in ("pintura", "latoneria") else None
 
     for ws, orders in weeks_orders.items():
         if op_type == "pintura":
@@ -553,8 +602,18 @@ def liquidate_all_pending(
                 Decimal("0"),
             ).quantize(Decimal("0.01"))
         else:
-            gross = sum(_std(i) for o in orders for i in o.items if _cat(i) in relevant_cats)
-            comm  = (rate * gross).quantize(Decimal("0.01"))
+            gross = Decimal("0")
+            ceramic_bonus_lp = Decimal("0")
+            for o in orders:
+                for i in o.items:
+                    if _cat(i) not in relevant_cats:
+                        continue
+                    if _cat(i) == "ceramico" and signature_svc_lp:
+                        gross += _signature_price(signature_svc_lp, o.vehicle.type)
+                        ceramic_bonus_lp += CERAMIC_BONUSES.get(i.service_name, Decimal("0"))
+                    else:
+                        gross += _std(i)
+            comm  = (rate * gross + ceramic_bonus_lp).quantize(Decimal("0.01"))
         week_commissions[ws] = comm
         week_gross_map[ws]   = gross
         total_commission += comm
@@ -846,6 +905,8 @@ def get_report(
     orders = []
     gross_total = Decimal("0")
     total_pieces = Decimal("0")
+    report_ceramic_bonus_total = Decimal("0")
+    signature_svc_report = db.query(models.Service).filter(models.Service.name == "Signature").first() if op_type not in ("pintura", "latoneria") else None
     for o in sorted(qualifying, key=lambda x: x.date):
         filtered = [i for i in o.items if _cat(i) in relevant_cats]
         if not filtered:
@@ -854,6 +915,17 @@ def get_report(
         gross_total += order_total
         order_pieces = sum(_pintura_pieces(_std(i)) for i in filtered) if op_type == "pintura" else Decimal("0")
         total_pieces += order_pieces
+        # Per-order commission base (ceramic substitution)
+        order_comm_base = Decimal("0")
+        order_ceramic_bonus_r = Decimal("0")
+        if op_type not in ("pintura", "latoneria"):
+            for i in filtered:
+                if _cat(i) == "ceramico" and signature_svc_report:
+                    order_comm_base += _signature_price(signature_svc_report, o.vehicle.type)
+                    order_ceramic_bonus_r += CERAMIC_BONUSES.get(i.service_name, Decimal("0"))
+                else:
+                    order_comm_base += _std(i)
+            report_ceramic_bonus_total += order_ceramic_bonus_r
         orders.append(schemas.ReportOrder(
             order_number=o.order_number,
             date=str(o.date),
@@ -874,6 +946,8 @@ def get_report(
             piece_count=order_pieces if op_type == "pintura" else None,
             latoneria_operator_pay=o.latoneria_operator_pay if op_type == "latoneria" else None,
             is_liquidated=_is_liquidated(o, op_type, op_liq_ids),
+            commission_base=order_comm_base if op_type not in ("pintura", "latoneria") else None,
+            ceramic_bonus=order_ceramic_bonus_r if op_type not in ("pintura", "latoneria") else None,
         ))
 
     if op_type == "pintura":
@@ -883,7 +957,11 @@ def get_report(
             o.latoneria_operator_pay or Decimal("0") for o in qualifying
         ).quantize(Decimal("0.01"))
     else:
-        commission = (rate * gross_total).quantize(Decimal("0.01"))
+        # Commission base uses Signature price for ceramic items
+        report_commission_base = sum(
+            (o.commission_base or Decimal("0")) for o in orders
+        )
+        commission = (rate * report_commission_base + report_ceramic_bonus_total).quantize(Decimal("0.01"))
 
     # ── Per-week liquidation status (Sunday-based weeks) ──────────────────────
     # Find the first Sunday on or before ds
@@ -897,12 +975,19 @@ def get_report(
         # Compute filtered gross for this week
         wk_gross = Decimal("0")
         wk_pieces = Decimal("0")
+        wk_comm_base = Decimal("0")
+        wk_ceramic_bonus = Decimal("0")
         for wo in week_orders:
             for i in wo.items:
                 if _cat(i) in relevant_cats:
                     wk_gross += _std(i)
                     if op_type == "pintura":
                         wk_pieces += _pintura_pieces(_std(i))
+                    elif op_type not in ("latoneria",) and _cat(i) == "ceramico" and signature_svc_report:
+                        wk_comm_base += _signature_price(signature_svc_report, wo.vehicle.type)
+                        wk_ceramic_bonus += CERAMIC_BONUSES.get(i.service_name, Decimal("0"))
+                    else:
+                        wk_comm_base += _std(i)
         if op_type == "pintura":
             wk_comm = (wk_pieces * PINTURA_PIECE_RATE).quantize(Decimal("0.01"))
         elif op_type == "latoneria":
@@ -910,7 +995,7 @@ def get_report(
                 o.latoneria_operator_pay or Decimal("0") for o in week_orders
             ).quantize(Decimal("0.01"))
         else:
-            wk_comm = (rate * wk_gross).quantize(Decimal("0.01"))
+            wk_comm = (rate * wk_comm_base + wk_ceramic_bonus).quantize(Decimal("0.01"))
         # Week is fully liquidated only when ALL its orders are stamped with this operator's liq
         all_liquidated = len(week_orders) > 0 and all(
             _is_liquidated(o, op_type, op_liq_ids) for o in week_orders
