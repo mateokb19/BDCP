@@ -735,15 +735,15 @@ export default function EstadoPatio() {
         const bc  = active >= CAP ? 'bg-red-500'  : active >= 10 ? 'bg-yellow-500'   : 'bg-green-500'
         const SP = [
           // Zona 1 — Pintura/Latonería (2 slots, divisor vertical central)
-          { x: 25, y: 11 }, { x: 75, y: 11 },
+          { x: 25, y: 10 }, { x: 75, y: 10 },
           // Zona 2 — Lavado fila 1 (3 cols)
-          { x: 17, y: 31 }, { x: 50, y: 31 }, { x: 83, y: 31 },
+          { x: 17, y: 30 }, { x: 50, y: 30 }, { x: 83, y: 30 },
           // Zona 3 — Lavado fila 2 (3 cols)
-          { x: 17, y: 49 }, { x: 50, y: 49 }, { x: 83, y: 49 },
+          { x: 17, y: 50 }, { x: 50, y: 50 }, { x: 83, y: 50 },
           // Zona 4 — Detallado (3 anchos izq + 1 der)
-          { x: 22, y: 62 }, { x: 22, y: 70 }, { x: 22, y: 77 }, { x: 75, y: 69 },
+          { x: 27, y: 64 }, { x: 27, y: 70 }, { x: 27, y: 76 }, { x: 75, y: 70 },
           // Cuarto inferior (2 anchos izq + 1 der)
-          { x: 22, y: 86 }, { x: 22, y: 93 }, { x: 75, y: 89 },
+          { x: 27, y: 86 }, { x: 27, y: 93 }, { x: 75, y: 89 },
         ]
         return (
           <div className="flex gap-4 items-start">
@@ -819,15 +819,15 @@ export default function EstadoPatio() {
                   <motion.div animate={{ width: `${Math.min(100, (active / CAP) * 100)}%` }} transition={{ duration: 0.5 }} className={cn('h-full rounded-full', bc)} />
                 </div>
               </div>
-              <div className="relative w-full rounded border border-white/10 bg-gray-950 overflow-hidden" style={{ height: 240 }}>
+              <div className="relative w-full rounded border border-white/10 bg-gray-950 overflow-hidden" style={{ height: 300 }}>
                 {/* Divisor vertical zona superior (Pintura/Latonería) */}
-                <div className="absolute top-0 border-r border-white/15" style={{ left: '50%', height: '22%' }} />
+                <div className="absolute top-0 border-r border-white/15" style={{ left: '50%', height: '20%' }} />
                 {/* Línea gris 1: sep zona superior / lavado */}
-                <div className="absolute left-0 right-0" style={{ top: '22%', borderTop: '1px dashed rgba(255,255,255,0.12)' }} />
+                <div className="absolute left-0 right-0" style={{ top: '20%', borderTop: '1px dashed rgba(255,255,255,0.12)' }} />
                 {/* Línea gris 2: sep lavado / detallado */}
-                <div className="absolute left-0 right-0" style={{ top: '57%', borderTop: '1px dashed rgba(255,255,255,0.12)' }} />
+                <div className="absolute left-0 right-0" style={{ top: '59%', borderTop: '1px dashed rgba(255,255,255,0.12)' }} />
                 {/* Divisor sólido: cuerpo principal / cuarto inferior */}
-                <div className="absolute left-0 right-0 border-t border-white/20" style={{ top: '78%' }} />
+                <div className="absolute left-0 right-0 border-t border-white/20" style={{ top: '80%' }} />
                 {SP.map((pos, i) => {
                   const occupied = i < occ
                   return (
