@@ -219,6 +219,7 @@ class PatioPatch(BaseModel):
     operator_id:            Optional[int]      = None
     notes:                  Optional[str]      = None
     service_ids:            Optional[list[int]]= None
+    item_overrides:         list[ItemOverride]  = []
     scheduled_delivery_at:  Optional[datetime] = None
 
 

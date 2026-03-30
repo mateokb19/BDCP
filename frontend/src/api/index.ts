@@ -113,6 +113,7 @@ export interface PatioPatchPayload {
   operator_id?: number | null
   notes?: string | null
   service_ids?: number[]
+  item_overrides?: { service_id: number; unit_price: number }[]
   scheduled_delivery_at?: string | null
 }
 

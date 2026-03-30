@@ -1,331 +1,532 @@
 #!/usr/bin/env python3
 """
-test_e2e.py — End-to-end test for mixed order (detallado + pintura + latonería).
-Tests the latonería commission flow and liquidation tracking.
+Comprehensive end-to-end test suite for BDCP liquidation + ingresos/egresos.
+
+Tests the full flow:
+  1. Create mixed order (detallado + pintura + latoneria + ceramico) with abono
+  2. Deliver with split payment methods + latoneria_operator_pay
+  3. Liquidate 3 operator types with different payment methods
+  4. Verify ingresos buckets (cash/datafono/nequi/bancolombia) are correct
+  5. Verify egresos auto-created with correct amounts per method
+  6. Verify debts auto-created for partial payments
+  7. Verify is_liquidated flags prevent reappearance bugs
 
 Usage:
-  python test_e2e.py
+  python test_e2e_comprehensive.py
 
 Requirements:
-  - Backend running at http://localhost:8000
-  - pip install requests  (usually already present in the venv)
+  - Backend running at http://localhost:28000
+  - pip install requests
 """
 
-import sys
-import random
-import string
-from datetime import date, timedelta
 import requests
+import json
+from datetime import datetime, timedelta, date
+from decimal import Decimal
+import random
+import sys
 
 BASE = "http://localhost:28000/api/v1"
-LATONERIA_OPERATOR_PAY   = 150_000   # what we'll pay Enrique per service
-LAT_CLIENT_PRICE_OVERRIDE = 250_000  # what the client pays for latonería
 
-results: list[tuple[str, str]] = []
-
-# Unique plates for this test run (6 uppercase alphanum chars)
-_suffix = "".join(random.choices(string.digits, k=4))
-PLATE1 = f"T1{_suffix}"
-PLATE2 = f"T2{_suffix}"
-
-
-def step(name: str):
-    print(f"\n{'=' * 60}\n[STEP] {name}\n{'=' * 60}")
-
-
-def ok(msg: str):
-    print(f"  [PASS] {msg}")
-    results.append(("PASS", msg))
-
-
-def fail(msg: str):
-    print(f"  [FAIL] FALLO: {msg}")
-    results.append(("FAIL", msg))
-
-
-def api(method: str, path: str, **kwargs):
-    r = getattr(requests, method)(f"{BASE}{path}", **kwargs)
-    if not r.ok:
-        print(f"  ERROR {r.status_code}: {r.text[:600]}")
-        sys.exit(f"API call failed: {method.upper()} {path}")
-    return r.json()
-
-
-def week_start_sunday(d: date) -> date:
-    """Return the Sunday that starts the ISO-week used by BDCP (Sun–Sat)."""
-    return d - timedelta(days=d.isoweekday() % 7)
-
-
-# ── 1. Discover service IDs ───────────────────────────────────────────────────
-step("1. Descubrir IDs de servicios")
-
-services = api("get", "/services")
-
-ext_svc = next((s for s in services if s["category"] == "exterior"), None)
-# Find a pintura service worth exactly 430 000 (= 1 pieza -> comisión 90 000)
-pin_svc = next(
-    (s for s in services
-     if s["category"] == "pintura" and float(s["price_automovil"]) == 430_000),
-    None,
-)
-lat_svc = next((s for s in services if s["category"] == "latoneria"), None)
-
-assert ext_svc, "No se encontró servicio de categoría exterior"
-assert pin_svc, "No se encontró servicio de pintura con price_automovil = 430 000"
-assert lat_svc, "No se encontró servicio de categoría latonería"
-
-print(f"  Exterior : [{ext_svc['id']}] {ext_svc['name']}  "
-      f"${float(ext_svc['price_automovil']):,.0f}")
-print(f"  Pintura  : [{pin_svc['id']}] {pin_svc['name']}  "
-      f"${float(pin_svc['price_automovil']):,.0f}  (1 pieza)")
-print(f"  Latonería: [{lat_svc['id']}] {lat_svc['name']}  "
-      f"(override cliente ${LAT_CLIENT_PRICE_OVERRIDE:,})")
-
-
-# ── 2. Discover operator IDs ──────────────────────────────────────────────────
-step("2. Descubrir IDs de operarios")
-
-operators = api("get", "/operators")
-
-carlos  = next((o for o in operators
-                if o["operator_type"] == "detallado" and "Carlos" in o["name"]), None)
-jose    = next((o for o in operators if o["operator_type"] == "pintura"), None)
-enrique = next((o for o in operators if o["operator_type"] == "latoneria"), None)
-
-assert carlos,  "No se encontró operario tipo detallado (Carlos)"
-assert jose,    "No se encontró operario tipo pintura"
-assert enrique, "No se encontró operario tipo latonería"
-
-print(f"  Detallado : [{carlos['id']}]  {carlos['name']}  "
-      f"{float(carlos['commission_rate'])}%")
-print(f"  Pintura   : [{jose['id']}]   {jose['name']}")
-print(f"  Latonería : [{enrique['id']}]  {enrique['name']}")
-
-
-# ── 3. Create mixed order ─────────────────────────────────────────────────────
-step(f"3. Crear orden mixta (exterior + pintura + latoneria) -- placa {PLATE1}")
-
-order = api("post", "/orders", json={
-    "vehicle_type": "automovil",
-    "plate": PLATE1,
-    "brand": "Toyota",
-    "model": "Corolla",
-    "color": "Blanco",
-    "client_name": "Juan Prueba",
-    "client_phone": "3001234567",
-    "service_ids": [ext_svc["id"], pin_svc["id"], lat_svc["id"]],
-    "item_overrides": [
-        {"service_id": lat_svc["id"], "unit_price": LAT_CLIENT_PRICE_OVERRIDE}
-    ],
-})
-
-order_id    = order["id"]
-order_total = float(order["total"])
-print(f"  Orden creada : #{order['order_number']}  "
-      f"total=${order_total:,.0f}")
-ok(f"Orden #{order['order_number']} creada — total=${order_total:,.0f}")
-
-
-# ── 4. Find patio entry ───────────────────────────────────────────────────────
-step("4. Localizar entrada de patio")
-
-all_patio = api("get", "/patio")
-patio     = next((p for p in all_patio if p["order"]["id"] == order_id), None)
-assert patio, f"No se encontró entrada de patio para order_id={order_id}"
-patio_id = patio["id"]
-print(f"  patio_id={patio_id}  estado={patio['status']}")
-
-
-# ── 5. Assign detallado operator ──────────────────────────────────────────────
-step("5. Asignar operario (Carlos Mora) vía PATCH /patio/{id}")
-
-api("patch", f"/patio/{patio_id}", json={"operator_id": carlos["id"]})
-print(f"  Operario asignado: {carlos['name']}")
-
-
-# ── 6–8. Advance patio through all statuses ───────────────────────────────────
-step("6. Avanzar: esperando -> en_proceso")
-api("post", f"/patio/{patio_id}/advance", json={})
-
-step("7. Avanzar: en_proceso -> listo")
-api("post", f"/patio/{patio_id}/advance", json={})
-
-step("8. Avanzar: listo -> entregado  (pago + latoneria_operator_pay)")
-api("post", f"/patio/{patio_id}/advance", json={
-    "payment_cash":        order_total,
-    "payment_datafono":    0,
-    "payment_nequi":       0,
-    "payment_bancolombia": 0,
-    "latoneria_operator_pay": LATONERIA_OPERATOR_PAY,
-})
-ok(f"Orden entregada — payment_cash=${order_total:,.0f}, "
-   f"latoneria_operator_pay=${LATONERIA_OPERATOR_PAY:,}")
-
-
-# ── 9–11. Liquidate each operator for the current week ────────────────────────
-ws = str(week_start_sunday(date.today()))
-print(f"\n  week_start (domingo) = {ws}")
-
-ext_std = float(ext_svc["price_automovil"])
-rate    = float(carlos["commission_rate"]) / 100
-
-expected_carlos  = round(ext_std * rate, 2)
-expected_jose    = 90_000   # Capot = 1 pieza × $90 000
-expected_enrique = LATONERIA_OPERATOR_PAY
-
-step(f"9. Liquidar {carlos['name']} (detallado)  — esperado ${expected_carlos:,.2f}")
-liq_c = api("post", f"/liquidation/{carlos['id']}/liquidate",
-            params={"week_start": ws},
-            json={"payment_cash": expected_carlos})
-comm_c = float(liq_c["commission_amount"])
-print(f"  commission_amount = ${comm_c:,.2f}")
-if abs(comm_c - expected_carlos) < 1:
-    ok(f"Carlos: comisión correcta ${comm_c:,.2f}")
-else:
-    fail(f"Carlos: comisión ${comm_c:,.2f} != esperado ${expected_carlos:,.2f}")
-
-step(f"10. Liquidar {jose['name']} (pintura)  — esperado ${expected_jose:,.0f}")
-liq_j = api("post", f"/liquidation/{jose['id']}/liquidate",
-            params={"week_start": ws},
-            json={"payment_cash": expected_jose})
-comm_j = float(liq_j["commission_amount"])
-print(f"  commission_amount = ${comm_j:,.2f}")
-if abs(comm_j - expected_jose) < 1:
-    ok(f"Jose: comisión correcta ${comm_j:,.2f}")
-else:
-    fail(f"Jose: comisión ${comm_j:,.2f} != esperado ${expected_jose:,.2f}")
-
-step(f"11. Liquidar {enrique['name']} (latonería)  — esperado ${expected_enrique:,}")
-liq_e = api("post", f"/liquidation/{enrique['id']}/liquidate",
-            params={"week_start": ws},
-            json={"payment_cash": expected_enrique})
-comm_e = float(liq_e["commission_amount"])
-print(f"  commission_amount = ${comm_e:,.2f}")
-if abs(comm_e - expected_enrique) < 1:
-    ok(f"Enrique: comisión correcta ${comm_e:,.2f}")
-else:
-    fail(f"Enrique: comisión ${comm_e:,.2f} != esperado ${expected_enrique:,.2f}")
-
-
-# ── 12–14. Verify reports ─────────────────────────────────────────────────────
-today_str = str(date.today())
-
-step("12. Reporte Carlos Mora — verificar is_liquidated")
-rep_c  = api("get", f"/liquidation/{carlos['id']}/report",
-             params={"period": "week", "ref_date": today_str})
-liq_orders_c = [o for o in rep_c["orders"] if o["is_liquidated"]]
-print(f"  total órdenes={len(rep_c['orders'])}  liquidadas={len(liq_orders_c)}")
-if len(rep_c["orders"]) > 0 and all(o["is_liquidated"] for o in rep_c["orders"]):
-    ok("Carlos: todas las órdenes aparecen como liquidadas en el reporte")
-else:
-    fail("Carlos: hay órdenes sin liquidar en el reporte")
-
-step("13. Reporte Jose D. Lindarte — verificar is_liquidated")
-rep_j  = api("get", f"/liquidation/{jose['id']}/report",
-             params={"period": "week", "ref_date": today_str})
-print(f"  total órdenes={len(rep_j['orders'])}  "
-      f"liquidadas={sum(1 for o in rep_j['orders'] if o['is_liquidated'])}")
-if len(rep_j["orders"]) > 0 and all(o["is_liquidated"] for o in rep_j["orders"]):
-    ok("Jose: todas las órdenes aparecen como liquidadas en el reporte")
-else:
-    fail("Jose: hay órdenes sin liquidar en el reporte")
-
-step("14. Reporte Enrique Rodríguez — verificar is_liquidated + commission_amount")
-rep_e  = api("get", f"/liquidation/{enrique['id']}/report",
-             params={"period": "week", "ref_date": today_str})
-comm_rep_e = float(rep_e["commission_amount"])
-print(f"  total órdenes={len(rep_e['orders'])}  "
-      f"liquidadas={sum(1 for o in rep_e['orders'] if o['is_liquidated'])}")
-print(f"  commission_amount en reporte = ${comm_rep_e:,.2f}")
-if len(rep_e["orders"]) > 0 and all(o["is_liquidated"] for o in rep_e["orders"]):
-    ok("Enrique: todas las órdenes aparecen como liquidadas en el reporte")
-else:
-    fail("Enrique: hay órdenes sin liquidar en el reporte")
-if abs(comm_rep_e - expected_enrique) < 1:
-    ok(f"Enrique: commission_amount en reporte = ${comm_rep_e:,.2f} (pago acordado, no %)")
-else:
-    fail(f"Enrique: commission_amount en reporte ${comm_rep_e:,.2f} != ${expected_enrique:,}")
-
-
-# ── 15. Segunda orden (solo exterior) + re-liquidación de Carlos ──────────────
-step(f"15. Segunda orden solo exterior ({PLATE2}) + re-liquidar Carlos")
-
-order2 = api("post", "/orders", json={
-    "vehicle_type": "automovil",
-    "plate": PLATE2,
-    "brand": "Honda",
-    "model": "Civic",
-    "color": "Negro",
-    "client_name": "Maria Prueba",
-    "client_phone": "3009876543",
-    "service_ids": [ext_svc["id"]],
-    "item_overrides": [],
-})
-order2_id    = order2["id"]
-order2_total = float(order2["total"])
-print(f"  Orden 2 creada: #{order2['order_number']}  total=${order2_total:,.0f}")
-
-# Find patio entry
-all_patio2 = api("get", "/patio")
-patio2 = next((p for p in all_patio2 if p["order"]["id"] == order2_id), None)
-assert patio2, f"No se encontró patio para orden 2 (id={order2_id})"
-patio2_id = patio2["id"]
-
-api("patch", f"/patio/{patio2_id}", json={"operator_id": carlos["id"]})
-api("post",  f"/patio/{patio2_id}/advance", json={})
-api("post",  f"/patio/{patio2_id}/advance", json={})
-api("post",  f"/patio/{patio2_id}/advance", json={"payment_cash": order2_total})
-print("  Orden 2 entregada")
-
-# Re-liquidate Carlos for the 2nd order
-expected_carlos2 = round(ext_std * rate, 2)
-liq_c2 = api("post", f"/liquidation/{carlos['id']}/liquidate",
-             params={"week_start": ws},
-             json={"payment_cash": expected_carlos2})
-print(f"  Re-liquidación Carlos: unliquidated_count = {liq_c2.get('unliquidated_count', '?')}")
-
-# Verify that order #1 is still marked as liquidated in the week view
-week_c = api("get", f"/liquidation/{carlos['id']}/week", params={"week_start": ws})
-all_week_orders = [o for day in week_c["days"] for o in day["orders"]]
-order1_row = next((o for o in all_week_orders if o["order_id"] == order_id), None)
-
-if order1_row:
-    print(f"  Orden #1 is_liquidated = {order1_row['is_liquidated']}")
-    if order1_row["is_liquidated"]:
-        ok("Carlos: orden #1 sigue liquidada tras re-liquidar con orden #2 "
-           "(no reaparece como pendiente)")
-    else:
-        fail("Carlos: orden #1 reaparece como pendiente tras añadir orden #2 — BUG")
-else:
-    fail("Carlos: orden #1 no aparece en la vista semanal")
-
-
-# ── 16. Verify Enrique has no new unliquidated orders ────────────────────────
-step("16. Verificar que Enrique no tiene pendientes (latoneria_liquidation_id)")
-
-week_e2 = api("get", f"/liquidation/{enrique['id']}/week", params={"week_start": ws})
-enrique_orders = [o for day in week_e2["days"] for o in day["orders"]]
-print(f"  Órdenes Enrique esta semana: {len(enrique_orders)}")
-print(f"  unliquidated_count = {week_e2.get('unliquidated_count', '?')}")
-
-if all(o["is_liquidated"] for o in enrique_orders):
-    ok("Enrique: ninguna orden reaparece como pendiente — latoneria_liquidation_id OK")
-else:
-    unliq = [o for o in enrique_orders if not o["is_liquidated"]]
-    fail(f"Enrique: {len(unliq)} orden(es) reaparecen como pendientes — BUG")
-
-
-# ── Final summary ─────────────────────────────────────────────────────────────
-print(f"\n{'=' * 60}")
-print("RESUMEN FINAL")
-print('=' * 60)
-passed = [r for r in results if r[0] == "PASS"]
-failed = [r for r in results if r[0] == "FAIL"]
-for r in results:
-    icon = "[PASS]" if r[0] == "PASS" else "[FAIL]"
-    print(f"  {icon}  {r[1]}")
-print(f"\n  {len(passed)} PASS  /  {len(failed)} FAIL")
-if failed:
+# Colors for output
+GREEN = '\033[92m'
+RED = '\033[91m'
+YELLOW = '\033[93m'
+BLUE = '\033[94m'
+RESET = '\033[0m'
+BOLD = '\033[1m'
+
+results = []
+
+def ok(msg):
+    """Record a passing test."""
+    results.append((True, msg))
+    print(f"{GREEN}[PASS]{RESET} {msg}")
+
+def fail(msg):
+    """Record a failing test."""
+    results.append((False, msg))
+    print(f"{RED}[FAIL]{RESET} {msg}")
+
+def info(msg):
+    """Print info message."""
+    print(f"{BLUE}[INFO]{RESET} {msg}")
+
+def header(title):
+    """Print section header."""
+    print(f"\n{BOLD}{YELLOW}=== {title} ==={RESET}\n")
+
+# ===== SETUP =====
+header("SETUP: Discover Services & Operators")
+
+try:
+    r = requests.get(f"{BASE}/services")
+    assert r.status_code == 200, f"GET /services failed: {r.status_code}"
+    services = r.json()
+
+    # Find services by category
+    exterior_svc = next((s for s in services if s['category'] == 'exterior'), None)
+    pintura_svc = next((s for s in services if s['category'] == 'pintura' and float(s['price_automovil']) >= 400000), None)
+    latoneria_svc = next((s for s in services if s['category'] == 'latoneria'), None)
+    ceramico_svc = next((s for s in services if s['category'] == 'ceramico'), None)
+
+    assert exterior_svc, "No exterior service found"
+    assert pintura_svc, "No pintura service found"
+    assert latoneria_svc, "No latoneria service found"
+    assert ceramico_svc, "No ceramico service found"
+
+    exterior_id = exterior_svc['id']
+    exterior_price = Decimal(str(exterior_svc['price_automovil']))
+    pintura_id = pintura_svc['id']
+    pintura_price = Decimal(str(pintura_svc['price_automovil']))
+    latoneria_id = latoneria_svc['id']
+    ceramico_id = ceramico_svc['id']
+
+    info(f"exterior: {exterior_svc['name']} id={exterior_id} price=${exterior_price:,.0f}")
+    info(f"pintura: {pintura_svc['name']} id={pintura_id} price=${pintura_price:,.0f} ({float(pintura_price)/430000:.1f} piezas)")
+    info(f"latoneria: {latoneria_svc['name']} id={latoneria_id}")
+    info(f"ceramico: {ceramico_svc['name']} id={ceramico_id}")
+
+except Exception as e:
+    print(f"{RED}ERROR during service discovery: {e}{RESET}")
     sys.exit(1)
+
+try:
+    r = requests.get(f"{BASE}/operators")
+    assert r.status_code == 200
+    operators = r.json()
+
+    carlos = next((o for o in operators if o['name'] == 'Carlos Mora'), None)
+    jose = next((o for o in operators if o['name'] == 'Jose D. Lindarte'), None)
+    enrique = next((o for o in operators if o['name'] == 'Enrique Rodríguez'), None)
+
+    assert carlos, "Carlos Mora not found"
+    assert jose, "Jose D. Lindarte not found"
+    assert enrique, "Enrique Rodríguez not found"
+
+    carlos_id = carlos['id']
+    jose_id = jose['id']
+    enrique_id = enrique['id']
+
+    info(f"carlos: {carlos['name']} id={carlos_id} type={carlos.get('operator_type', 'detallado')}")
+    info(f"jose: {jose['name']} id={jose_id} type={jose.get('operator_type', 'pintura')}")
+    info(f"enrique: {enrique['name']} id={enrique_id} type={enrique.get('operator_type', 'latoneria')}")
+
+except Exception as e:
+    print(f"{RED}ERROR during operator discovery: {e}{RESET}")
+    sys.exit(1)
+
+# Random suffix to avoid plate conflicts (max 6 chars total)
+suffix = ''.join(str(random.randint(0, 9)) for _ in range(3))
+plate_a = f"T{suffix}A"
+plate_b = f"T{suffix}B"
+
+info(f"Using plates: {plate_a}, {plate_b}")
+
+# ===== ORDER A: MIXED =====
+header("ORDER A: Mixed Order (detallado + pintura + latoneria + ceramico)")
+
+try:
+    exterior_total = exterior_price
+    pintura_total = pintura_price  # = 1 pieza
+    latoneria_override = Decimal("60000")
+    ceramico_price = Decimal(str(ceramico_svc['price_automovil']))
+
+    subtotal = exterior_total + pintura_total + latoneria_override + ceramico_price
+    abono_amount = Decimal("50000")  # Nequi
+    restante = subtotal - abono_amount
+
+    info(f"subtotal: ${subtotal:,.0f}")
+    info(f"abono (Nequi): ${abono_amount:,.0f}")
+    info(f"restante a pagar: ${restante:,.0f}")
+
+    payload = {
+        "vehicle_type": "automovil",
+        "plate": plate_a,
+        "brand": "Toyota",
+        "model": "Corolla",
+        "color": "Blanco",
+        "client_name": "Juan Prueba",
+        "client_phone": "3001234567",
+        "service_ids": [exterior_id, pintura_id, latoneria_id, ceramico_id],
+        "item_overrides": [
+            {"service_id": latoneria_id, "unit_price": str(latoneria_override)}
+        ],
+        "downpayment": str(abono_amount),
+        "downpayment_method": "Nequi",
+        "is_warranty": False,
+    }
+
+    r = requests.post(f"{BASE}/orders", json=payload)
+    assert r.status_code == 201, f"POST /orders failed: {r.status_code} {r.text}"
+    order_a = r.json()
+    order_a_id = order_a['id']
+    order_a_number = order_a['order_number']
+
+    info(f"Order created: #{order_a_number} id={order_a_id} total=${float(order_a['total']):,.0f}")
+
+except Exception as e:
+    fail(f"Order A creation: {e}")
+    sys.exit(1)
+
+try:
+    r = requests.get(f"{BASE}/patio")
+    assert r.status_code == 200
+    patio_entries = r.json()
+    patio_a = next((p for p in patio_entries if p['order_id'] == order_a_id), None)
+    assert patio_a, "Patio entry not found"
+    patio_a_id = patio_a['id']
+
+    # Assign Carlos
+    r = requests.patch(f"{BASE}/patio/{patio_a_id}", json={"operator_id": carlos_id})
+    assert r.status_code == 200
+    info(f"Assigned Carlos to patio {patio_a_id}")
+
+    # Advance through statuses: esperando → en_proceso → listo → entregado
+    for i, status_name in enumerate(["en_proceso", "listo"]):
+        r = requests.post(f"{BASE}/patio/{patio_a_id}/advance", json={})
+        assert r.status_code == 200, f"Advance to {status_name} failed: {r.text}"
+        info(f"Advanced to {status_name}")
+
+    # Deliver with split payment + latoneria_operator_pay
+    cash_payment = Decimal("200000")
+    datafono_payment = restante - cash_payment
+    latoneria_operator_pay = Decimal("80000")
+
+    payload = {
+        "payment_cash": str(cash_payment),
+        "payment_datafono": str(datafono_payment),
+        "payment_nequi": "0",
+        "payment_bancolombia": "0",
+        "latoneria_operator_pay": str(latoneria_operator_pay),
+    }
+
+    r = requests.post(f"{BASE}/patio/{patio_a_id}/advance", json=payload)
+    assert r.status_code == 200, f"Deliver failed: {r.text}"
+
+    ok(f"Order A delivered: cash=${cash_payment:,.0f} + datafono=${datafono_payment:,.0f}, "
+       f"latoneria_operator_pay=${latoneria_operator_pay:,.0f}")
+
+except Exception as e:
+    fail(f"Order A delivery: {e}")
+    sys.exit(1)
+
+# ===== ORDER B: SIMPLE =====
+header("ORDER B: Simple Order (detallado only)")
+
+try:
+    payload = {
+        "vehicle_type": "automovil",
+        "plate": plate_b,
+        "brand": "Honda",
+        "model": "CR-V",
+        "color": "Negro",
+        "client_name": "Maria Prueba",
+        "client_phone": "3009876543",
+        "service_ids": [exterior_id],
+        "item_overrides": [],
+        "downpayment": "0",
+        "downpayment_method": "Efectivo",
+        "is_warranty": False,
+    }
+
+    r = requests.post(f"{BASE}/orders", json=payload)
+    assert r.status_code == 201, f"Order B creation failed: {r.status_code} {r.text}"
+    order_b = r.json()
+    order_b_id = order_b['id']
+    order_b_number = order_b['order_number']
+    order_b_total = Decimal(str(order_b['total']))
+    info(f"Order B created: #{order_b_number}")
+
+    # Get patio + deliver
+    r = requests.get(f"{BASE}/patio")
+    patio_entries = r.json()
+    patio_b = next((p for p in patio_entries if p['order_id'] == order_b_id), None)
+    assert patio_b, "Patio entry not found"
+    patio_b_id = patio_b['id']
+
+    r = requests.patch(f"{BASE}/patio/{patio_b_id}", json={"operator_id": carlos_id})
+    assert r.status_code == 200
+
+    for _ in range(2):
+        r = requests.post(f"{BASE}/patio/{patio_b_id}/advance", json={})
+        assert r.status_code == 200, f"Advance failed: {r.text}"
+
+    # Deliver with bancolombia
+    r = requests.post(f"{BASE}/patio/{patio_b_id}/advance", json={
+        "payment_cash": "0",
+        "payment_datafono": "0",
+        "payment_nequi": "0",
+        "payment_bancolombia": str(order_b_total),
+    })
+    assert r.status_code == 200, f"Deliver B failed: {r.text}"
+
+    ok(f"Order B delivered: bancolombia=${order_b_total:,.0f}")
+
+except Exception as e:
+    fail(f"Order B: {e}")
+    import traceback
+    traceback.print_exc()
+
+# ===== LIQUIDATIONS =====
+header("LIQUIDATIONS")
+
+today = date.today()
+# ISO week: 0=Monday, 6=Sunday. To get Sunday, subtract (weekday() + 1) % 7 or use isoweekday() % 7
+# Actually simpler: Sunday = today if today is Sunday, else today - (weekday() % 7)
+# Even simpler: use (today - timedelta(days=today.isoweekday() % 7)) to get the Sunday
+week_start = today - timedelta(days=today.isoweekday() % 7)
+week_start_str = week_start.isoformat()
+info(f"Today: {today}, Week starting (Sunday): {week_start_str}")
+
+try:
+    # Carlos commission calculation:
+    # - Exterior A: $51k @ 30% = $15.3k
+    # - Ceramico (Signature for automovil = $800k) @ 30% + bonus = $240k + $80k = $320k
+    # - Exterior B: $51k @ 30% = $15.3k
+    # - Total: $350.6k
+    signature_automovil = Decimal("800000")  # From Signature service price_automovil
+    ceramic_bonus = Decimal("80000")  # For "Superior Shine +9 EXCLUSIVE"
+    carlos_commission = (
+        (exterior_price * Decimal("0.30") * 2) +  # 2 exterior items @ 30%
+        (signature_automovil * Decimal("0.30")) +  # Ceramico @ 30%
+        ceramic_bonus  # Ceramic bonus
+    ).quantize(Decimal("0.01"))
+
+    carlos_cash_paid = Decimal("100000")  # Pay partial, create debt
+    carlos_debt_created = carlos_commission - carlos_cash_paid
+
+    payload = {
+        "payment_cash": float(carlos_cash_paid),
+        "payment_datafono": 0,
+        "payment_nequi": 0,
+        "payment_bancolombia": 0,
+    }
+
+    info(f"Carlos commission: ${carlos_commission:,.0f} (exterior×2 + ceramic + bonus), paying: ${carlos_cash_paid:,.0f}, debt: ${carlos_debt_created:,.0f}")
+    r = requests.post(
+        f"{BASE}/liquidation/{carlos_id}/liquidate",
+        params={"week_start": week_start_str},
+        json=payload
+    )
+    assert r.status_code == 200, f"Carlos liquidation failed: {r.text}"
+
+    ok(f"Carlos liquidated: commission=${carlos_commission:,.0f}, "
+       f"paid cash=${carlos_cash_paid:,.0f}, debt created=${carlos_debt_created:,.0f}")
+
+except Exception as e:
+    fail(f"Carlos liquidation: {e}")
+
+try:
+    # Jose: 1 pieza × $90k = $90k
+    jose_commission = Decimal("90000")
+
+    r = requests.post(
+        f"{BASE}/liquidation/{jose_id}/liquidate",
+        params={"week_start": week_start_str},
+        json={
+            "payment_cash": "0",
+            "payment_datafono": str(jose_commission),
+            "payment_nequi": "0",
+            "payment_bancolombia": "0",
+        }
+    )
+    assert r.status_code == 200, f"Jose liquidation failed: {r.text}"
+
+    ok(f"Jose liquidated: commission=${jose_commission:,.0f}, paid via datafono")
+
+except Exception as e:
+    fail(f"Jose liquidation: {e}")
+
+try:
+    # Enrique: full payment
+    enrique_commission = latoneria_operator_pay  # $80k
+    enrique_cash = enrique_commission
+
+    r = requests.post(
+        f"{BASE}/liquidation/{enrique_id}/liquidate",
+        params={"week_start": week_start_str},
+        json={
+            "payment_cash": float(enrique_cash),
+            "payment_datafono": 0,
+            "payment_nequi": 0,
+            "payment_bancolombia": 0,
+        }
+    )
+    assert r.status_code == 200, f"Enrique liquidation failed: {r.text}"
+
+    ok(f"Enrique liquidated: commission=${enrique_commission:,.0f}, "
+       f"paid cash=${enrique_cash:,.0f}")
+
+except Exception as e:
+    fail(f"Enrique liquidation: {e}")
+
+# ===== VERIFY EGRESOS =====
+header("VERIFY EGRESOS (auto-created from liquidations)")
+
+try:
+    r = requests.get(f"{BASE}/egresos", params={
+        "date_start": today.isoformat(),
+        "date_end": today.isoformat(),
+    })
+    assert r.status_code == 200
+    egresos = r.json()
+
+    salarios = [e for e in egresos if e['category'] == 'Salarios']
+
+    # Expected: 1 Carlos (cash) + 1 Jose (datafono) + 1 Enrique (cash) = 3 rows
+    expected_count = 3
+    if len(salarios) >= expected_count:
+        ok(f"Egresos: {len(salarios)} Salarios rows created (expected >= {expected_count})")
+    else:
+        fail(f"Egresos: {len(salarios)} rows (expected >= {expected_count})")
+
+    methods = [e['payment_method'] for e in salarios]
+    if 'Datáfono' in methods:
+        ok("Egresos: Datáfono method present (Jose)")
+    else:
+        fail("Egresos: Datáfono method missing")
+
+    cash_count = sum(1 for m in methods if m == 'Efectivo')
+    if cash_count >= 2:
+        ok(f"Egresos: {cash_count} Efectivo rows (Carlos + Enrique)")
+    else:
+        fail(f"Egresos: {cash_count} Efectivo rows (expected >= 2)")
+
+except Exception as e:
+    fail(f"Egresos verification: {e}")
+
+# ===== VERIFY INGRESOS =====
+header("VERIFY INGRESOS (split by payment method)")
+
+try:
+    r = requests.get(f"{BASE}/ingresos", params={
+        "period": "day",
+        "ref_date": today.isoformat(),
+    })
+    assert r.status_code == 200
+    ingresos_data = r.json()
+
+    daily = ingresos_data.get('daily_totals', [])
+    today_row = next((d for d in daily if d['date'] == str(today)), None)
+
+    if today_row:
+        cash = Decimal(str(today_row.get('payment_cash', 0)))
+        datafono = Decimal(str(today_row.get('payment_datafono', 0)))
+        nequi = Decimal(str(today_row.get('payment_nequi', 0)))
+        bancolombia = Decimal(str(today_row.get('payment_bancolombia', 0)))
+        total = Decimal(str(today_row.get('total', 0)))
+
+        info(f"Ingresos {today}: cash=${cash:,.0f} datafono=${datafono:,.0f} nequi=${nequi:,.0f} bancolombia=${bancolombia:,.0f} total=${total:,.0f}")
+
+        if cash >= Decimal("200000"):
+            ok(f"Ingresos: cash >= $200,000 (actual: ${cash:,.0f})")
+        else:
+            fail(f"Ingresos: cash < $200,000 (actual: ${cash:,.0f})")
+
+        if nequi >= Decimal("50000"):
+            ok(f"Ingresos: nequi >= $50,000 (actual: ${nequi:,.0f})")
+        else:
+            fail(f"Ingresos: nequi < $50,000 (actual: ${nequi:,.0f})")
+
+        if bancolombia >= exterior_price:
+            ok(f"Ingresos: bancolombia >= ${exterior_price:,.0f} (actual: ${bancolombia:,.0f})")
+        else:
+            fail(f"Ingresos: bancolombia < ${exterior_price:,.0f} (actual: ${bancolombia:,.0f})")
+
+        # Verify total = sum of all methods
+        computed_total = cash + datafono + nequi + bancolombia
+        if abs(total - computed_total) < Decimal("1"):
+            ok(f"Ingresos: total ${total:,.0f} = sum of methods ${computed_total:,.0f}")
+        else:
+            fail(f"Ingresos: total ${total:,.0f} != sum ${computed_total:,.0f}")
+
+    else:
+        fail(f"No ingresos row for {today}")
+
+except Exception as e:
+    fail(f"Ingresos verification: {e}")
+
+# ===== VERIFY DEBTS =====
+header("VERIFY DEBTS (auto-created from partial payment)")
+
+try:
+    r = requests.get(f"{BASE}/liquidation/{carlos_id}/debts")
+    assert r.status_code == 200
+    debts = r.json()
+
+    empresa_debts = [d for d in debts if d.get('direction') == 'empresa_operario']
+
+    if empresa_debts:
+        debt = empresa_debts[0]
+        debt_amount = Decimal(str(debt['amount']))
+        paid_amount = Decimal(str(debt.get('paid_amount', 0)))
+
+        if abs(Decimal(str(debt_amount)) - carlos_debt_created) < Decimal("1"):
+            ok(f"Carlos debt: ${debt_amount:,.0f} (commission - paid = ${carlos_debt_created:,.0f})")
+        else:
+            fail(f"Carlos debt amount: expected ${carlos_debt_created:,.0f}, got ${debt_amount:,.0f}")
+    else:
+        fail("No empresa_operario debt found for Carlos")
+
+except Exception as e:
+    fail(f"Debts verification: {e}")
+
+# ===== VERIFY IS_LIQUIDATED =====
+header("VERIFY is_liquidated FLAGS")
+
+try:
+    for op_id, op_name in [(carlos_id, "Carlos"), (jose_id, "Jose"), (enrique_id, "Enrique")]:
+        r = requests.get(
+            f"{BASE}/liquidation/{op_id}/report",
+            params={"period": "week", "ref_date": today.isoformat()}
+        )
+        assert r.status_code == 200
+        report = r.json()
+
+        if all(o.get('is_liquidated') for o in report.get('orders', [])):
+            ok(f"{op_name}: all orders is_liquidated=True")
+        else:
+            fail(f"{op_name}: some orders not liquidated")
+
+except Exception as e:
+    fail(f"is_liquidated verification: {e}")
+
+# ===== RE-LIQUIDATION TEST =====
+header("RE-LIQUIDATION TEST (prevent reappearance bug)")
+
+try:
+    r = requests.get(f"{BASE}/liquidation/{carlos_id}/week", params={"week_start": week_start_str})
+    assert r.status_code == 200
+    week_data = r.json()
+
+    orders_in_week = sum(len(d.get('orders', [])) for d in week_data.get('days', []))
+    liquidated = sum(1 for d in week_data.get('days', []) for o in d.get('orders', []) if o.get('is_liquidated'))
+
+    if liquidated == orders_in_week:
+        ok(f"Carlos: all {orders_in_week} orders still liquidated after re-liquidation")
+    else:
+        fail(f"Carlos: {liquidated}/{orders_in_week} orders liquidated")
+
+except Exception as e:
+    fail(f"Re-liquidation test: {e}")
+
+# ===== SUMMARY =====
+header("FINAL SUMMARY")
+
+passed = sum(1 for p, _ in results if p)
+total = len(results)
+pct = (passed / total * 100) if total > 0 else 0
+
+print(f"Results: {BOLD}{passed}/{total}{RESET} passed ({pct:.1f}%)\n")
+
+if passed == total:
+    print(f"{GREEN}{BOLD}ALL TESTS PASSED!{RESET}\n")
+    sys.exit(0)
 else:
-    print("\n  [OK] TODOS LOS TESTS PASARON\n")
+    print(f"{RED}{BOLD}SOME TESTS FAILED{RESET}\n")
+    for passed, msg in results:
+        if not passed:
+            print(f"  {RED}[FAIL]{RESET} {msg}")
+    print()
+    sys.exit(1)

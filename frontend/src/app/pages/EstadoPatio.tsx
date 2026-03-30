@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { motion, AnimatePresence, LayoutGroup } from 'framer-motion'
-import { Clock, ArrowRight, Wrench, Pencil, X, ChevronDown, Calendar, Phone, User, ChevronUp, Banknote, CreditCard, Check, Car } from 'lucide-react'
+import { Clock, ArrowRight, Wrench, Pencil, X, ChevronDown, Calendar, Phone, User, ChevronUp, Banknote, CreditCard, Check, Car, CheckCircle2, Circle } from 'lucide-react'
 import { toast } from 'sonner'
 import { format, parseISO } from 'date-fns'
 import { PageHeader } from '@/app/components/ui/PageHeader'
@@ -11,7 +11,7 @@ import { cn } from '@/app/components/ui/cn'
 import { api, type ApiPatioEntry } from '@/api'
 import { Select } from '@/app/components/ui/Select'
 import { useAppContext } from '@/app/context/AppContext'
-import type { PatioStatus, ServiceCategory } from '@/types'
+import type { PatioStatus } from '@/types'
 
 interface FacturaRecord {
   tipo:      'persona_natural' | 'empresa'
@@ -27,6 +27,15 @@ const FACTURA_KEY = 'bdcpolo_facturas'
 
 function loadFacturas(): Record<number, FacturaRecord> {
   try { return JSON.parse(localStorage.getItem(FACTURA_KEY) ?? '{}') } catch { return {} }
+}
+
+// ── Service checklist helpers (localStorage) ────────────────────────────────
+const CHECKLIST_KEY = 'bdcpolo_service_checklist'
+function loadChecklist(): Record<number, number[]> {
+  try { return JSON.parse(localStorage.getItem(CHECKLIST_KEY) ?? '{}') } catch { return {} }
+}
+function saveChecklist(data: Record<number, number[]>) {
+  localStorage.setItem(CHECKLIST_KEY, JSON.stringify(data))
 }
 
 // ── Currency helpers ─────────────────────────────────────────────────────────
@@ -100,6 +109,31 @@ function PatioCard({ entry, opName, facturaRecord, onAdvance, onEdit, onUpdate }
   const [draftDate,       setDraftDate]       = useState('')
   const [draftHour,       setDraftHour]       = useState('')
   const [savingDelivery,  setSavingDelivery]  = useState(false)
+
+  // ── Service checklist (en_proceso only) ────────────────
+  const showChecklist = entry.status === 'en_proceso' && items.length > 0
+  const orderId = entry.order_id
+  const [checkedIds, setCheckedIds] = useState<number[]>(() => {
+    return loadChecklist()[orderId] ?? []
+  })
+  const checkedCount = showChecklist ? checkedIds.filter(id => items.some(i => i.id === id)).length : 0
+  const allChecked = showChecklist && checkedCount === items.length && items.length > 0
+
+  function toggleServiceCheck(itemId: number, e: React.MouseEvent) {
+    e.stopPropagation()
+    setCheckedIds(prev => {
+      const next = prev.includes(itemId) ? prev.filter(id => id !== itemId) : [...prev, itemId]
+      const all = loadChecklist()
+      if (next.length === 0) { delete all[orderId] } else { all[orderId] = next }
+      saveChecklist(all)
+      // Auto-advance to listo when all services are checked
+      const validCount = next.filter(id => items.some(i => i.id === id)).length
+      if (validCount === items.length && items.length > 0) {
+        setTimeout(() => onAdvance(entry), 400)
+      }
+      return next
+    })
+  }
 
   function openDeliveryEdit(e: React.MouseEvent) {
     e.stopPropagation()
@@ -196,6 +230,23 @@ function PatioCard({ entry, opName, facturaRecord, onAdvance, onEdit, onUpdate }
             : <span className="text-orange-500/70 italic">Sin operario</span>
           }
         </div>
+
+        {/* Service progress (en_proceso) */}
+        {showChecklist && (
+          <div className="flex items-center gap-2">
+            <div className="flex-1 h-1.5 rounded-full bg-white/[0.06] overflow-hidden">
+              <motion.div
+                className={cn('h-full rounded-full', allChecked ? 'bg-green-500' : 'bg-yellow-500/80')}
+                initial={false}
+                animate={{ width: items.length > 0 ? `${(checkedCount / items.length) * 100}%` : '0%' }}
+                transition={{ type: 'spring', stiffness: 300, damping: 30 }}
+              />
+            </div>
+            <span className={cn('text-[10px] font-medium tabular-nums shrink-0', allChecked ? 'text-green-400' : 'text-gray-500')}>
+              {checkedCount}/{items.length}
+            </span>
+          </div>
+        )}
 
         {/* Delivery date + edit icon */}
         <div className="flex items-center justify-between gap-2">
@@ -319,18 +370,53 @@ function PatioCard({ entry, opName, facturaRecord, onAdvance, onEdit, onUpdate }
                 </div>
               )}
 
-              {/* Services */}
+              {/* Services — checklist when en_proceso, badges otherwise */}
               {items.length > 0 && (
-                <div className="flex flex-wrap gap-1">
-                  {entry.order?.is_warranty && (
-                    <Badge variant="orange" className="text-[10px] py-0.5">Garantía</Badge>
-                  )}
-                  {items.map(item => (
-                    <Badge key={item.id} variant="default" className="text-[10px] py-0.5">
-                      {item.service_name}
-                    </Badge>
-                  ))}
-                </div>
+                showChecklist ? (
+                  <div className="space-y-1" onClick={e => e.stopPropagation()}>
+                    {entry.order?.is_warranty && (
+                      <Badge variant="orange" className="text-[10px] py-0.5 mb-1">Garantía</Badge>
+                    )}
+                    {items.map(item => {
+                      const done = checkedIds.includes(item.id)
+                      return (
+                        <button
+                          key={item.id}
+                          type="button"
+                          onClick={e => toggleServiceCheck(item.id, e)}
+                          className={cn(
+                            'flex items-center gap-2 w-full rounded-lg px-2.5 py-1.5 text-left transition-colors',
+                            done
+                              ? 'bg-green-500/10 border border-green-500/25'
+                              : 'bg-white/[0.03] border border-white/6 active:bg-white/[0.06]'
+                          )}
+                        >
+                          {done
+                            ? <CheckCircle2 size={14} className="text-green-400 shrink-0" />
+                            : <Circle size={14} className="text-gray-600 shrink-0" />
+                          }
+                          <span className={cn(
+                            'text-xs leading-tight',
+                            done ? 'text-green-300 line-through decoration-green-500/40' : 'text-gray-300'
+                          )}>
+                            {item.service_name}
+                          </span>
+                        </button>
+                      )
+                    })}
+                  </div>
+                ) : (
+                  <div className="flex flex-wrap gap-1">
+                    {entry.order?.is_warranty && (
+                      <Badge variant="orange" className="text-[10px] py-0.5">Garantía</Badge>
+                    )}
+                    {items.map(item => (
+                      <Badge key={item.id} variant="default" className="text-[10px] py-0.5">
+                        {item.service_name}
+                      </Badge>
+                    ))}
+                  </div>
+                )
               )}
 
               {/* Financial */}
@@ -440,13 +526,25 @@ function PatioCard({ entry, opName, facturaRecord, onAdvance, onEdit, onUpdate }
   )
 }
 
-const CATEGORY_LABELS: Record<ServiceCategory, string> = {
+const CATEGORY_LABELS: Record<string, string> = {
   exterior:           'Exterior',
   interior:           'Interior',
   ceramico:           'Cerámico',
   correccion_pintura: 'Corrección de Pintura',
+  latoneria:          'Latonería',
+  pintura:            'Pintura',
+  ppf:                'PPF',
+  polarizado:         'Polarizado',
 }
-const CATEGORY_ORDER: ServiceCategory[] = ['exterior', 'interior', 'correccion_pintura', 'ceramico']
+const CATEGORY_ORDER: string[] = ['exterior', 'interior', 'correccion_pintura', 'ceramico', 'latoneria', 'pintura', 'ppf', 'polarizado']
+// Maps service category → operator_type
+const CAT_TO_OP_TYPE: Record<string, string> = {
+  exterior: 'detallado', interior: 'detallado', ceramico: 'detallado', correccion_pintura: 'detallado',
+  pintura: 'pintura', latoneria: 'latoneria', ppf: 'ppf', polarizado: 'polarizado',
+}
+const OP_TYPE_LABEL: Record<string, string> = {
+  detallado: 'Detallado', pintura: 'Pintura', latoneria: 'Latonería', ppf: 'PPF', polarizado: 'Polarizado',
+}
 
 export default function EstadoPatio() {
   const { operators, services } = useAppContext()
@@ -456,9 +554,14 @@ export default function EstadoPatio() {
 
   // Edit modal state
   const [editingEntry, setEditingEntry] = useState<ApiPatioEntry | null>(null)
-  const [editForm, setEditForm] = useState({ operatorId: '', serviceIds: [] as number[] })
+  const [editForm, setEditForm] = useState({
+    serviceIds: [] as number[],
+    customPrices: {} as Record<number, string>,
+    operatorByType: {} as Record<string, string>,   // operator_type → operator_id
+  })
   const [openCats, setOpenCats] = useState<Set<string>>(new Set())
   const [confirmCancel, setConfirmCancel] = useState(false)
+  const [editOperators, setEditOperators] = useState<typeof operators>([])
 
   // Operator picker modal state
   const [operatorPickEntry, setOperatorPickEntry] = useState<ApiPatioEntry | null>(null)
@@ -515,9 +618,40 @@ export default function EstadoPatio() {
     return () => clearInterval(interval)
   }, [])
 
-  function openEdit(entry: ApiPatioEntry) {
-    const selectedIds = entry.order?.items.map(i => i.service_id).filter((id): id is number => id != null) ?? []
-    setEditForm({ operatorId: '', serviceIds: selectedIds })
+  async function openEdit(entry: ApiPatioEntry) {
+    const items = entry.order?.items ?? []
+    const selectedIds = items.map(i => i.service_id).filter((id): id is number => id != null)
+    // Pre-fill custom prices from existing item prices
+    const prices: Record<number, string> = {}
+    items.forEach(i => { if (i.service_id != null) prices[i.service_id] = String(Number(i.unit_price)) })
+
+    // Fetch fresh active operators for the selector
+    const allOps = await api.operators.list().catch(() => [] as typeof operators)
+    const activeOps = allOps.filter(o => o.active !== false)
+    setEditOperators(activeOps)
+
+    // Pre-fill operator by type: current operator_id → find its type
+    const opByType: Record<string, string> = {}
+    if (entry.order?.operator_id) {
+      const currentOp = activeOps.find(o => o.id === entry.order!.operator_id)
+      if (currentOp) {
+        opByType[currentOp.operator_type ?? 'detallado'] = String(currentOp.id)
+      }
+    }
+    // Auto-assign types with a single operator
+    const opTypes = new Set(selectedIds.map(id => {
+      const svc = services.find(s => s.id === id)
+      const cat = svc?.category ?? items.find(i => i.service_id === id)?.service_category
+      return cat ? CAT_TO_OP_TYPE[cat] : null
+    }).filter(Boolean) as string[])
+    for (const t of opTypes) {
+      if (!opByType[t]) {
+        const candidates = activeOps.filter(o => (o.operator_type ?? 'detallado') === t)
+        if (candidates.length === 1) opByType[t] = String(candidates[0].id)
+      }
+    }
+
+    setEditForm({ serviceIds: selectedIds, customPrices: prices, operatorByType: opByType })
     setOpenCats(new Set())
     setConfirmCancel(false)
     setEditingEntry(entry)
@@ -525,16 +659,50 @@ export default function EstadoPatio() {
 
   async function saveEdit() {
     if (!editingEntry) return
-    // If all services removed → ask for confirmation first
     const canEdit = editingEntry.status === 'esperando' || editingEntry.status === 'en_proceso'
     if (canEdit && editForm.serviceIds.length === 0) {
       setConfirmCancel(true)
       return
     }
+
+    // Determine which operator types are needed
+    const requiredTypes = new Set<string>()
+    for (const id of editForm.serviceIds) {
+      const svc = services.find(s => s.id === id)
+      const cat = svc?.category ?? editingEntry.order?.items.find(i => i.service_id === id)?.service_category
+      if (cat) requiredTypes.add(CAT_TO_OP_TYPE[cat] ?? 'detallado')
+    }
+    // Validate all required types have an operator
+    for (const t of requiredTypes) {
+      if (!editForm.operatorByType[t]) {
+        toast.error(`Selecciona un operario de ${OP_TYPE_LABEL[t] ?? t}`)
+        return
+      }
+    }
+
     try {
-      const updated = await api.patio.edit(editingEntry.id, {
-        ...(canEdit ? { service_ids: editForm.serviceIds } : {}),
-      })
+      // Build item_overrides for any custom prices
+      const overrides = editForm.serviceIds
+        .filter(id => editForm.customPrices[id] != null)
+        .map(id => ({ service_id: id, unit_price: Number(parseCOP(editForm.customPrices[id])) }))
+
+      const payload: Parameters<typeof api.patio.edit>[1] = {}
+      if (canEdit) {
+        payload.service_ids = editForm.serviceIds
+        if (overrides.length > 0) payload.item_overrides = overrides
+      }
+
+      // Resolve which operator to save as order.operator_id
+      // Priority: detallado > first type with an assigned operator
+      const detOpId = editForm.operatorByType['detallado']
+      const fallbackOpId = Object.values(editForm.operatorByType).find(v => v)
+      const newOpId = detOpId ? Number(detOpId) : fallbackOpId ? Number(fallbackOpId) : null
+      const currentOpId = editingEntry.order?.operator_id ?? null
+      if (newOpId !== currentOpId) {
+        payload.operator_id = newOpId
+      }
+
+      const updated = await api.patio.edit(editingEntry.id, payload)
       setEntries(prev => prev.map(e => e.id === updated.id ? updated : e))
       toast.success('Orden actualizada correctamente')
       setEditingEntry(null)
@@ -615,6 +783,12 @@ export default function EstadoPatio() {
     try {
       const updated = await api.patio.advance(entry.id)
       setEntries(prev => prev.map(e => e.id === updated.id ? updated : e))
+      // Clean up checklist localStorage when leaving en_proceso
+      if (entry.status === 'en_proceso') {
+        const all = loadChecklist()
+        delete all[entry.order_id]
+        saveChecklist(all)
+      }
       const label = COLUMNS.find(c => c.status === updated.status)?.label
       toast.success(`${updated.vehicle?.plate ?? 'Vehículo'} → ${label}`)
     } catch (err) {
@@ -887,10 +1061,9 @@ export default function EstadoPatio() {
                     const vType    = editingEntry.vehicle?.type ?? 'automovil'
                     const allItems = editingEntry.order?.items ?? []
                     const canEdit  = editingEntry.status === 'esperando' || editingEntry.status === 'en_proceso'
+                    const abono    = Number(editingEntry.order?.downpayment ?? 0)
 
-                    const getPrice = (svcId: number) => {
-                      const snap = allItems.find(i => i.service_id === svcId)?.unit_price
-                      if (snap != null) return Number(snap)
+                    const getStdPrice = (svcId: number) => {
                       const svc = services.find(s => s.id === svcId)
                       if (!svc) return 0
                       return vType === 'camion_estandar'
@@ -900,10 +1073,64 @@ export default function EstadoPatio() {
                         : Number(svc.price_automovil)
                     }
 
-                    const editTotal = editForm.serviceIds.reduce((sum, id) => sum + getPrice(id), 0)
+                    const getEffective = (svcId: number) => {
+                      const custom = editForm.customPrices[svcId]
+                      if (custom != null && custom !== '') return Number(parseCOP(custom))
+                      return getStdPrice(svcId)
+                    }
+
+                    const editTotal = editForm.serviceIds.reduce((sum, id) => sum + getEffective(id), 0)
+                    const totalBelowAbono = abono > 0 && editTotal < abono
+
+                    // Determine which operator types are needed based on selected services
+                    const neededOpTypes = [...new Set(editForm.serviceIds.map(id => {
+                      const svc = services.find(s => s.id === id)
+                      const cat = svc?.category ?? allItems.find(i => i.service_id === id)?.service_category
+                      return cat ? CAT_TO_OP_TYPE[cat] ?? 'detallado' : 'detallado'
+                    }))]
 
                     return (
                       <>
+                        {/* ── Operator selectors per type ── */}
+                        {canEdit && neededOpTypes.length > 0 && (
+                          <div className="space-y-2">
+                            <p className="text-xs text-gray-500 uppercase tracking-wider">Operarios asignados</p>
+                            {neededOpTypes.map(opType => {
+                              const candidates = editOperators.filter(o => (o.operator_type ?? 'detallado') === opType)
+                              const selected = editForm.operatorByType[opType] ?? ''
+                              const isSingle = candidates.length === 1
+                              return (
+                                <div key={opType} className="rounded-xl border border-white/8 bg-white/[0.02] px-3 py-2.5 space-y-1">
+                                  <p className="text-xs font-medium text-gray-400">{OP_TYPE_LABEL[opType] ?? opType}</p>
+                                  {isSingle ? (
+                                    <p className="text-sm text-gray-200">{candidates[0].name}</p>
+                                  ) : candidates.length === 0 ? (
+                                    <p className="text-xs text-red-400 italic">No hay operarios de este tipo</p>
+                                  ) : (
+                                    <select
+                                      value={selected}
+                                      onChange={e => setEditForm(f => ({
+                                        ...f,
+                                        operatorByType: { ...f.operatorByType, [opType]: e.target.value },
+                                      }))}
+                                      style={{ colorScheme: 'dark' }}
+                                      className="w-full rounded-lg border border-white/10 bg-gray-800 px-2.5 py-2 text-sm text-gray-100 focus:border-yellow-500/50 focus:outline-none focus:ring-1 focus:ring-yellow-500/20 appearance-none"
+                                    >
+                                      <option value="">Seleccionar...</option>
+                                      {candidates.map(op => (
+                                        <option key={op.id} value={op.id} className="bg-gray-800">{op.name}</option>
+                                      ))}
+                                    </select>
+                                  )}
+                                  {!selected && candidates.length > 1 && (
+                                    <p className="text-[10px] text-orange-400">Requerido</p>
+                                  )}
+                                </div>
+                              )
+                            })}
+                          </div>
+                        )}
+
                         {/* ── Selected services ── */}
                         <div className="space-y-2">
                           <div className="flex items-center justify-between">
@@ -911,11 +1138,17 @@ export default function EstadoPatio() {
                               Servicios
                               <span className="ml-2 text-xs text-gray-600">({editForm.serviceIds.length})</span>
                             </p>
-                            {editTotal > 0 && (
-                              <span className="text-base font-bold text-yellow-400">
+                            <div className="text-right">
+                              <span className={cn('text-base font-bold', totalBelowAbono ? 'text-red-400' : 'text-yellow-400')}>
                                 ${editTotal.toLocaleString('es-CO')}
                               </span>
-                            )}
+                              {abono > 0 && (
+                                <p className={cn('text-[10px]', totalBelowAbono ? 'text-red-400' : 'text-gray-500')}>
+                                  Abono: ${abono.toLocaleString('es-CO')}
+                                  {totalBelowAbono && ' — total menor al abono'}
+                                </p>
+                              )}
+                            </div>
                           </div>
 
                           {editForm.serviceIds.length === 0 ? (
@@ -927,7 +1160,9 @@ export default function EstadoPatio() {
                                   const label = allItems.find(i => i.service_id === svcId)?.service_name
                                     ?? services.find(s => s.id === svcId)?.name
                                     ?? `Servicio ${svcId}`
-                                  const price = getPrice(svcId)
+                                  const stdPrice = getStdPrice(svcId)
+                                  const effPrice = getEffective(svcId)
+                                  const hasCustom = editForm.customPrices[svcId] != null && editForm.customPrices[svcId] !== '' && effPrice !== stdPrice
                                   return (
                                     <motion.div
                                       key={svcId}
@@ -937,23 +1172,46 @@ export default function EstadoPatio() {
                                       transition={{ duration: 0.16 }}
                                       className="overflow-hidden"
                                     >
-                                      <div className="flex items-center justify-between rounded-xl border border-white/8 bg-white/[0.03] px-3 py-2.5">
-                                        <div>
-                                          <p className="text-sm text-gray-200">{label}</p>
-                                          <p className="text-xs text-gray-500">${price.toLocaleString('es-CO')}</p>
+                                      <div className="rounded-xl border border-white/8 bg-white/[0.03] px-3 py-2.5 space-y-1.5">
+                                        <div className="flex items-center justify-between gap-2">
+                                          <div className="min-w-0">
+                                            <p className="text-sm text-gray-200 truncate">{label}</p>
+                                            {hasCustom && (
+                                              <p className="text-[10px] text-gray-600 line-through">${stdPrice.toLocaleString('es-CO')}</p>
+                                            )}
+                                          </div>
+                                          {canEdit && (
+                                            <button
+                                              type="button"
+                                              onClick={() => setEditForm(f => {
+                                                const next = { ...f, serviceIds: f.serviceIds.filter(id => id !== svcId) }
+                                                const cp = { ...next.customPrices }
+                                                delete cp[svcId]
+                                                next.customPrices = cp
+                                                return next
+                                              })}
+                                              className="p-1.5 rounded-lg text-gray-600 hover:text-red-400 hover:bg-red-500/10 transition-colors shrink-0"
+                                              title="Eliminar servicio"
+                                            >
+                                              <X size={14} />
+                                            </button>
+                                          )}
                                         </div>
                                         {canEdit && (
-                                          <button
-                                            type="button"
-                                            onClick={() => setEditForm(f => ({
-                                              ...f,
-                                              serviceIds: f.serviceIds.filter(id => id !== svcId),
-                                            }))}
-                                            className="p-1.5 rounded-lg text-gray-600 hover:text-red-400 hover:bg-red-500/10 transition-colors"
-                                            title="Eliminar servicio"
-                                          >
-                                            <X size={14} />
-                                          </button>
+                                          <div className="flex items-center gap-2">
+                                            <span className="text-xs text-gray-500 shrink-0">$</span>
+                                            <input
+                                              type="text"
+                                              inputMode="numeric"
+                                              value={editForm.customPrices[svcId] != null ? fmtCOP(editForm.customPrices[svcId]) : fmtCOP(String(stdPrice))}
+                                              onChange={e => {
+                                                const raw = parseCOP(e.target.value)
+                                                setEditForm(f => ({ ...f, customPrices: { ...f.customPrices, [svcId]: raw } }))
+                                              }}
+                                              onWheel={e => e.currentTarget.blur()}
+                                              className="flex-1 rounded-lg border border-white/10 bg-gray-800 px-2 py-1 text-sm text-gray-100 text-right focus:border-yellow-500/40 focus:outline-none focus:ring-1 focus:ring-yellow-500/20"
+                                            />
+                                          </div>
                                         )}
                                       </div>
                                     </motion.div>
@@ -964,7 +1222,7 @@ export default function EstadoPatio() {
                           )}
                         </div>
 
-                        {/* ── Add services accordion (esperando only) ── */}
+                        {/* ── Add services accordion ── */}
                         {canEdit && (
                           <div className="space-y-1.5">
                             <p className="text-xs text-gray-500 uppercase tracking-wider">Agregar servicios</p>
@@ -1002,12 +1260,23 @@ export default function EstadoPatio() {
                                               <button
                                                 key={svc.id}
                                                 type="button"
-                                                onClick={() => setEditForm(f => ({ ...f, serviceIds: [...f.serviceIds, svc.id] }))}
+                                                onClick={() => setEditForm(f => {
+                                                  const next = { ...f, serviceIds: [...f.serviceIds, svc.id] }
+                                                  // Auto-assign operator if only 1 candidate for the service's type
+                                                  const opType = CAT_TO_OP_TYPE[svc.category] ?? 'detallado'
+                                                  if (!next.operatorByType[opType]) {
+                                                    const cands = editOperators.filter(o => (o.operator_type ?? 'detallado') === opType)
+                                                    if (cands.length === 1) {
+                                                      next.operatorByType = { ...next.operatorByType, [opType]: String(cands[0].id) }
+                                                    }
+                                                  }
+                                                  return next
+                                                })}
                                                 className="w-full flex items-center justify-between rounded-lg px-2 py-1.5 hover:bg-white/5 transition-colors text-left"
                                               >
                                                 <span className="text-sm text-gray-300">{svc.name}</span>
                                                 <span className="text-xs text-gray-500">
-                                                  +${getPrice(svc.id).toLocaleString('es-CO')}
+                                                  +${getStdPrice(svc.id).toLocaleString('es-CO')}
                                                 </span>
                                               </button>
                                             ))}
@@ -1025,45 +1294,85 @@ export default function EstadoPatio() {
                   })()}
                 </div>
 
-                <div className="p-5 pt-4 border-t border-white/8 shrink-0">
-                  <AnimatePresence mode="wait">
-                    {confirmCancel ? (
-                      <motion.div
-                        key="confirm"
-                        initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 6 }}
-                        transition={{ duration: 0.15 }}
-                        className="space-y-3"
-                      >
-                        <p className="text-sm text-center text-gray-300">
-                          Se eliminarán todos los servicios y el vehículo saldrá del patio.{' '}
-                          <span className="text-white font-medium">¿Está seguro?</span>
-                        </p>
-                        <div className="flex gap-3">
-                          <Button variant="secondary" size="lg" className="flex-1" onClick={() => setConfirmCancel(false)}>
-                            No, volver
-                          </Button>
-                          <Button variant="destructive" size="lg" className="flex-1" onClick={confirmCancelEntry}>
-                            Sí, cancelar
-                          </Button>
-                        </div>
-                      </motion.div>
-                    ) : (
-                      <motion.div
-                        key="actions"
-                        initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 6 }}
-                        transition={{ duration: 0.15 }}
-                        className="flex gap-3"
-                      >
-                        <Button variant="secondary" size="lg" className="flex-1" onClick={() => setEditingEntry(null)}>
-                          Cancelar
-                        </Button>
-                        <Button variant="primary" size="lg" className="flex-1" onClick={saveEdit}>
-                          Guardar
-                        </Button>
-                      </motion.div>
-                    )}
-                  </AnimatePresence>
-                </div>
+                {(() => {
+                  // Compute save validation
+                  const vType = editingEntry.vehicle?.type ?? 'automovil'
+                  const abono = Number(editingEntry.order?.downpayment ?? 0)
+                  const getEff = (svcId: number) => {
+                    const custom = editForm.customPrices[svcId]
+                    if (custom != null && custom !== '') return Number(parseCOP(custom))
+                    const svc = services.find(s => s.id === svcId)
+                    if (!svc) return 0
+                    return vType === 'camion_estandar'
+                      ? Number(svc.price_camion_estandar ?? svc.price_automovil)
+                      : vType === 'camion_xl'
+                      ? Number(svc.price_camion_xl ?? svc.price_automovil)
+                      : Number(svc.price_automovil)
+                  }
+                  const total = editForm.serviceIds.reduce((s, id) => s + getEff(id), 0)
+                  const belowAbono = abono > 0 && total < abono
+                  // Check all required operator types are assigned
+                  const reqTypes = new Set<string>()
+                  for (const id of editForm.serviceIds) {
+                    const svc = services.find(s => s.id === id)
+                    const cat = svc?.category ?? editingEntry.order?.items?.find(i => i.service_id === id)?.service_category
+                    if (cat) reqTypes.add(CAT_TO_OP_TYPE[cat] ?? 'detallado')
+                  }
+                  let missingOpType = ''
+                  for (const t of reqTypes) {
+                    if (!editForm.operatorByType[t]) { missingOpType = OP_TYPE_LABEL[t] ?? t; break }
+                  }
+                  const cantSave = belowAbono || !!missingOpType
+
+                  return (
+                    <div className="p-5 pt-4 border-t border-white/8 shrink-0">
+                      <AnimatePresence mode="wait">
+                        {confirmCancel ? (
+                          <motion.div
+                            key="confirm"
+                            initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 6 }}
+                            transition={{ duration: 0.15 }}
+                            className="space-y-3"
+                          >
+                            <p className="text-sm text-center text-gray-300">
+                              Se eliminarán todos los servicios y el vehículo saldrá del patio.{' '}
+                              <span className="text-white font-medium">¿Está seguro?</span>
+                            </p>
+                            <div className="flex gap-3">
+                              <Button variant="secondary" size="lg" className="flex-1" onClick={() => setConfirmCancel(false)}>
+                                No, volver
+                              </Button>
+                              <Button variant="destructive" size="lg" className="flex-1" onClick={confirmCancelEntry}>
+                                Sí, cancelar
+                              </Button>
+                            </div>
+                          </motion.div>
+                        ) : (
+                          <motion.div
+                            key="actions"
+                            initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 6 }}
+                            transition={{ duration: 0.15 }}
+                            className="space-y-2"
+                          >
+                            {cantSave && (
+                              <p className="text-[11px] text-center text-red-400">
+                                {belowAbono ? 'El total no puede ser menor al abono del cliente' : `Selecciona un operario de ${missingOpType}`}
+                              </p>
+                            )}
+                            <div className="flex gap-3">
+                              <Button variant="secondary" size="lg" className="flex-1" onClick={() => setEditingEntry(null)}>
+                                Cancelar
+                              </Button>
+                              <Button variant="primary" size="lg" className="flex-1" onClick={saveEdit} disabled={cantSave}>
+                                Guardar
+                              </Button>
+                            </div>
+                          </motion.div>
+                        )}
+                      </AnimatePresence>
+                    </div>
+                  )
+                })()}
               </motion.div>
             </motion.div>
           )

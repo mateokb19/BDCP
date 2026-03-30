@@ -124,7 +124,7 @@ All routes are prefixed `/api/v1/`.
 | `/inventario`      | Inventario        | ❌ mock | Inventory management with stock levels |
 | `/ceramicos`       | Ceramicos         | ✅ | Ceramic treatment tracking; fetched from `GET /ceramics` |
 | `/liquidacion`     | Liquidacion       | ✅ | Operator commission liquidation (password: `BDCP123`) |
-| `/ingresos-egresos`| IngresosEgresos   | ✅ | Income by payment method + manual expense CRUD + charts |
+| `/ingresos-egresos`| IngresosEgresos   | ✅ | Balance per payment method + manual expense CRUD + charts |
 | `/documentos`      | Documentos        | ❌ mock | Document management |
 | `/historial`       | Historial         | ✅ | Order history with search + date filter |
 | `/clientes`        | Clientes          | ✅ | Client database with search, vehicle list, edit, stats |
@@ -216,15 +216,19 @@ ALTER TABLE service_order_items ADD COLUMN IF NOT EXISTS standard_price NUMERIC(
    - Confirm → `POST /api/v1/orders` with `item_overrides` (custom and warranty prices), `scheduled_delivery_at`, `downpayment`, `downpayment_method`, `is_warranty`.
 2. Backend creates atomically: client (find or create by phone), vehicle (find or create by plate), order, order items (price snapshot via `item_overrides`), patio entry (`esperando`). If any item is `ceramico` category, also creates a `CeramicTreatment` record with `next_maintenance = application_date + 6 months`.
 3. **EstadoPatio**: fetches `GET /api/v1/patio` on mount. Kanban cards advance via `POST /patio/{id}/advance`. Services editable via `PATCH /patio/{id}`. Operator assigned via modal on first advance.
-   - **Cards**: collapsed by default showing vehicle icon, brand/model, plate/color, operator, delivery date/time, elapsed time, and advance button. Clicking the card expands it to show client name/phone, service badges, financial breakdown (total / abono / resta), payment breakdown (if entregado), facturación electrónica panel (if requested), and "Editar orden" link.
+   - **Cards**: collapsed by default showing vehicle icon, brand/model, plate/color, operator, delivery date/time, elapsed time, and advance button. Clicking the card expands it to show client name/phone, service checklist or badges, financial breakdown (total / abono / resta), payment breakdown (if entregado), facturación electrónica panel (if requested), and "Editar orden" link.
+   - **Service completion checklist**: all `en_proceso` cards show each service as a tappable checkbox row (full-width, mobile-friendly `px-2.5 py-1.5` touch targets) instead of simple badges. Checked services show a green `CheckCircle2` icon + strikethrough text; unchecked show a gray `Circle` icon. The collapsed card header shows an animated progress bar + `N/M` counter (green when all checked, yellow otherwise). **When all checkboxes are checked, the card auto-advances to `listo` after a 400ms delay.** The existing "Completar" button still works independently. State persisted in `localStorage` under key `bdcpolo_service_checklist` as `Record<order_id, item_id[]>`; cleaned up on advance past `en_proceso`. Cards in other statuses (`esperando`, `listo`, `entregado`) show the original badge display.
    - Advancing from `esperando` → `en_proceso` **requires** an operator: if none assigned, a picker modal appears first; selects operator via `PATCH`, then advances. The modal also includes a **notes textarea** ("Daños o piezas faltantes") pre-filled with any existing `entry.notes`. On confirm, sends `notes` alongside `operator_id` in the `PATCH /patio/{id}` call. Cards show an orange `⚠` badge in the collapsed header when `entry.notes` is non-empty; expanded view shows the note text in an orange-tinted panel.
    - **Editar orden** modal:
      - Available for `esperando` and `en_proceso` statuses. Read-only for `listo` and `entregado`.
+     - **Operator selectors per type**: groups selected services by `operator_type` via `CAT_TO_OP_TYPE` mapping. Shows one operator dropdown per needed type (Detallado, Pintura, Latonería, PPF, Polarizado). Types with a single active operator auto-assign. Types with multiple candidates show a required dropdown. All types must have an operator assigned before saving.
+     - **All 8 service categories** available in the add-services accordion: Exterior, Interior, Corrección, Cerámico, Latonería, Pintura, PPF, Polarizado.
+     - **Inline price editing**: each selected service has an editable price input (COP formatted). Shows strikethrough of standard price when custom. Backend receives `item_overrides` for non-standard prices.
+     - **Downpayment validation**: "Guardar" disabled with red message when new total < abono. Also validated server-side (HTTP 400).
      - Shows current services as a list with X buttons to remove each one.
-     - Shows category accordion below to add new services (only services not already in the order).
      - If all services are removed and "Guardar" is pressed → confirmation step: *"¿Está seguro?"* with "No, volver" / "Sí, cancelar".
      - Confirming cancellation calls `DELETE /patio/{id}`: deletes order items, marks order as `cancelado`, removes patio entry. Vehicle disappears from kanban immediately.
-     - No operator selector in edit modal — operator is only assigned via the advance-to-en_proceso flow.
+     - **`operator_id` resolution on save**: detallado operator takes priority for `order.operator_id`; falls back to first assigned type if no detallado services. This ensures mixed orders (e.g., pintura + detallado added later) always have the correct operator for liquidation.
    - **Duplicate vehicle prevention**: `POST /orders` returns HTTP 409 if the vehicle already has an active patio entry (status != `entregado`). Frontend shows a toast with the plate number.
    - **Midnight auto-refresh**: a `setInterval` (60s) in EstadoPatio detects day change and re-fetches `/patio`, automatically removing yesterday's delivered entries from the kanban.
    - **Active-only operator picker**: when the advance-to-en_proceso modal opens, it fetches fresh active operators from `GET /operators` (not the stale AppContext cache) so deactivated operators never appear as options.
@@ -346,7 +350,8 @@ Key implementation details:
 
 - **`GET /ingresos`**: aggregates delivered `ServiceOrder` totals by 4 payment method columns + abonos from non-cancelled orders with `downpayment > 0`. `_abono_bucket()` maps `downpayment_method` to the correct bucket. Returns `daily_totals` (no date gaps) + period totals.
 - **`GET /ingresos/breakdown`**: accepts `method` (cash|datafono|nequi|bancolombia), `date_start`, `date_end`. Returns list of `IngresoBreakdownItem` (order_number, date, plate, vehicle, client, amount, is_abono). Queries two sets: final payments (delivered orders where `col_attr > 0`) + abono payments (non-cancelled orders where `downpayment > 0 AND downpayment_method == label`). Sorted by date descending.
-- **Breakdown modal**: clicking any payment method card opens a modal listing each order paid via that method. Abono rows tagged with an orange "Abono" badge. Footer shows count + total.
+- **"Balance por método de pago"**: each payment method card shows the **balance** (ingresos − egresos) for that method, color-coded green (positive) or red (negative). Below the balance: `+$ingresos` in green, `−$egresos` in red. `egresosByMethod` useMemo groups loaded expenses by `payment_method` field (Efectivo → `payment_cash`, Datáfono → `payment_datafono`, Nequi → `payment_nequi`, Bancolombia → `payment_bancolombia`).
+- **Breakdown modal (per-method)**: clicking any payment method card opens a modal with **two sections**: (1) green "Ingresos" header listing each order paid via that method (abono rows tagged with orange "Abono" badge), (2) red "Egresos" header listing all expenses for that method. Footer shows Ingresos total, Egresos total, and Balance (color-coded). Uses `METHOD_TO_LABEL` mapping to filter expenses by `payment_method` label.
 - **KPI summary modals**: clicking the Ingresos, Egresos, or Balance KPI cards opens a summary modal:
   - **Ingresos**: fetches all 4 method breakdowns in parallel (`Promise.all`), merges and sorts by date, shows every payment with method badge + abono tag.
   - **Egresos**: lists all loaded expense records for the period.
@@ -422,6 +427,14 @@ Key implementation details:
 - **`week_liquidations.payment_transfer` trap**: this column has no DB-level DEFAULT in older DBs (was populated via SQLAlchemy Python-side `default=0`). After removing it from the model, INSERTs omit it and fail with `NotNullViolation` — silently caught by the `IntegrityError` handler, making liquidation appear to succeed but save nothing. Fix: `ALTER COLUMN payment_transfer SET DEFAULT 0` (already in `main.py` migrations).
 - **`pendingData` stale state in Liquidacion**: `pendingData` (result of `GET /liquidation/{op_id}/pending`) must be reset to `null` when the selected operator or week changes. Without this, switching from a fully-liquidated operator leaves `unliquidated_count=0` which disables the "Liquidar semana" button for the next operator. Fixed with `setPendingData(null)` in the `useEffect([selectedOp, weekOffset])`.
 - **Latoneria price validation**: `IngresarServicio` computes `latWithNoPrice` — true when any selected latoneria service has no custom price entered. Confirm button is disabled with label "Ingresa el precio de latonería" in that case.
+- **Service completion checklist**: all `en_proceso` cards in EstadoPatio show interactive checkboxes instead of badges. When all are checked, auto-advances to `listo` (400ms delay). State persisted in `localStorage` under `bdcpolo_service_checklist` as `Record<order_id, item_id[]>`, cleaned up on advance. Collapsed header shows animated progress bar + counter. Mobile-first design with large touch targets.
+
+## localStorage keys
+
+| Key | Type | Purpose |
+|-----|------|---------|
+| `bdcpolo_facturas` | `Record<orderId, FacturaRecord>` | Facturación electrónica data per delivered order |
+| `bdcpolo_service_checklist` | `Record<orderId, itemId[]>` | Service completion checkmarks for `en_proceso` orders; auto-cleaned on advance |
 
 ## Common commands
 

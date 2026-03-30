@@ -151,21 +151,33 @@ def edit_patio_entry(id: int, payload: schemas.PatioPatch, db: Session = Depends
                     return svc.price_camion_xl or svc.price_automovil
                 return svc.price_automovil
 
+            # Build override map: service_id → custom unit_price
+            override_map = {ov.service_id: ov.unit_price for ov in payload.item_overrides}
+
             new_items = []
             for svc in services:
-                p = _price(svc)
+                std = _price(svc)
+                p = override_map.get(svc.id, std)
                 new_items.append(models.ServiceOrderItem(
                     order_id=entry.order_id,
                     service_id=svc.id,
                     service_name=svc.name,
                     service_category=svc.category,
                     unit_price=p,
-                    standard_price=p,
+                    standard_price=std,
                     quantity=1,
                     subtotal=p,
                 ))
             db.add_all(new_items)
-            total = sum(_price(s) for s in services)
+            total = sum(i.subtotal for i in new_items)
+
+            # Validate: new total cannot be less than downpayment
+            downpayment = entry.order.downpayment or 0
+            if total < downpayment:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"El total (${total:,.0f}) no puede ser menor al abono (${downpayment:,.0f})"
+                )
         else:
             # All services removed — client left without service, total = 0
             total = 0

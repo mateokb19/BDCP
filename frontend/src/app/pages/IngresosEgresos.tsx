@@ -107,8 +107,9 @@ export default function IngresosEgresos() {
   const [dateStart, setDateStart] = useState(() => getPeriodDates('month').start)
   const [dateEnd,   setDateEnd]   = useState(() => getPeriodDates('month').end)
 
-  // Breakdown modal (per payment method)
+  // Breakdown modal (per payment method — ingresos + egresos)
   const [breakdown,      setBreakdown]      = useState<ApiIngresoBreakdownItem[] | null>(null)
+  const [breakdownEgresos, setBreakdownEgresos] = useState<ApiExpense[]>([])
   const [breakdownMethod,setBreakdownMethod]= useState<typeof PAY_METHODS[number] | null>(null)
   const [loadingBreakdown,setLoadingBreakdown] = useState(false)
 
@@ -139,13 +140,25 @@ export default function IngresosEgresos() {
     }
   }
 
+  // Map PAY_METHODS keys to expense payment_method labels
+  const METHOD_TO_LABEL: Record<string, string> = {
+    payment_cash: 'Efectivo',
+    payment_datafono: 'Datáfono',
+    payment_nequi: 'Nequi',
+    payment_bancolombia: 'Bancolombia',
+  }
+
   async function openBreakdown(m: typeof PAY_METHODS[number]) {
     setBreakdownMethod(m)
     setBreakdown(null)
+    setBreakdownEgresos([])
     setLoadingBreakdown(true)
     try {
       const items = await api.ingresos.breakdown(m.key.replace('payment_', ''), dateStart, dateEnd)
       setBreakdown(items)
+      // Filter expenses matching this payment method
+      const label = METHOD_TO_LABEL[m.key]
+      setBreakdownEgresos(expenses.filter(e => e.payment_method === label))
     } catch {
       toast.error('No se pudo cargar el desglose')
     } finally {
@@ -221,6 +234,20 @@ export default function IngresosEgresos() {
   const egresosTotal  = expenses.reduce((s, e) => s + Number(e.amount), 0)
   const balance       = ingresosTotal - egresosTotal
 
+  // Egresos grouped by payment method (for balance-per-method cards)
+  const egresosByMethod = useMemo(() => {
+    const map: Record<string, number> = { payment_cash: 0, payment_datafono: 0, payment_nequi: 0, payment_bancolombia: 0 }
+    expenses.forEach(e => {
+      const m = e.payment_method
+      if (m === 'Efectivo')     map.payment_cash += Number(e.amount)
+      else if (m === 'Datáfono') map.payment_datafono += Number(e.amount)
+      else if (m === 'Nequi')    map.payment_nequi += Number(e.amount)
+      else if (m === 'Bancolombia') map.payment_bancolombia += Number(e.amount)
+      // Expenses without payment_method or with other values are not attributed to any bucket
+    })
+    return map
+  }, [expenses])
+
   // Bar chart: egresos by category
   const categoryData = useMemo(() => {
     const cats: Record<string, number> = {}
@@ -270,9 +297,9 @@ export default function IngresosEgresos() {
       <div className="mb-6 rounded-2xl border border-white/8 bg-white/[0.02] p-4 space-y-3">
         <div className="flex items-center justify-between flex-wrap gap-2">
           <div>
-            <h3 className="text-sm font-medium text-gray-300">Ingresos por método de pago</h3>
+            <h3 className="text-sm font-medium text-gray-300">Balance por método de pago</h3>
             <p className="text-xs text-gray-600 mt-0.5">
-              Total: <span className="text-yellow-400 font-semibold">${ingresosTotal.toLocaleString('es-CO')}</span>
+              Balance total: <span className={cn('font-semibold', balance >= 0 ? 'text-green-400' : 'text-red-400')}>${Math.abs(balance).toLocaleString('es-CO')}</span>
               {ingresosData && <span className="ml-2">· {ingresosData.order_count} {ingresosData.order_count === 1 ? 'orden' : 'órdenes'}</span>}
             </p>
           </div>
@@ -293,8 +320,9 @@ export default function IngresosEgresos() {
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
           {PAY_METHODS.map(m => {
-            const val = Number(ingresosData?.[m.key] ?? 0)
-            const pct = ingresosTotal > 0 ? Math.round((val / ingresosTotal) * 100) : 0
+            const ing = Number(ingresosData?.[m.key] ?? 0)
+            const egr = egresosByMethod[m.key] ?? 0
+            const bal = ing - egr
             return (
               <button
                 key={m.key}
@@ -309,13 +337,13 @@ export default function IngresosEgresos() {
                   </div>
                   <span className="hidden sm:inline text-[10px] text-gray-700 group-hover:text-gray-500 transition-colors shrink-0 ml-1">Ver →</span>
                 </div>
-                <p className="text-sm sm:text-base font-bold text-white break-all">${val.toLocaleString('es-CO')}</p>
-                <div className="w-full h-1 rounded-full bg-white/8 overflow-hidden">
-                  <motion.div className="h-full rounded-full" style={{ background: m.color }}
-                    initial={{ width: 0 }} animate={{ width: `${pct}%` }}
-                    transition={{ duration: 0.5, ease: 'easeOut' }} />
+                <p className={cn('text-sm sm:text-base font-bold break-all', bal >= 0 ? 'text-white' : 'text-red-400')}>
+                  {bal < 0 ? '−' : ''}${Math.abs(bal).toLocaleString('es-CO')}
+                </p>
+                <div className="flex items-center gap-2 text-[11px]">
+                  <span className="text-green-400/70">+${ing.toLocaleString('es-CO')}</span>
+                  <span className="text-red-400/70">−${egr.toLocaleString('es-CO')}</span>
                 </div>
-                <p className="text-[11px] text-gray-700">{pct}% del total</p>
               </button>
             )
           })}
@@ -698,50 +726,102 @@ export default function IngresosEgresos() {
                   <div className="flex items-center justify-center py-12">
                     <p className="text-sm text-gray-500">Cargando...</p>
                   </div>
-                ) : !breakdown || breakdown.length === 0 ? (
+                ) : (!breakdown || breakdown.length === 0) && breakdownEgresos.length === 0 ? (
                   <div className="flex flex-col items-center justify-center py-12 gap-2">
                     <Car size={28} className="text-gray-700" />
-                    <p className="text-sm text-gray-600">Sin pagos con este método en el período</p>
+                    <p className="text-sm text-gray-600">Sin movimientos con este método en el período</p>
                   </div>
                 ) : (
-                  <div className="divide-y divide-white/6">
-                    {breakdown.map((item, i) => (
-                      <div key={i} className="flex items-center justify-between gap-3 px-5 py-3 hover:bg-white/[0.02] transition-colors">
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <span className="text-xs font-mono text-gray-500">{item.order_number}</span>
-                            {item.is_abono && (
-                              <span className="rounded-full bg-orange-500/15 border border-orange-500/25 px-1.5 py-0.5 text-[10px] text-orange-400">Abono</span>
-                            )}
-                          </div>
-                          <p className="text-sm font-medium text-gray-200 truncate mt-0.5">
-                            {item.plate} · {item.vehicle}
-                          </p>
-                          <div className="flex items-center gap-3 mt-0.5">
-                            <span className="text-xs text-gray-600">{item.client}</span>
-                            <span className="text-xs text-gray-700">
-                              {new Date(item.date + 'T12:00:00').toLocaleDateString('es-CO', { day: 'numeric', month: 'short', year: 'numeric' })}
-                            </span>
-                          </div>
-                        </div>
-                        <p className="text-sm font-bold shrink-0" style={{ color: breakdownMethod.color }}>
-                          ${Number(item.amount).toLocaleString('es-CO')}
+                  <>
+                    {/* Ingresos section */}
+                    {breakdown && breakdown.length > 0 && (
+                      <>
+                        <p className="px-5 py-2.5 text-xs font-semibold text-green-400/80 uppercase tracking-wider bg-green-500/[0.04] border-b border-white/6 flex items-center gap-1.5">
+                          <TrendingUp size={12} /> Ingresos — {breakdown.length} {breakdown.length === 1 ? 'pago' : 'pagos'}
                         </p>
-                      </div>
-                    ))}
-                  </div>
+                        <div className="divide-y divide-white/6">
+                          {breakdown.map((item, i) => (
+                            <div key={`ing-${i}`} className="flex items-center justify-between gap-3 px-5 py-3 hover:bg-white/[0.02] transition-colors">
+                              <div className="min-w-0 flex-1">
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <span className="text-xs font-mono text-gray-500">{item.order_number}</span>
+                                  {item.is_abono && (
+                                    <span className="rounded-full bg-orange-500/15 border border-orange-500/25 px-1.5 py-0.5 text-[10px] text-orange-400">Abono</span>
+                                  )}
+                                </div>
+                                <p className="text-sm font-medium text-gray-200 truncate mt-0.5">
+                                  {item.plate} · {item.vehicle}
+                                </p>
+                                <div className="flex items-center gap-3 mt-0.5">
+                                  <span className="text-xs text-gray-600">{item.client}</span>
+                                  <span className="text-xs text-gray-700">
+                                    {new Date(item.date + 'T12:00:00').toLocaleDateString('es-CO', { day: 'numeric', month: 'short', year: 'numeric' })}
+                                  </span>
+                                </div>
+                              </div>
+                              <p className="text-sm font-bold shrink-0 text-green-400">
+                                +${Number(item.amount).toLocaleString('es-CO')}
+                              </p>
+                            </div>
+                          ))}
+                        </div>
+                      </>
+                    )}
+
+                    {/* Egresos section */}
+                    {breakdownEgresos.length > 0 && (
+                      <>
+                        <p className="px-5 py-2.5 text-xs font-semibold text-red-400/80 uppercase tracking-wider bg-red-500/[0.04] border-y border-white/6 flex items-center gap-1.5">
+                          <TrendingDown size={12} /> Egresos — {breakdownEgresos.length} {breakdownEgresos.length === 1 ? 'gasto' : 'gastos'}
+                        </p>
+                        <div className="divide-y divide-white/6">
+                          {breakdownEgresos.map(e => (
+                            <div key={`egr-${e.id}`} className="flex items-center justify-between gap-3 px-5 py-3 hover:bg-white/[0.02] transition-colors">
+                              <div className="min-w-0 flex-1">
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  {e.category && <span className="rounded-full bg-white/8 border border-white/10 px-1.5 py-0.5 text-[10px] text-gray-400">{e.category}</span>}
+                                </div>
+                                <p className="text-sm font-medium text-gray-200 truncate mt-0.5">{e.description ?? '—'}</p>
+                                <span className="text-xs text-gray-700">
+                                  {new Date(e.date + 'T12:00:00').toLocaleDateString('es-CO', { day: 'numeric', month: 'short', year: 'numeric' })}
+                                </span>
+                              </div>
+                              <p className="text-sm font-bold shrink-0 text-red-400">
+                                −${Number(e.amount).toLocaleString('es-CO')}
+                              </p>
+                            </div>
+                          ))}
+                        </div>
+                      </>
+                    )}
+                  </>
                 )}
               </div>
 
-              {/* Footer total */}
-              {breakdown && breakdown.length > 0 && (
-                <div className="border-t border-white/8 px-5 py-3 flex items-center justify-between bg-white/[0.02]">
-                  <span className="text-xs text-gray-500">{breakdown.length} {breakdown.length === 1 ? 'pago' : 'pagos'}</span>
-                  <span className="text-sm font-bold text-white">
-                    Total: ${breakdown.reduce((s, i) => s + Number(i.amount), 0).toLocaleString('es-CO')}
-                  </span>
-                </div>
-              )}
+              {/* Footer: balance summary */}
+              {((breakdown && breakdown.length > 0) || breakdownEgresos.length > 0) && (() => {
+                const ingTotal = breakdown?.reduce((s, i) => s + Number(i.amount), 0) ?? 0
+                const egrTotal = breakdownEgresos.reduce((s, e) => s + Number(e.amount), 0)
+                const bal = ingTotal - egrTotal
+                return (
+                  <div className="border-t border-white/8 px-5 py-3 bg-white/[0.02] space-y-1">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs text-gray-500">Ingresos</span>
+                      <span className="text-xs font-semibold text-green-400">+${ingTotal.toLocaleString('es-CO')}</span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs text-gray-500">Egresos</span>
+                      <span className="text-xs font-semibold text-red-400">−${egrTotal.toLocaleString('es-CO')}</span>
+                    </div>
+                    <div className="flex items-center justify-between pt-1 border-t border-white/6">
+                      <span className="text-xs text-gray-400 font-medium">Balance</span>
+                      <span className={cn('text-sm font-bold', bal >= 0 ? 'text-white' : 'text-red-400')}>
+                        {bal < 0 ? '−' : ''}${Math.abs(bal).toLocaleString('es-CO')}
+                      </span>
+                    </div>
+                  </div>
+                )
+              })()}
             </motion.div>
           </motion.div>
         )}
