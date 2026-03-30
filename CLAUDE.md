@@ -92,6 +92,7 @@ All routes are prefixed `/api/v1/`.
 | POST   | `/patio/{id}/advance` | Advance status: esperando→en_proceso→listo→entregado |
 | PATCH  | `/patio/{id}` | Assign operator, add/remove services (`service_ids: []` allowed — sets total to 0), update `scheduled_delivery_at`; syncs operator to ceramic_treatments |
 | DELETE | `/patio/{id}` | Cancel entry (esperando or en_proceso only): deletes items, marks order cancelado, removes patio entry |
+| PATCH  | `/patio/{entry_id}/items/{item_id}/confirm` | Toggle `is_confirmed` on a service order item (checklist check/uncheck); triggers individual item liquidation |
 | GET    | `/appointments?month=YYYY-MM` | List appointments for a month |
 | POST   | `/appointments` | Create appointment |
 | PATCH  | `/appointments/{id}` | Edit appointment (date, time, vehicle, client, status) |
@@ -188,6 +189,11 @@ ALTER TABLE week_liquidations ADD COLUMN IF NOT EXISTS payment_bancolombia NUMER
 ALTER TABLE operators ADD COLUMN IF NOT EXISTS operator_type VARCHAR(30) NOT NULL DEFAULT 'detallado';
 ALTER TABLE service_order_items ADD COLUMN IF NOT EXISTS standard_price NUMERIC(10,2);
 -- Backfill: UPDATE service_order_items SET standard_price = unit_price WHERE standard_price IS NULL;
+ALTER TABLE services ADD COLUMN IF NOT EXISTS price_moto NUMERIC(12,2);
+-- Seed: UPDATE services SET price_moto = 40000, price_automovil = 60000 WHERE name = 'Premium Wash' AND category = 'exterior';
+-- Seed: UPDATE services SET price_moto = 60000 WHERE name = 'Premium Wash Hidrofobic' AND category = 'exterior';
+ALTER TABLE service_order_items ADD COLUMN IF NOT EXISTS is_confirmed BOOLEAN NOT NULL DEFAULT FALSE;
+-- Backfill: UPDATE service_order_items SET is_confirmed = TRUE WHERE order_id IN (SELECT so.id FROM service_orders so JOIN patio p ON p.order_id = so.id WHERE p.status IN ('listo', 'entregado'));
 ```
 
 > **`week_liquidations.payment_transfer`**: legacy column — still in DB (NOT NULL, now has `DEFAULT 0`) but no longer written to or read by the model. New liquidations only populate `payment_cash`, `payment_datafono`, `payment_nequi`, `payment_bancolombia`. If you ever remove `payment_transfer` from the DB you must first drop the NOT NULL constraint or set a default, because SQLAlchemy's INSERT omits unmapped columns.
@@ -201,7 +207,8 @@ ALTER TABLE service_order_items ADD COLUMN IF NOT EXISTS standard_price NUMERIC(
      - **Type mismatch**: autofills client info only; shows warning toast; disables service selection and "Revisar Orden" button until user selects the correct vehicle type.
      - Plate cleared → all autofilled fields cleared immediately.
    - **Service selection (step 2)**: services column shows 5 collapsible accordion sections — Detallado (Exterior / Interior / Corrección / Cerámico), Latonería, Pintura, PPF, Polarizado. "Detallado" is open by default; all others start closed. Services from multiple areas can be combined in one order. Each accordion header shows a count badge when services are selected from that area.
-     - **Moto pricing**: uses `price_automovil` (no separate moto price column).
+     - **Moto service restriction**: when vehicle type is Moto, within the Detallado accordion only the Exterior sub-section is shown (Interior, Corrección, Cerámico are hidden), and within Exterior only services with `price_moto` set are listed (currently "Premium Wash" $40,000 and "Premium Wash Hidrofobic" $60,000). The Detallado accordion auto-opens when Moto is selected. Latonería, Pintura, PPF, Polarizado, and "Otros servicios" remain available for motos.
+     - **Moto pricing**: uses `price_moto` column for display price (what client pays). `standard_price` in `service_order_items` is set to `price_automovil` for moto orders so detallado commission is based on the automóvil catalog price ($60,000 / $85,000). `price_moto` column added to `services` table via migration.
      - **PPF / Polarizado**: seeded with price $0; user enters a custom price per service in step 2 (editable input).
      - **Latonería**: seeded with $0 for most pieces (except Desmonte/Monte Bumper at $110k); inline price input per piece.
      - **Pintura**: fixed prices per piece ($220k = ½ pieza, $430k = 1 pieza, $860k = 2 piezas); same price for all vehicle types.
@@ -217,8 +224,9 @@ ALTER TABLE service_order_items ADD COLUMN IF NOT EXISTS standard_price NUMERIC(
 2. Backend creates atomically: client (find or create by phone), vehicle (find or create by plate), order, order items (price snapshot via `item_overrides`), patio entry (`esperando`). If any item is `ceramico` category, also creates a `CeramicTreatment` record with `next_maintenance = application_date + 6 months`.
 3. **EstadoPatio**: fetches `GET /api/v1/patio` on mount. Kanban cards advance via `POST /patio/{id}/advance`. Services editable via `PATCH /patio/{id}`. Operator assigned via modal on first advance.
    - **Cards**: collapsed by default showing vehicle icon, brand/model, plate/color, operator, delivery date/time, elapsed time, and advance button. Clicking the card expands it to show client name/phone, service checklist or badges, financial breakdown (total / abono / resta), payment breakdown (if entregado), facturación electrónica panel (if requested), and "Editar orden" link.
-   - **Service completion checklist**: all `en_proceso` cards show each service as a tappable checkbox row (full-width, mobile-friendly `px-2.5 py-1.5` touch targets) instead of simple badges. Checked services show a green `CheckCircle2` icon + strikethrough text; unchecked show a gray `Circle` icon. The collapsed card header shows an animated progress bar + `N/M` counter (green when all checked, yellow otherwise). **When all checkboxes are checked, the card auto-advances to `listo` after a 400ms delay.** The existing "Completar" button still works independently. State persisted in `localStorage` under key `bdcpolo_service_checklist` as `Record<order_id, item_id[]>`; cleaned up on advance past `en_proceso`. Cards in other statuses (`esperando`, `listo`, `entregado`) show the original badge display.
-   - Advancing from `esperando` → `en_proceso` **requires** an operator: if none assigned, a picker modal appears first; selects operator via `PATCH`, then advances. The modal also includes a **notes textarea** ("Daños o piezas faltantes") pre-filled with any existing `entry.notes`. On confirm, sends `notes` alongside `operator_id` in the `PATCH /patio/{id}` call. Cards show an orange `⚠` badge in the collapsed header when `entry.notes` is non-empty; expanded view shows the note text in an orange-tinted panel.
+   - **Service completion checklist**: all `en_proceso` cards show each service as a tappable checkbox row **always visible** (outside the expanded section, no need to open the card). Checked services show a green `CheckCircle2` icon + strikethrough text; unchecked show a gray `Circle` icon. The collapsed card header shows an animated progress bar + `N/M` counter (green when all checked, yellow otherwise). **When all checkboxes are checked, the card auto-advances to `listo` after a 400ms delay.** The "Completar" button is hidden for `en_proceso` — the only way to advance is via checkboxes. Each checkbox check/uncheck calls `PATCH /patio/{entry_id}/items/{item_id}/confirm` which toggles `is_confirmed` on the item; state is driven from the API response (not localStorage). Cards in other statuses show service badges in the expanded view only.
+   - **Individual item liquidation**: an order enters the operator's liquidation **when individual items are confirmed** (checkbox checked), not on status transition. `QUALIFYING_STATUSES = {"en_proceso", "listo", "entregado"}` but only orders with at least one `is_confirmed` item of the relevant category qualify. Commission is calculated from confirmed items only. Existing listo/entregado orders are backfilled with `is_confirmed = TRUE` on migration.
+   - Advancing from `esperando` → `en_proceso` **requires** an operator: collects all required operator types from service categories, finds candidates per type. If every type has exactly one candidate, all are auto-assigned without showing the picker (e.g. latonería+pintura orders auto-assign their single operators). Only shows the picker when detallado has multiple candidates. The modal also includes a **notes textarea** ("Daños o piezas faltantes") pre-filled with any existing `entry.notes`. On confirm, sends `notes` alongside `operator_id` in the `PATCH /patio/{id}` call. Cards show an orange `⚠` badge in the collapsed header when `entry.notes` is non-empty; expanded view shows the note text in an orange-tinted panel.
    - **Editar orden** modal:
      - Available for `esperando` and `en_proceso` statuses. Read-only for `listo` and `entregado`.
      - **Operator selectors per type**: groups selected services by `operator_type` via `CAT_TO_OP_TYPE` mapping. Shows one operator dropdown per needed type (Detallado, Pintura, Latonería, PPF, Polarizado). Types with a single active operator auto-assign. Types with multiple candidates show a required dropdown. All types must have an operator assigned before saving.
@@ -288,7 +296,7 @@ Manually entered at delivery time (EstadoPatio advance to `entregado`). Shown wh
 
 ### `standard_price` on `service_order_items`
 
-The `standard_price` column stores the catalog price at order creation time (before any overrides/discounts). Used for detallado commission calculation and pintura piece counting. `unit_price` stores the actual charged price (with discounts). For orders created before the migration, `standard_price` is backfilled from `unit_price`.
+The `standard_price` column stores the catalog price at order creation time (before any overrides/discounts). Used for detallado commission calculation and pintura piece counting. `unit_price` stores the actual charged price (with discounts). For orders created before the migration, `standard_price` is backfilled from `unit_price`. **For moto orders**, `standard_price` is always set to `price_automovil` (the automóvil catalog price), regardless of `price_moto`; this ensures moto detallado commissions are based on the automóvil rate ($60k / $85k).
 
 ### Liquidation API — item filtering by operator type
 
@@ -302,7 +310,7 @@ The liquidation endpoints (`GET /liquidation/{op_id}/week`, `POST /liquidation/{
    - Deactivated operator cards are dimmed and show a "Reactivar" button. Active ones show a "Dar de baja" button with a confirmation step.
 3. **Operator detail header**: inline edit form (name, phone, cedula, commission — commission hidden for non-detallado). Deactivate/Reactivate button with confirmation.
 4. Operator detail: week carousel (Sun–Sat), daily accordion with filtered total + commission per day. Pintura days show piece count instead of percentage.
-5. Only orders with patio status `en_proceso | listo | entregado` and an assigned operator count. For pintura operators, ALL orders with pintura items count (regardless of assigned operator).
+5. Orders with patio status `en_proceso | listo | entregado` **and at least one `is_confirmed` item** of the relevant category count. Commission is calculated from confirmed items only. For pintura operators, ALL orders with confirmed pintura items count (regardless of assigned operator).
 6. **Liquidar semana** opens a modal with:
    - Abonos: input per unpaid `operario_empresa` debt — deducted from payout and recorded as `DebtPayment`
    - Settlements: toggle per unpaid `empresa_operario` debt to include in payout
@@ -427,14 +435,14 @@ Key implementation details:
 - **`week_liquidations.payment_transfer` trap**: this column has no DB-level DEFAULT in older DBs (was populated via SQLAlchemy Python-side `default=0`). After removing it from the model, INSERTs omit it and fail with `NotNullViolation` — silently caught by the `IntegrityError` handler, making liquidation appear to succeed but save nothing. Fix: `ALTER COLUMN payment_transfer SET DEFAULT 0` (already in `main.py` migrations).
 - **`pendingData` stale state in Liquidacion**: `pendingData` (result of `GET /liquidation/{op_id}/pending`) must be reset to `null` when the selected operator or week changes. Without this, switching from a fully-liquidated operator leaves `unliquidated_count=0` which disables the "Liquidar semana" button for the next operator. Fixed with `setPendingData(null)` in the `useEffect([selectedOp, weekOffset])`.
 - **Latoneria price validation**: `IngresarServicio` computes `latWithNoPrice` — true when any selected latoneria service has no custom price entered. Confirm button is disabled with label "Ingresa el precio de latonería" in that case.
-- **Service completion checklist**: all `en_proceso` cards in EstadoPatio show interactive checkboxes instead of badges. When all are checked, auto-advances to `listo` (400ms delay). State persisted in `localStorage` under `bdcpolo_service_checklist` as `Record<order_id, item_id[]>`, cleaned up on advance. Collapsed header shows animated progress bar + counter. Mobile-first design with large touch targets.
+- **Service completion checklist**: all `en_proceso` cards in EstadoPatio show interactive checkboxes always visible (outside the expanded section). When all are checked, auto-advances to `listo` (400ms delay). State driven by `is_confirmed` on `service_order_items` (persisted to DB via `PATCH /patio/{entry_id}/items/{item_id}/confirm`). Collapsed header shows animated progress bar + counter. Mobile-first design with large touch targets. "Completar" button hidden for `en_proceso`.
+- **`GET /services` ORDER BY id**: services are returned in seed insertion order (by primary key) to preserve the catalog display order. Without `ORDER BY`, PostgreSQL heap order changes after `UPDATE` migrations.
 
 ## localStorage keys
 
 | Key | Type | Purpose |
 |-----|------|---------|
 | `bdcpolo_facturas` | `Record<orderId, FacturaRecord>` | Facturación electrónica data per delivered order |
-| `bdcpolo_service_checklist` | `Record<orderId, itemId[]>` | Service completion checkmarks for `en_proceso` orders; auto-cleaned on advance |
 
 ## Common commands
 

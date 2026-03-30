@@ -8,4 +8,4 @@ router = APIRouter(prefix="/services", tags=["services"])
 
 @router.get("", response_model=list[schemas.ServiceOut])
 def list_services(db: Session = Depends(get_db)):
-    return db.query(models.Service).filter(models.Service.active == True).all()
+    return db.query(models.Service).filter(models.Service.active == True).order_by(models.Service.id).all()

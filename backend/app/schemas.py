@@ -50,6 +50,7 @@ class ServiceOut(OrmBase):
     price_automovil:       Decimal
     price_camion_estandar: Optional[Decimal]
     price_camion_xl:       Optional[Decimal]
+    price_moto:            Optional[Decimal] = None
     active:                bool
 
 
@@ -165,6 +166,7 @@ class OrderItemOut(OrmBase):
     unit_price:       Decimal
     quantity:         int
     subtotal:         Decimal
+    is_confirmed:     bool = False
 
 
 class OrderOut(OrmBase):

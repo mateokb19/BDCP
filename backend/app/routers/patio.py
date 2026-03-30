@@ -215,3 +215,17 @@ def cancel_patio_entry(id: int, db: Session = Depends(get_db)):
     # Remove patio entry
     db.delete(entry)
     db.commit()
+
+
+@router.patch("/{entry_id}/items/{item_id}/confirm", response_model=schemas.PatioEntryOut)
+def confirm_item(entry_id: int, item_id: int, db: Session = Depends(get_db)):
+    """Toggle is_confirmed on a service order item (checklist check/uncheck)."""
+    entry = _get_entry_or_404(entry_id, db)
+    item = db.query(models.ServiceOrderItem).filter_by(
+        id=item_id, order_id=entry.order_id
+    ).first()
+    if not item:
+        raise HTTPException(status_code=404, detail="Ítem no encontrado")
+    item.is_confirmed = not item.is_confirmed
+    db.commit()
+    return _get_entry_or_404(entry_id, db)

@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { motion, AnimatePresence, LayoutGroup } from 'framer-motion'
-import { Clock, ArrowRight, Wrench, Pencil, X, ChevronDown, Calendar, Phone, User, ChevronUp, Banknote, CreditCard, Check, Car, CheckCircle2, Circle } from 'lucide-react'
+import { Clock, ArrowRight, Wrench, Pencil, X, ChevronDown, Calendar, Phone, User, ChevronUp, Banknote, CreditCard, Check, CheckCircle2, Circle } from 'lucide-react'
 import { toast } from 'sonner'
 import { format, parseISO } from 'date-fns'
 import { PageHeader } from '@/app/components/ui/PageHeader'
@@ -112,27 +112,34 @@ function PatioCard({ entry, opName, facturaRecord, onAdvance, onEdit, onUpdate }
 
   // ── Service checklist (en_proceso only) ────────────────
   const showChecklist = entry.status === 'en_proceso' && items.length > 0
-  const orderId = entry.order_id
-  const [checkedIds, setCheckedIds] = useState<number[]>(() => {
-    return loadChecklist()[orderId] ?? []
-  })
+  const [checkedIds, setCheckedIds] = useState<number[]>(() =>
+    items.filter(i => i.is_confirmed).map(i => i.id)
+  )
   const checkedCount = showChecklist ? checkedIds.filter(id => items.some(i => i.id === id)).length : 0
   const allChecked = showChecklist && checkedCount === items.length && items.length > 0
 
-  function toggleServiceCheck(itemId: number, e: React.MouseEvent) {
+  async function toggleServiceCheck(itemId: number, e: React.MouseEvent) {
     e.stopPropagation()
-    setCheckedIds(prev => {
-      const next = prev.includes(itemId) ? prev.filter(id => id !== itemId) : [...prev, itemId]
-      const all = loadChecklist()
-      if (next.length === 0) { delete all[orderId] } else { all[orderId] = next }
-      saveChecklist(all)
-      // Auto-advance to listo when all services are checked
-      const validCount = next.filter(id => items.some(i => i.id === id)).length
-      if (validCount === items.length && items.length > 0) {
-        setTimeout(() => onAdvance(entry), 400)
-      }
-      return next
-    })
+    // Optimistic UI update
+    const nextIds = checkedIds.includes(itemId)
+      ? checkedIds.filter(id => id !== itemId)
+      : [...checkedIds, itemId]
+    setCheckedIds(nextIds)
+    // Auto-advance when all checked
+    const validCount = nextIds.filter(id => items.some(i => i.id === id)).length
+    if (validCount === items.length && items.length > 0) {
+      setTimeout(() => onAdvance(entry), 400)
+    }
+    // Persist to backend
+    try {
+      const updated = await api.patio.confirmItem(entry.id, itemId)
+      onUpdate(updated)
+      // Sync state from server response
+      setCheckedIds((updated.order?.items ?? []).filter(i => i.is_confirmed).map(i => i.id))
+    } catch {
+      // Revert optimistic update on error
+      setCheckedIds(checkedIds)
+    }
   }
 
   function openDeliveryEdit(e: React.MouseEvent) {
@@ -275,6 +282,45 @@ function PatioCard({ entry, opName, facturaRecord, onAdvance, onEdit, onUpdate }
         </div>
       </div>
 
+      {/* ── Checklist — always visible when en_proceso ──────── */}
+      {showChecklist && (
+        <div
+          className="px-4 pb-3 border-t border-white/6 space-y-1 pt-2.5"
+          onClick={e => e.stopPropagation()}
+        >
+          {entry.order?.is_warranty && (
+            <Badge variant="orange" className="text-[10px] py-0.5 mb-1 block w-fit">Garantía</Badge>
+          )}
+          {items.map(item => {
+            const done = checkedIds.includes(item.id)
+            return (
+              <button
+                key={item.id}
+                type="button"
+                onClick={e => toggleServiceCheck(item.id, e)}
+                className={cn(
+                  'flex items-center gap-2 w-full rounded-lg px-2.5 py-1.5 text-left transition-colors',
+                  done
+                    ? 'bg-green-500/10 border border-green-500/25'
+                    : 'bg-white/[0.03] border border-white/6 active:bg-white/[0.06]'
+                )}
+              >
+                {done
+                  ? <CheckCircle2 size={14} className="text-green-400 shrink-0" />
+                  : <Circle size={14} className="text-gray-600 shrink-0" />
+                }
+                <span className={cn(
+                  'text-xs leading-tight',
+                  done ? 'text-green-300 line-through decoration-green-500/40' : 'text-gray-300'
+                )}>
+                  {item.service_name}
+                </span>
+              </button>
+            )
+          })}
+        </div>
+      )}
+
       {/* ── Inline delivery date editor ───────────────────── */}
       <AnimatePresence initial={false}>
         {editingDelivery && (
@@ -370,53 +416,18 @@ function PatioCard({ entry, opName, facturaRecord, onAdvance, onEdit, onUpdate }
                 </div>
               )}
 
-              {/* Services — checklist when en_proceso, badges otherwise */}
-              {items.length > 0 && (
-                showChecklist ? (
-                  <div className="space-y-1" onClick={e => e.stopPropagation()}>
-                    {entry.order?.is_warranty && (
-                      <Badge variant="orange" className="text-[10px] py-0.5 mb-1">Garantía</Badge>
-                    )}
-                    {items.map(item => {
-                      const done = checkedIds.includes(item.id)
-                      return (
-                        <button
-                          key={item.id}
-                          type="button"
-                          onClick={e => toggleServiceCheck(item.id, e)}
-                          className={cn(
-                            'flex items-center gap-2 w-full rounded-lg px-2.5 py-1.5 text-left transition-colors',
-                            done
-                              ? 'bg-green-500/10 border border-green-500/25'
-                              : 'bg-white/[0.03] border border-white/6 active:bg-white/[0.06]'
-                          )}
-                        >
-                          {done
-                            ? <CheckCircle2 size={14} className="text-green-400 shrink-0" />
-                            : <Circle size={14} className="text-gray-600 shrink-0" />
-                          }
-                          <span className={cn(
-                            'text-xs leading-tight',
-                            done ? 'text-green-300 line-through decoration-green-500/40' : 'text-gray-300'
-                          )}>
-                            {item.service_name}
-                          </span>
-                        </button>
-                      )
-                    })}
-                  </div>
-                ) : (
-                  <div className="flex flex-wrap gap-1">
-                    {entry.order?.is_warranty && (
-                      <Badge variant="orange" className="text-[10px] py-0.5">Garantía</Badge>
-                    )}
-                    {items.map(item => (
-                      <Badge key={item.id} variant="default" className="text-[10px] py-0.5">
-                        {item.service_name}
-                      </Badge>
-                    ))}
-                  </div>
-                )
+              {/* Services — badges in expanded view (checklist shown above the fold) */}
+              {items.length > 0 && !showChecklist && (
+                <div className="flex flex-wrap gap-1">
+                  {entry.order?.is_warranty && (
+                    <Badge variant="orange" className="text-[10px] py-0.5">Garantía</Badge>
+                  )}
+                  {items.map(item => (
+                    <Badge key={item.id} variant="default" className="text-[10px] py-0.5">
+                      {item.service_name}
+                    </Badge>
+                  ))}
+                </div>
               )}
 
               {/* Financial */}
@@ -515,7 +526,7 @@ function PatioCard({ entry, opName, facturaRecord, onAdvance, onEdit, onUpdate }
           <Clock size={12} />
           <span>{elapsed}</span>
         </div>
-        {next && (
+        {next && entry.status !== 'en_proceso' && (
           <Button variant="outline" size="sm" onClick={() => onAdvance(entry)}
             className="text-xs py-1 h-7 shrink-0">
             {NEXT_LABEL[entry.status as PatioStatus]} <ArrowRight size={12} />
@@ -725,30 +736,44 @@ export default function EstadoPatio() {
 
   async function advanceStatus(entry: ApiPatioEntry) {
     if (entry.status === 'esperando' && !entry.order?.operator_id) {
-      // Determine required operator type from service categories
-      const categories = (entry.order?.items ?? []).map(i => i.service_category)
-      const requiredType =
-        categories.length > 0 && categories.every(c => c === 'pintura')   ? 'pintura'   :
-        categories.length > 0 && categories.every(c => c === 'latoneria') ? 'latoneria' :
-        'detallado'
+      const items = entry.order?.items ?? []
+      const categories = items.map(i => i.service_category)
 
-      // Fetch fresh active operators filtered by the required type
+      // Collect all required operator types from the order's service categories
+      const requiredTypes = [...new Set(categories.map(c => CAT_TO_OP_TYPE[c] ?? 'detallado'))]
+
+      // Fetch fresh active operators
       const allOps = await api.operators.list().catch(() => [] as typeof operators)
-      const filtered = allOps.filter(o => (o.operator_type ?? 'detallado') === requiredType)
+      const activeOps = allOps.filter(o => o.active !== false)
 
-      // If only one operator available for this type, auto-assign without showing picker
-      if (filtered.length === 1) {
-        try {
-          await api.patio.edit(entry.id, { operator_id: filtered[0].id })
-          const updated = await api.patio.advance(entry.id)
-          setEntries(prev => prev.map(e => e.id === updated.id ? updated : e))
-          toast.success(`${updated.vehicle?.plate ?? 'Vehículo'} → En Proceso`)
-        } catch (err) {
-          toast.error(err instanceof Error ? err.message : 'Error al iniciar proceso')
-        }
-        return
+      // Map each required type to its candidates
+      const typeToOps: Record<string, typeof activeOps> = {}
+      for (const t of requiredTypes) {
+        typeToOps[t] = activeOps.filter(o => (o.operator_type ?? 'detallado') === t)
       }
-      setActiveOperators(filtered)
+
+      // If all required types have exactly 1 candidate, auto-assign without showing picker
+      const allAutoAssignable = requiredTypes.every(t => typeToOps[t].length === 1)
+      if (allAutoAssignable) {
+        // operator_id: detallado takes priority, else first required type
+        const detOp = typeToOps['detallado']?.[0]
+        const assignOp = detOp ?? typeToOps[requiredTypes[0]]?.[0]
+        if (assignOp) {
+          try {
+            await api.patio.edit(entry.id, { operator_id: assignOp.id })
+            const updated = await api.patio.advance(entry.id)
+            setEntries(prev => prev.map(e => e.id === updated.id ? updated : e))
+            toast.success(`${updated.vehicle?.plate ?? 'Vehículo'} → En Proceso`)
+          } catch (err) {
+            toast.error(err instanceof Error ? err.message : 'Error al iniciar proceso')
+          }
+          return
+        }
+      }
+
+      // Show picker (only for detallado — the only type that can have multiple candidates)
+      const detallado = activeOps.filter(o => (o.operator_type ?? 'detallado') === 'detallado')
+      setActiveOperators(detallado)
       setOperatorPickEntry(entry)
       setPickedOpId('')
       setEntryNotes(entry.notes ?? '')
@@ -868,8 +893,6 @@ export default function EstadoPatio() {
     ...col,
     count: entries.filter(e => e.status === col.status).length,
   }))
-
-  const inputClass = "w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-gray-100 focus:border-yellow-500/50 focus:outline-none focus:ring-2 focus:ring-yellow-500/20"
 
   if (loading) {
     return (

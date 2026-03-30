@@ -52,6 +52,7 @@ export interface ApiOrderItem {
   unit_price: number
   quantity: number
   subtotal: number
+  is_confirmed: boolean
 }
 
 export interface ApiOrder {
@@ -506,6 +507,8 @@ export const api = {
       apiFetch<ApiPatioEntry>(`/patio/${id}`, { method: 'PATCH', body: JSON.stringify(payload) }),
     cancel: (id: number) =>
       apiFetch<void>(`/patio/${id}`, { method: 'DELETE' }),
+    confirmItem: (entryId: number, itemId: number) =>
+      apiFetch<ApiPatioEntry>(`/patio/${entryId}/items/${itemId}/confirm`, { method: 'PATCH' }),
   },
   ceramics: {
     list: () => apiFetch<ApiCeramicTreatment[]>('/ceramics'),

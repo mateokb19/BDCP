@@ -74,6 +74,31 @@ with engine.connect() as _conn:
         "UPDATE service_order_items SET standard_price = unit_price WHERE standard_price IS NULL"
     ))
     _conn.execute(text(
+        "ALTER TABLE services ADD COLUMN IF NOT EXISTS price_moto NUMERIC(12,2)"
+    ))
+    # Set moto prices and update automovil price for Premium Wash
+    _conn.execute(text(
+        "UPDATE services SET price_moto = 40000, price_automovil = 60000 "
+        "WHERE name = 'Premium Wash' AND category = 'exterior'"
+    ))
+    _conn.execute(text(
+        "UPDATE services SET price_moto = 60000 "
+        "WHERE name = 'Premium Wash Hidrofobic' AND category = 'exterior' AND price_moto IS NULL"
+    ))
+    _conn.execute(text(
+        "ALTER TABLE service_order_items ADD COLUMN IF NOT EXISTS is_confirmed BOOLEAN NOT NULL DEFAULT FALSE"
+    ))
+    # Backfill: mark all items in listo/entregado orders as confirmed
+    _conn.execute(text("""
+        UPDATE service_order_items SET is_confirmed = TRUE
+        WHERE is_confirmed = FALSE
+        AND order_id IN (
+            SELECT so.id FROM service_orders so
+            JOIN patio p ON p.order_id = so.id
+            WHERE p.status IN ('listo', 'entregado')
+        )
+    """))
+    _conn.execute(text(
         "ALTER TABLE debts ADD COLUMN IF NOT EXISTS "
         "week_liquidation_id INTEGER REFERENCES week_liquidations(id) ON DELETE SET NULL"
     ))
@@ -110,8 +135,8 @@ _EXPECTED_SERVICES = 60
 
 _SERVICES_SEED = [
     # ── Servicios Básicos / Exterior ─────────────────────────────────────
-    dict(category="exterior", name="Premium Wash",                 price_automovil=51000,   price_camion_estandar=60000,   price_camion_xl=66000),
-    dict(category="exterior", name="Premium Wash Hidrofobic",      price_automovil=85000,   price_camion_estandar=95000,   price_camion_xl=110000),
+    dict(category="exterior", name="Premium Wash",                 price_automovil=60000,   price_camion_estandar=60000,   price_camion_xl=66000,   price_moto=40000),
+    dict(category="exterior", name="Premium Wash Hidrofobic",      price_automovil=85000,   price_camion_estandar=95000,   price_camion_xl=110000,  price_moto=60000),
     dict(category="exterior", name="Detallado de Llantas",         price_automovil=165000,  price_camion_estandar=195000,  price_camion_xl=195000),
     dict(category="exterior", name="Chasis + Premium Wash",        price_automovil=94000,   price_camion_estandar=105000,  price_camion_xl=115000),
     dict(category="exterior", name="Motor Detailing + Vapor",      price_automovil=220000,  price_camion_estandar=245000,  price_camion_xl=270000),

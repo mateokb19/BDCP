@@ -123,6 +123,7 @@ class Service(Base):
     price_automovil       = Column(Numeric(10, 2), nullable=False)
     price_camion_estandar = Column(Numeric(10, 2))
     price_camion_xl       = Column(Numeric(10, 2))
+    price_moto            = Column(Numeric(10, 2))
     active                = Column(Boolean, nullable=False, default=True)
     created_at            = Column(DateTime, server_default=func.now(), nullable=False)
     updated_at            = Column(DateTime, server_default=func.now(), onupdate=func.now(), nullable=False)
@@ -174,6 +175,7 @@ class ServiceOrderItem(Base):
     service_category = Column(_enum(ServiceCategoryEnum, "service_category"), nullable=False)
     unit_price       = Column(Numeric(10, 2), nullable=False)
     standard_price   = Column(Numeric(10, 2))
+    is_confirmed     = Column(Boolean, nullable=False, default=False)
     quantity         = Column(Integer, nullable=False, default=1)
     subtotal         = Column(Numeric(10, 2), nullable=False)
 

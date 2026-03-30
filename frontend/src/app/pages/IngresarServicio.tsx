@@ -193,6 +193,7 @@ function getModelSuggestions(brand: string, query: string, isMoto = false): stri
 
 // API returns Decimal as string — wrap in Number() to prevent string concatenation
 function getServicePrice(service: Service, type: VehicleType): number {
+  if (type === 'moto')            return Number(service.price_moto            ?? service.price_automovil)
   if (type === 'camion_estandar') return Number(service.price_camion_estandar ?? service.price_automovil)
   if (type === 'camion_xl')       return Number(service.price_camion_xl       ?? service.price_automovil)
   return Number(service.price_automovil)
@@ -502,7 +503,7 @@ export default function IngresarServicio() {
                     key={opt.type}
                     whileHover={{ scale: 1.03, y: -3 }}
                     whileTap={{ scale: 0.98 }}
-                    onClick={() => { setVehicleType(opt.type); setPlateTypeMismatch(false); goTo(2) }}
+                    onClick={() => { setVehicleType(opt.type); setPlateTypeMismatch(false); if (opt.type === 'moto') setExpandedAreas(new Set(['detallado'])); goTo(2) }}
                     className={cn(
                       'group flex flex-col items-center justify-center gap-5 rounded-2xl border p-8 text-center transition-all duration-200 min-h-[160px]',
                       'bg-white/[0.03] border-white/8 hover:border-yellow-500/40 hover:bg-yellow-500/5',
@@ -524,7 +525,7 @@ export default function IngresarServicio() {
           {step === 2 && vehicleType && (
             <div>
               <div className="flex items-center gap-3 mb-6 flex-wrap">
-                <button onClick={() => { setPlateTypeMismatch(false); setVehicleType(null); goTo(1) }}
+                <button onClick={() => { setPlateTypeMismatch(false); setVehicleType(null); setExpandedAreas(new Set()); goTo(1) }}
                   className="text-sm text-gray-400 hover:text-yellow-400 transition-colors">
                   ← Cambiar tipo
                 </button>
@@ -714,12 +715,19 @@ export default function IngresarServicio() {
                               >
                                 <div className="p-3 pt-2 border-t border-white/5 space-y-3">
 
-                                  {/* ── DETALLADO: 4 sub-sections ──────────────────── */}
-                                  {area.id === 'detallado' && (['exterior', 'interior', 'correccion_pintura', 'ceramico'] as const).map(cat => (
+                                  {/* ── DETALLADO: 4 sub-sections (moto: exterior only with price_moto) ── */}
+                                  {area.id === 'detallado' && (
+                                    vehicleType === 'moto'
+                                      ? (['exterior'] as const)
+                                      : (['exterior', 'interior', 'correccion_pintura', 'ceramico'] as const)
+                                  ).map(cat => (
                                     <div key={cat} className={cn('rounded-xl border p-3', categoryColors[cat])}>
                                       <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">{categoryLabels[cat]}</h3>
                                       <div className="space-y-1 max-h-52 overflow-y-auto pr-1">
-                                        {services.filter(s => s.category === cat).map(service => {
+                                        {services.filter(s =>
+                                          s.category === cat &&
+                                          (vehicleType !== 'moto' || s.price_moto != null)
+                                        ).map(service => {
                                           const price   = getStandardPrice(service)
                                           const checked = form.selectedServices.includes(service.id)
                                           return (

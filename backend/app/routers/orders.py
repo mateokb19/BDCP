@@ -20,6 +20,9 @@ router = APIRouter(prefix="/orders", tags=["orders"])
 
 
 def _get_service_price(service: models.Service, vehicle_type: str) -> Decimal:
+    """Return the client-facing price for the given vehicle type."""
+    if vehicle_type == "moto" and service.price_moto is not None:
+        return service.price_moto
     if vehicle_type == "camion_estandar" and service.price_camion_estandar is not None:
         return service.price_camion_estandar
     if vehicle_type == "camion_xl" and service.price_camion_xl is not None:
@@ -105,12 +108,14 @@ def create_order(payload: schemas.OrderCreate, db: Session = Depends(get_db)):
     discount = Decimal("0.00")
     item_rows = []
     for svc in services:
-        ov        = override_map.get(svc.id)
-        std_price = _get_service_price(svc, payload.vehicle_type)
-        price     = ov.unit_price if ov else std_price
-        name      = (ov.custom_name or svc.name) if ov else svc.name
-        if price < std_price:
-            discount += std_price - price
+        ov           = override_map.get(svc.id)
+        display_std  = _get_service_price(svc, payload.vehicle_type)
+        price        = ov.unit_price if ov else display_std
+        name         = (ov.custom_name or svc.name) if ov else svc.name
+        # For motos, standard_price (commission base) = automovil price, not moto price
+        std_price    = svc.price_automovil if payload.vehicle_type == "moto" else display_std
+        if price < display_std:
+            discount += display_std - price
         item_rows.append(models.ServiceOrderItem(
             service_id=svc.id,
             service_name=name,

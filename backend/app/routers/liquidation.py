@@ -154,8 +154,8 @@ def _build_week_response(
         day_order_schemas = []
 
         for o in day_orders:
-            # Filter items to only those relevant to this operator type
-            filtered = [i for i in o.items if _cat(i) in relevant_cats]
+            # Filter items to only those relevant to this operator type AND confirmed
+            filtered = [i for i in o.items if _cat(i) in relevant_cats and i.is_confirmed]
             if not filtered:
                 continue  # skip orders with no relevant items
 
@@ -293,18 +293,23 @@ def _fetch_qualifying(op_id: int, ws: date, we: date, db: Session, op_type: str 
         )
     )
     if op_type in ("pintura", "latoneria"):
-        # All orders with at least one relevant item, regardless of assigned operator
+        # All orders with at least one confirmed relevant item, regardless of assigned operator
         relevant = CATEGORY_MAP.get(op_type, set())
         orders = base_q.all()
         return [
             o for o in orders
             if o.patio_entry
             and o.patio_entry.status in QUALIFYING_STATUSES
-            and any(_cat(i) in relevant for i in o.items)
+            and any(_cat(i) in relevant and i.is_confirmed for i in o.items)
         ]
     else:
         orders = base_q.filter(models.ServiceOrder.operator_id == op_id).all()
-        return [o for o in orders if o.patio_entry and o.patio_entry.status in QUALIFYING_STATUSES]
+        return [
+            o for o in orders
+            if o.patio_entry
+            and o.patio_entry.status in QUALIFYING_STATUSES
+            and any(_cat(i) in CATEGORY_MAP.get(op_type, DETALLADO_CATEGORIES) and i.is_confirmed for i in o.items)
+        ]
 
 
 @router.get("/{op_id}/week", response_model=schemas.LiqWeekResponse)
@@ -358,19 +363,19 @@ def liquidate_week(
         liq_piece_count = sum(
             _pintura_pieces(_std(item))
             for o in unliquidated for item in o.items
-            if _cat(item) in relevant_cats
+            if _cat(item) in relevant_cats and item.is_confirmed
         )
         new_commission = (liq_piece_count * PINTURA_PIECE_RATE).quantize(Decimal("0.01"))
         new_commission_base = sum(
             _std(item)
             for o in unliquidated for item in o.items
-            if _cat(item) in relevant_cats
+            if _cat(item) in relevant_cats and item.is_confirmed
         )
     elif op_type == "latoneria":
         new_commission_base = sum(
             [_std(item)
              for o in unliquidated for item in o.items
-             if _cat(item) in relevant_cats],
+             if _cat(item) in relevant_cats and item.is_confirmed],
             Decimal("0"),
         )
         new_commission = sum(
@@ -384,7 +389,7 @@ def liquidate_week(
         new_ceramic_bonus = Decimal("0")
         for o in unliquidated:
             for item in o.items:
-                if _cat(item) not in relevant_cats:
+                if _cat(item) not in relevant_cats or not item.is_confirmed:
                     continue
                 if _cat(item) == "ceramico" and signature_svc:
                     new_commission_base += _signature_price(signature_svc, o.vehicle.type)

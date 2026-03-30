@@ -51,6 +51,7 @@ export interface Service {
   price_automovil: number
   price_camion_estandar?: number
   price_camion_xl?: number
+  price_moto?: number
   active: boolean
   created_at?: string
   updated_at?: string
