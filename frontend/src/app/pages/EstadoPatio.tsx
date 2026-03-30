@@ -556,6 +556,8 @@ const CAT_TO_OP_TYPE: Record<string, string> = {
 const OP_TYPE_LABEL: Record<string, string> = {
   detallado: 'Detallado', pintura: 'Pintura', latoneria: 'Latonería', ppf: 'PPF', polarizado: 'Polarizado',
 }
+// Operator types that do NOT need an internal operator assigned (handled as third-party payments)
+const NO_OPERATOR_TYPES = new Set(['ppf', 'polarizado'])
 
 export default function EstadoPatio() {
   const { operators, services } = useAppContext()
@@ -681,7 +683,9 @@ export default function EstadoPatio() {
     for (const id of editForm.serviceIds) {
       const svc = services.find(s => s.id === id)
       const cat = svc?.category ?? editingEntry.order?.items.find(i => i.service_id === id)?.service_category
-      if (cat) requiredTypes.add(CAT_TO_OP_TYPE[cat] ?? 'detallado')
+      if (!cat) continue
+      const opType = CAT_TO_OP_TYPE[cat] ?? 'detallado'
+      if (!NO_OPERATOR_TYPES.has(opType)) requiredTypes.add(opType)
     }
     // Validate all required types have an operator
     for (const t of requiredTypes) {
@@ -739,8 +743,8 @@ export default function EstadoPatio() {
       const items = entry.order?.items ?? []
       const categories = items.map(i => i.service_category)
 
-      // Collect all required operator types from the order's service categories
-      const requiredTypes = [...new Set(categories.map(c => CAT_TO_OP_TYPE[c] ?? 'detallado'))]
+      // Collect all required operator types from the order's service categories (exclude third-party types)
+      const requiredTypes = [...new Set(categories.map(c => CAT_TO_OP_TYPE[c] ?? 'detallado').filter(t => !NO_OPERATOR_TYPES.has(t)))]
 
       // Fetch fresh active operators
       const allOps = await api.operators.list().catch(() => [] as typeof operators)
@@ -750,6 +754,18 @@ export default function EstadoPatio() {
       const typeToOps: Record<string, typeof activeOps> = {}
       for (const t of requiredTypes) {
         typeToOps[t] = activeOps.filter(o => (o.operator_type ?? 'detallado') === t)
+      }
+
+      // No internal operator needed (only third-party services like ppf/polarizado) — advance directly
+      if (requiredTypes.length === 0) {
+        try {
+          const updated = await api.patio.advance(entry.id)
+          setEntries(prev => prev.map(e => e.id === updated.id ? updated : e))
+          toast.success(`${updated.vehicle?.plate ?? 'Vehículo'} → En Proceso`)
+        } catch (err) {
+          toast.error(err instanceof Error ? err.message : 'Error al iniciar proceso')
+        }
+        return
       }
 
       // If all required types have exactly 1 candidate, auto-assign without showing picker
@@ -1105,12 +1121,12 @@ export default function EstadoPatio() {
                     const editTotal = editForm.serviceIds.reduce((sum, id) => sum + getEffective(id), 0)
                     const totalBelowAbono = abono > 0 && editTotal < abono
 
-                    // Determine which operator types are needed based on selected services
+                    // Determine which operator types are needed based on selected services (exclude third-party types)
                     const neededOpTypes = [...new Set(editForm.serviceIds.map(id => {
                       const svc = services.find(s => s.id === id)
                       const cat = svc?.category ?? allItems.find(i => i.service_id === id)?.service_category
                       return cat ? CAT_TO_OP_TYPE[cat] ?? 'detallado' : 'detallado'
-                    }))]
+                    }).filter(t => !NO_OPERATOR_TYPES.has(t)))]
 
                     return (
                       <>
@@ -1339,7 +1355,7 @@ export default function EstadoPatio() {
                   for (const id of editForm.serviceIds) {
                     const svc = services.find(s => s.id === id)
                     const cat = svc?.category ?? editingEntry.order?.items?.find(i => i.service_id === id)?.service_category
-                    if (cat) reqTypes.add(CAT_TO_OP_TYPE[cat] ?? 'detallado')
+                    if (cat) { const t = CAT_TO_OP_TYPE[cat] ?? 'detallado'; if (!NO_OPERATOR_TYPES.has(t)) reqTypes.add(t) }
                   }
                   let missingOpType = ''
                   for (const t of reqTypes) {

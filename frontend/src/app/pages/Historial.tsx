@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Search, ChevronDown, ChevronUp, Clock, User, Wrench, Download } from 'lucide-react'
+import { Search, ChevronDown, ChevronUp, Clock, User, Wrench, Download, Eye } from 'lucide-react'
 import { format, parseISO, startOfWeek, startOfMonth, endOfMonth, subMonths } from 'date-fns'
 import { es } from 'date-fns/locale'
 import { toast } from 'sonner'
@@ -14,6 +14,13 @@ import { cn } from '@/app/components/ui/cn'
 import { api, type ApiHistorialEntry } from '@/api'
 
 const TODAY = format(new Date(), 'yyyy-MM-dd')
+
+const ADMIN_PASSWORD = 'BDCP123'
+const RESTRICTED_CATS = new Set(['ppf', 'polarizado'])
+
+function hasRestrictedServices(entry: { items: { service_category: string }[] }) {
+  return entry.items.some(i => RESTRICTED_CATS.has(i.service_category))
+}
 
 const VEHICLE_TYPE_LABEL: Record<string, string> = {
   automovil:       'Automóvil',
@@ -235,6 +242,22 @@ export default function Historial() {
   const [search, setSearch]       = useState('')
   const [debouncedSearch, setDebouncedSearch] = useState('')
 
+  // Admin unlock
+  const [adminUnlocked, setAdminUnlocked]       = useState(false)
+  const [showAdminLogin, setShowAdminLogin]     = useState(false)
+  const [adminPasswordInput, setAdminPasswordInput] = useState('')
+
+  function submitAdminLogin() {
+    if (adminPasswordInput === ADMIN_PASSWORD) {
+      setAdminUnlocked(true)
+      setShowAdminLogin(false)
+      setAdminPasswordInput('')
+      toast.success('Modo completo activado')
+    } else {
+      toast.error('Contraseña incorrecta')
+    }
+  }
+
   // Download modal
   const [showDlModal, setShowDlModal] = useState(false)
   const [dlFrom, setDlFrom] = useState(TODAY)
@@ -250,7 +273,9 @@ export default function Historial() {
     try {
       const data = await api.history.list({ date_from: dlFrom, date_to: dlTo })
       if (data.length === 0) { toast.error('No hay servicios en ese período'); return }
-      printHistorialReport(data, dlFrom, dlTo)
+      const filtered = adminUnlocked ? data : data.filter(e => !hasRestrictedServices(e))
+      if (filtered.length === 0) { toast.error('No hay servicios en ese período'); return }
+      printHistorialReport(filtered, dlFrom, dlTo)
       setShowDlModal(false)
     } catch {
       toast.error('Error al generar el reporte')
@@ -282,17 +307,32 @@ export default function Historial() {
 
   useEffect(() => { fetchHistory() }, [fetchHistory])
 
-  const totalDay = entries.reduce((sum, e) => sum + Number(e.total ?? 0), 0)
+  const visibleEntries = adminUnlocked ? entries : entries.filter(e => !hasRestrictedServices(e))
+  const totalDay = visibleEntries.reduce((sum, e) => sum + Number(e.total ?? 0), 0)
 
   return (
     <div className="max-w-xl mx-auto">
       <PageHeader
         title="Historial"
-        subtitle={`${entries.length} servicio${entries.length !== 1 ? 's' : ''}`}
+        subtitle={`${visibleEntries.length} servicio${visibleEntries.length !== 1 ? 's' : ''}${adminUnlocked ? ' · Modo completo' : ''}`}
         actions={
-          <Button variant="secondary" size="md" onClick={() => setShowDlModal(true)}>
-            <Download size={15} /> Descargar
-          </Button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => adminUnlocked ? setAdminUnlocked(false) : setShowAdminLogin(true)}
+              title={adminUnlocked ? 'Desactivar modo completo' : 'Acceso completo'}
+              className={cn(
+                'p-2 rounded-lg border transition-colors',
+                adminUnlocked
+                  ? 'border-yellow-500/50 bg-yellow-500/10 text-yellow-400 hover:bg-yellow-500/20'
+                  : 'border-white/10 bg-white/5 text-gray-500 hover:bg-white/10 hover:text-gray-300'
+              )}
+            >
+              <Eye size={15} />
+            </button>
+            <Button variant="secondary" size="md" onClick={() => setShowDlModal(true)}>
+              <Download size={15} /> Descargar
+            </Button>
+          </div>
         }
       />
 
@@ -322,7 +362,7 @@ export default function Historial() {
         <div className="flex items-center justify-center py-16">
           <p className="text-gray-500 text-sm">Cargando historial...</p>
         </div>
-      ) : entries.length === 0 ? (
+      ) : visibleEntries.length === 0 ? (
         <EmptyState
           icon={Clock}
           title="Sin servicios"
@@ -331,12 +371,35 @@ export default function Historial() {
       ) : (
         <div className="space-y-3 w-full overflow-hidden">
           <AnimatePresence>
-            {entries.map(entry => (
+            {visibleEntries.map(entry => (
               <OrderCard key={entry.id} entry={entry} />
             ))}
           </AnimatePresence>
         </div>
       )}
+
+      {/* Admin login modal */}
+      <Modal open={showAdminLogin} onClose={() => { setShowAdminLogin(false); setAdminPasswordInput('') }} size="sm">
+        <div className="p-6 space-y-4">
+          <input
+            type="password"
+            value={adminPasswordInput}
+            onChange={e => setAdminPasswordInput(e.target.value)}
+            onKeyDown={e => e.key === 'Enter' && submitAdminLogin()}
+            placeholder="Contraseña"
+            autoFocus
+            className="w-full rounded-xl border border-white/10 bg-gray-900 px-3 py-2.5 text-sm text-gray-100 placeholder:text-gray-500 focus:border-yellow-500/50 focus:outline-none focus:ring-2 focus:ring-yellow-500/20"
+          />
+          <div className="flex gap-3">
+            <Button variant="secondary" size="lg" className="flex-1" onClick={() => { setShowAdminLogin(false); setAdminPasswordInput('') }}>
+              Cancelar
+            </Button>
+            <Button variant="primary" size="lg" className="flex-1" onClick={submitAdminLogin}>
+              Ir
+            </Button>
+          </div>
+        </div>
+      </Modal>
 
       {/* Download modal */}
       <Modal open={showDlModal} onClose={() => setShowDlModal(false)} title="Descargar reporte" size="sm">
