@@ -85,6 +85,16 @@ with engine.connect() as _conn:
         "UPDATE services SET price_moto = 60000 "
         "WHERE name = 'Premium Wash Hidrofobic' AND category = 'exterior' AND price_moto IS NULL"
     ))
+    # Correct Premium Wash automovil price to $51,000 (was incorrectly set to $60,000)
+    _conn.execute(text(
+        "UPDATE services SET price_automovil = 51000 "
+        "WHERE name = 'Premium Wash' AND category = 'exterior'"
+    ))
+    # Move PDR and Arreglo Rin from latoneria to otro (no longer liquidated to latonero)
+    _conn.execute(text(
+        "UPDATE services SET category = 'otro' "
+        "WHERE name IN ('PDR', 'Arreglo Rin') AND category = 'latoneria'"
+    ))
     _conn.execute(text(
         "ALTER TABLE service_order_items ADD COLUMN IF NOT EXISTS is_confirmed BOOLEAN NOT NULL DEFAULT FALSE"
     ))
@@ -131,11 +141,11 @@ with engine.connect() as _conn:
     _conn.commit()
 
 
-_EXPECTED_SERVICES = 60
+_EXPECTED_SERVICES = 62
 
 _SERVICES_SEED = [
     # ── Servicios Básicos / Exterior ─────────────────────────────────────
-    dict(category="exterior", name="Premium Wash",                 price_automovil=60000,   price_camion_estandar=60000,   price_camion_xl=66000,   price_moto=40000),
+    dict(category="exterior", name="Premium Wash",                 price_automovil=51000,   price_camion_estandar=60000,   price_camion_xl=66000,   price_moto=40000),
     dict(category="exterior", name="Premium Wash Hidrofobic",      price_automovil=85000,   price_camion_estandar=95000,   price_camion_xl=110000,  price_moto=60000),
     dict(category="exterior", name="Detallado de Llantas",         price_automovil=165000,  price_camion_estandar=195000,  price_camion_xl=195000),
     dict(category="exterior", name="Chasis + Premium Wash",        price_automovil=94000,   price_camion_estandar=105000,  price_camion_xl=115000),
@@ -195,9 +205,11 @@ _SERVICES_SEED = [
     dict(category="latoneria", name="Extensión",                  price_automovil=0, price_camion_estandar=0, price_camion_xl=0),
     dict(category="latoneria", name="Guardafangos",               price_automovil=0, price_camion_estandar=0, price_camion_xl=0),
     dict(category="latoneria", name="Desmonte/Monte de Bumper",   price_automovil=110000, price_camion_estandar=110000, price_camion_xl=110000),
-    dict(category="latoneria", name="PDR",                        price_automovil=200000, price_camion_estandar=200000, price_camion_xl=200000),
-    dict(category="latoneria", name="Arreglo Rin",                price_automovil=250000, price_camion_estandar=250000, price_camion_xl=250000),
     # ── Otros servicios (slots para servicios personalizados) ────────────────
+    dict(category="otro", name="PDR",           price_automovil=200000, price_camion_estandar=200000, price_camion_xl=200000),
+    dict(category="otro", name="Arreglo Rin",   price_automovil=250000, price_camion_estandar=250000, price_camion_xl=250000),
+    dict(category="otro", name="Lavado Motor",  price_automovil=60000,  price_camion_estandar=60000,  price_camion_xl=60000),
+    dict(category="otro", name="Lavado Chasis", price_automovil=60000,  price_camion_estandar=60000,  price_camion_xl=60000),
     dict(category="otro", name="Otro servicio 1", price_automovil=0, price_camion_estandar=0, price_camion_xl=0),
     dict(category="otro", name="Otro servicio 2", price_automovil=0, price_camion_estandar=0, price_camion_xl=0),
     dict(category="otro", name="Otro servicio 3", price_automovil=0, price_camion_estandar=0, price_camion_xl=0),

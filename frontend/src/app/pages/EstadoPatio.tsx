@@ -336,14 +336,14 @@ function PatioCard({ entry, opName, facturaRecord, onAdvance, onEdit, onUpdate }
               onClick={e => e.stopPropagation()}
             >
               <p className="text-xs font-medium text-blue-300">Fecha de entrega acordada</p>
-              <div className="flex gap-2">
+              <div className="flex flex-wrap gap-2">
                 <input
                   type="date"
                   value={draftDate}
                   min={_today()}
                   onChange={e => setDraftDate(e.target.value)}
                   style={{ colorScheme: 'dark' }}
-                  className="flex-1 rounded-xl border border-blue-500/30 bg-gray-900 px-3 py-2 text-sm text-gray-100 focus:border-blue-500/60 focus:outline-none focus:ring-2 focus:ring-blue-500/20 [&::-webkit-calendar-picker-indicator]:opacity-50 [&::-webkit-calendar-picker-indicator]:invert"
+                  className="flex-1 min-w-[140px] rounded-xl border border-blue-500/30 bg-gray-900 px-3 py-2 text-sm text-gray-100 focus:border-blue-500/60 focus:outline-none focus:ring-2 focus:ring-blue-500/20 [&::-webkit-calendar-picker-indicator]:opacity-50 [&::-webkit-calendar-picker-indicator]:invert"
                 />
                 <select
                   value={draftHour}
@@ -551,13 +551,13 @@ const CATEGORY_ORDER: string[] = ['exterior', 'interior', 'correccion_pintura', 
 // Maps service category → operator_type
 const CAT_TO_OP_TYPE: Record<string, string> = {
   exterior: 'detallado', interior: 'detallado', ceramico: 'detallado', correccion_pintura: 'detallado',
-  pintura: 'pintura', latoneria: 'latoneria', ppf: 'ppf', polarizado: 'polarizado',
+  pintura: 'pintura', latoneria: 'latoneria', ppf: 'ppf', polarizado: 'polarizado', otro: 'otro',
 }
 const OP_TYPE_LABEL: Record<string, string> = {
   detallado: 'Detallado', pintura: 'Pintura', latoneria: 'Latonería', ppf: 'PPF', polarizado: 'Polarizado',
 }
 // Operator types that do NOT need an internal operator assigned (handled as third-party payments)
-const NO_OPERATOR_TYPES = new Set(['ppf', 'polarizado'])
+const NO_OPERATOR_TYPES = new Set(['ppf', 'polarizado', 'otro'])
 
 export default function EstadoPatio() {
   const { operators, services } = useAppContext()
@@ -588,6 +588,7 @@ export default function EstadoPatio() {
   const [payMethods,   setPayMethods]   = useState<Record<string, string>>({})
   const [latPay,       setLatPay]       = useState('')
   const [delivering,   setDelivering]   = useState(false)
+  const [applyIva,     setApplyIva]     = useState(false)
   const [factura,      setFactura]      = useState(false)
   const [facturaData,  setFacturaData]  = useState({
     tipo:      'persona_natural' as 'persona_natural' | 'empresa',
@@ -807,6 +808,7 @@ export default function EstadoPatio() {
       setPaymentEntry(entry)
       setPayMethods({})
       setLatPay('')
+      setApplyIva(false)
       const savedClient = entry.vehicle?.client
       const hasSavedFactura = !!(savedClient?.tipo_persona && savedClient?.identificacion)
       setFactura(hasSavedFactura)
@@ -840,6 +842,12 @@ export default function EstadoPatio() {
   async function confirmDelivery() {
     if (!paymentEntry) return
     const restante = Math.max(0, Number(paymentEntry.order?.total ?? 0) - Number(paymentEntry.order?.downpayment ?? 0))
+    const DETALLADO_CATS = new Set(['exterior', 'interior', 'ceramico', 'correccion_pintura'])
+    const nonDetailladoTotal = (paymentEntry.order?.items ?? [])
+      .filter(i => !DETALLADO_CATS.has(i.service_category))
+      .reduce((s, i) => s + Number(i.unit_price) * i.quantity, 0)
+    const ivaAmt = Math.round(nonDetailladoTotal * 0.19)
+    const effectiveRestante = applyIva ? restante + ivaAmt : restante
     const keyToField: Record<string, 'payment_cash' | 'payment_datafono' | 'payment_nequi' | 'payment_bancolombia'> = {
       cash:        'payment_cash',
       datafono:    'payment_datafono',
@@ -849,7 +857,7 @@ export default function EstadoPatio() {
     const payment = { payment_cash: 0, payment_datafono: 0, payment_nequi: 0, payment_bancolombia: 0 }
     const checkedKeys = Object.keys(payMethods)
     if (checkedKeys.length === 1) {
-      payment[keyToField[checkedKeys[0]]] = restante
+      payment[keyToField[checkedKeys[0]]] = effectiveRestante
     } else {
       for (const k of checkedKeys) {
         payment[keyToField[k]] = Number(payMethods[k]) || 0
@@ -1421,9 +1429,16 @@ export default function EstadoPatio() {
       {/* Payment modal — shown when delivering (listo → entregado) */}
       <AnimatePresence>
         {paymentEntry && (() => {
-          const total    = Number(paymentEntry.order?.total ?? 0)
-          const abono    = Number(paymentEntry.order?.downpayment ?? 0)
-          const restante = Math.max(0, total - abono)
+          const total             = Number(paymentEntry.order?.total ?? 0)
+          const abono            = Number(paymentEntry.order?.downpayment ?? 0)
+          const restante         = Math.max(0, total - abono)
+          // IVA only applies to non-detallado services (detallado prices already include IVA)
+          const DETALLADO = new Set(['exterior', 'interior', 'ceramico', 'correccion_pintura'])
+          const nonDetailladoTotal = (paymentEntry.order?.items ?? [])
+            .filter(i => !DETALLADO.has(i.service_category))
+            .reduce((s, i) => s + Number(i.unit_price) * i.quantity, 0)
+          const ivaAmt            = Math.round(nonDetailladoTotal * 0.19)
+          const effectiveRestante = applyIva ? restante + ivaAmt : restante
 
           const METHODS = [
             { key: 'cash',        label: 'Efectivo',           sub: null },
@@ -1440,8 +1455,8 @@ export default function EstadoPatio() {
 
           const checkedKeys = Object.keys(payMethods)
           const isMulti     = checkedKeys.length > 1
-          const covered     = isMulti ? checkedKeys.reduce((s, k) => s + (Number(payMethods[k]) || 0), 0) : restante
-          const diff        = restante - covered
+          const covered     = isMulti ? checkedKeys.reduce((s, k) => s + (Number(payMethods[k]) || 0), 0) : effectiveRestante
+          const diff        = effectiveRestante - covered
 
           return (
             <motion.div
@@ -1481,12 +1496,37 @@ export default function EstadoPatio() {
                   )}
                   <div className="flex justify-between text-sm font-bold">
                     <span className="text-gray-300">A cobrar</span>
-                    <span className="text-yellow-400">${restante.toLocaleString('es-CO')}</span>
+                    <span className={cn('transition-colors', applyIva ? 'text-blue-300' : 'text-yellow-400')}>
+                      ${effectiveRestante.toLocaleString('es-CO')}
+                    </span>
                   </div>
+                  {applyIva && restante > 0 && (
+                    <div className="flex justify-between text-[11px] text-blue-400/60">
+                      <span>Incluye IVA 19%</span>
+                      <span>+${ivaAmt.toLocaleString('es-CO')}</span>
+                    </div>
+                  )}
+                  {restante > 0 && (
+                    <div className="pt-1 mt-0.5 border-t border-white/5">
+                      <button
+                        type="button"
+                        onClick={() => { setApplyIva(v => !v); setPayMethods({}) }}
+                        className="flex items-center gap-1.5 text-[11px] text-gray-600 hover:text-gray-400 transition-colors"
+                      >
+                        <div className={cn(
+                          'w-3 h-3 rounded border shrink-0 flex items-center justify-center transition-colors',
+                          applyIva ? 'border-blue-500/60 bg-blue-500/50' : 'border-white/20'
+                        )}>
+                          {applyIva && <svg viewBox="0 0 10 8" className="w-2 h-1.5" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M1 4l2.5 2.5L9 1"/></svg>}
+                        </div>
+                        Aplicar IVA (19%)
+                      </button>
+                    </div>
+                  )}
                 </div>
 
                 {/* Method checkboxes — only shown when there's an amount to collect */}
-                {restante > 0 && (
+                {effectiveRestante > 0 && (
                   <>
                     <div className="space-y-2">
                       <p className="text-xs text-gray-500 uppercase tracking-wider">Método de pago</p>
@@ -1730,7 +1770,7 @@ export default function EstadoPatio() {
                   </Button>
                   <Button variant="primary" size="md" className="flex-1"
                     onClick={confirmDelivery}
-                    disabled={delivering || (restante > 0 && Object.keys(payMethods).length === 0) || (hasLatoneria && !latPay)}>
+                    disabled={delivering || (effectiveRestante > 0 && Object.keys(payMethods).length === 0) || (hasLatoneria && !latPay)}>
                     {delivering ? 'Entregando...' : 'Confirmar Entrega'}
                   </Button>
                 </div>

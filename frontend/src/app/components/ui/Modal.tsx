@@ -10,6 +10,7 @@ interface ModalProps {
   children: React.ReactNode
   size?: 'sm' | 'md' | 'lg' | 'xl'
   className?: string
+  closeOnOverlay?: boolean
 }
 
 const sizeClasses = {
@@ -19,7 +20,7 @@ const sizeClasses = {
   xl: 'max-w-4xl',
 }
 
-export function Modal({ open, onClose, title, children, size = 'lg', className }: ModalProps) {
+export function Modal({ open, onClose, title, children, size = 'lg', className, closeOnOverlay = true }: ModalProps) {
   return createPortal(
     <AnimatePresence>
       {open && (
@@ -31,7 +32,7 @@ export function Modal({ open, onClose, title, children, size = 'lg', className }
             exit={{ opacity: 0 }}
             transition={{ duration: 0.2 }}
             className="absolute inset-0 bg-black/70 backdrop-blur-[3px]"
-            onClick={onClose}
+            onClick={closeOnOverlay ? onClose : undefined}
           />
           {/* Panel */}
           <motion.div

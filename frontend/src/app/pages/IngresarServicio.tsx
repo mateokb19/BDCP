@@ -50,6 +50,15 @@ const vehicleOptions: { type: VehicleType; label: string; icon: React.ReactNode 
   { type: 'camion_xl',       label: 'Camioneta XL',       icon: <Truck size={52} /> },
 ]
 
+// IVA (19%) — Detallado prices already include IVA; all other categories do not
+const DETALLADO_CATS = new Set(['exterior', 'interior', 'ceramico', 'correccion_pintura'])
+function serviceNeedsIva(service: Service): boolean {
+  return !DETALLADO_CATS.has(service.category)
+}
+function ivaOf(amount: number): number {
+  return Math.round(amount * 0.19)
+}
+
 const categoryColors: Record<string, string> = {
   exterior:           'bg-yellow-500/10 border-yellow-500/20',
   interior:           'bg-blue-500/10 border-blue-500/20',
@@ -69,6 +78,7 @@ const categoryLabels: Record<string, string> = {
   pintura:            'Pintura',
   ppf:                'PPF',
   polarizado:         'Polarizado',
+  otro:               'Otros',
 }
 
 type AreaId = 'detallado' | 'latoneria' | 'pintura' | 'ppf' | 'polarizado'
@@ -231,7 +241,8 @@ export default function IngresarServicio() {
   // Custom "otro" services
   const [customServices, setCustomServices] = useState<{ name: string; price: string }[]>([])
   const [otroOpen, setOtroOpen] = useState(false)
-  const otroSlots = services.filter(s => s.category === 'otro')
+  const otroFixed = services.filter(s => s.category === 'otro' && !s.name.startsWith('Otro servicio'))
+  const otroSlots = services.filter(s => s.category === 'otro' && s.name.startsWith('Otro servicio'))
 
   // Brand autocomplete
   const [brandQuery, setBrandQuery]     = useState(fromAppt?.brand ?? '')
@@ -346,7 +357,8 @@ export default function IngresarServicio() {
   }
   function getEffectivePrice(service: Service): number {
     if (form.warrantyServiceIds.includes(service.id)) return 0
-    const qty = hasPartSelector(service) ? getPartQty(service.id) : 1
+    const isPpfPol = service.category === 'ppf' || service.category === 'polarizado'
+    const qty = isPpfPol ? 1 : (hasPartSelector(service) ? getPartQty(service.id) : 1)
     const custom = form.customPrices[service.id]
     if (custom !== undefined && custom !== '') {
       const n = Number(custom)
@@ -373,6 +385,14 @@ export default function IngresarServicio() {
 
   const selectedServiceObjs = form.selectedServices.map(id => services.find(s => s.id === id)!).filter(Boolean)
 
+  // IVA total: sum 19% of effective price for non-detallado services (detallado already includes IVA)
+  const ivaTotal = selectedServiceObjs.reduce((sum, s) =>
+    serviceNeedsIva(s) ? sum + ivaOf(getEffectivePrice(s)) : sum
+  , 0) + customServices.reduce((sum, cs) => {
+    const n = Number(parseCOP(cs.price))
+    return sum + (cs.name && n > 0 ? ivaOf(n) : 0)
+  }, 0)
+
   const latWithNoPrice = selectedServiceObjs.filter(s => {
     if (s.category !== 'latoneria') return false
     const custom = form.customPrices[s.id]
@@ -393,12 +413,14 @@ export default function IngresarServicio() {
           if (form.warrantyServiceIds.includes(Number(id))) return false
           const s = services.find(s => s.id === Number(id))
           if (!s) return false
-          const qty = hasPartSelector(s) ? getPartQty(Number(id)) : 1
+          const isPpfPol = s.category === 'ppf' || s.category === 'polarizado'
+          const qty = (!isPpfPol && hasPartSelector(s)) ? getPartQty(Number(id)) : 1
           return Number(priceStr) * qty !== getStandardPrice(s)
         })
         .map(([id, priceStr]) => {
           const s = services.find(s => s.id === Number(id))!
-          const qty = hasPartSelector(s) ? getPartQty(Number(id)) : 1
+          const isPpfPol = s.category === 'ppf' || s.category === 'polarizado'
+          const qty = (!isPpfPol && hasPartSelector(s)) ? getPartQty(Number(id)) : 1
           return { service_id: Number(id), unit_price: Number(priceStr) * qty }
         })
 
@@ -839,7 +861,7 @@ export default function IngresarServicio() {
                     </AnimatePresence>
 
                     {/* ── Otros Servicios ──────────────────────────────── */}
-                    {otroSlots.length > 0 && (
+                    {(otroFixed.length > 0 || otroSlots.length > 0) && (
                       <div className="rounded-xl border border-white/8 overflow-hidden">
                         <button
                           type="button"
@@ -848,9 +870,11 @@ export default function IngresarServicio() {
                         >
                           <span className="shrink-0 text-gray-400 group-hover:text-gray-300"><Plus size={15} /></span>
                           <span className="flex-1 text-sm font-medium text-gray-300 text-left">Otros servicios</span>
-                          {customServices.filter(cs => cs.name && Number(parseCOP(cs.price)) > 0).length > 0 && (
+                          {(otroFixed.filter(s => form.selectedServices.includes(s.id)).length +
+                            customServices.filter(cs => cs.name && Number(parseCOP(cs.price)) > 0).length) > 0 && (
                             <span className="text-xs text-yellow-400 font-medium">
-                              {customServices.filter(cs => cs.name && Number(parseCOP(cs.price)) > 0).length} sel.
+                              {otroFixed.filter(s => form.selectedServices.includes(s.id)).length +
+                                customServices.filter(cs => cs.name && Number(parseCOP(cs.price)) > 0).length} sel.
                             </span>
                           )}
                           <ChevronRight size={14} className={cn('text-gray-600 transition-transform shrink-0', otroOpen && 'rotate-90')} />
@@ -861,42 +885,67 @@ export default function IngresarServicio() {
                               initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }}
                               transition={{ duration: 0.2 }} className="overflow-hidden"
                             >
-                              <div className="p-3 pt-2 border-t border-white/5 space-y-2">
-                                <p className="text-[11px] text-gray-600">Para servicios ocasionales como domicilio, traslado, etc. Máximo {otroSlots.length}.</p>
-                                {customServices.map((cs, i) => (
-                                  <div key={i} className="flex items-center gap-2">
-                                    <input
-                                      type="text"
-                                      placeholder="Nombre del servicio"
-                                      value={cs.name}
-                                      maxLength={80}
-                                      onChange={e => setCustomServices(prev => prev.map((x, j) => j === i ? { ...x, name: e.target.value } : x))}
-                                      className="flex-1 rounded-lg border border-white/10 bg-white/5 px-2.5 py-1.5 text-sm text-gray-100 focus:border-yellow-500/50 focus:outline-none focus:ring-1 focus:ring-yellow-500/20 min-w-0"
-                                    />
-                                    <div className="relative shrink-0">
-                                      <span className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-500 text-xs">$</span>
-                                      <input
-                                        type="text" inputMode="numeric"
-                                        placeholder="0"
-                                        value={fmtCOP(cs.price)}
-                                        onWheel={e => e.currentTarget.blur()}
-                                        onChange={e => setCustomServices(prev => prev.map((x, j) => j === i ? { ...x, price: parseCOP(e.target.value) } : x))}
-                                        className="w-28 rounded-lg border border-white/10 bg-white/5 pl-5 pr-2 py-1.5 text-sm text-gray-100 focus:border-yellow-500/50 focus:outline-none focus:ring-1 focus:ring-yellow-500/20"
-                                      />
+                              <div className="p-3 pt-2 border-t border-white/5 space-y-3">
+                                {/* Fixed otro services (PDR, Arreglo Rin, Lavado Motor, Lavado Chasis) */}
+                                {otroFixed.length > 0 && (
+                                  <div className="rounded-xl border border-white/10 bg-white/[0.02] p-3">
+                                    <div className="space-y-1">
+                                      {otroFixed.map(service => {
+                                        const price   = getStandardPrice(service)
+                                        const checked = form.selectedServices.includes(service.id)
+                                        return (
+                                          <motion.label key={service.id} whileHover={{ x: 2 }}
+                                            className="flex items-center gap-3 rounded-lg px-2 py-1.5 cursor-pointer hover:bg-white/5 transition-colors">
+                                            <input type="checkbox" checked={checked} onChange={() => toggleService(service.id)}
+                                              className="w-4 h-4 rounded accent-yellow-400 cursor-pointer" />
+                                            <span className="flex-1 text-sm text-gray-200">{service.name}</span>
+                                            <span className="text-sm font-medium text-yellow-400">${price.toLocaleString('es-CO')}</span>
+                                          </motion.label>
+                                        )
+                                      })}
                                     </div>
-                                    <button type="button" onClick={() => setCustomServices(prev => prev.filter((_, j) => j !== i))}
-                                      className="shrink-0 p-1 rounded-md text-gray-600 hover:text-red-400 hover:bg-red-500/10 transition-colors">
-                                      <X size={14} />
-                                    </button>
                                   </div>
-                                ))}
-                                {customServices.length < otroSlots.length && (
-                                  <button type="button"
-                                    onClick={() => setCustomServices(prev => [...prev, { name: '', price: '' }])}
-                                    className="flex items-center gap-1.5 text-xs text-yellow-400 hover:text-yellow-300 transition-colors mt-1"
-                                  >
-                                    <Plus size={12} /> Agregar servicio
-                                  </button>
+                                )}
+                                {/* Custom otro slots */}
+                                {otroSlots.length > 0 && (
+                                  <div className="space-y-2">
+                                    <p className="text-[11px] text-gray-600">Para servicios ocasionales como domicilio, traslado, etc. Máximo {otroSlots.length}.</p>
+                                    {customServices.map((cs, i) => (
+                                      <div key={i} className="flex items-center gap-2">
+                                        <input
+                                          type="text"
+                                          placeholder="Nombre del servicio"
+                                          value={cs.name}
+                                          maxLength={80}
+                                          onChange={e => setCustomServices(prev => prev.map((x, j) => j === i ? { ...x, name: e.target.value } : x))}
+                                          className="flex-1 rounded-lg border border-white/10 bg-white/5 px-2.5 py-1.5 text-sm text-gray-100 focus:border-yellow-500/50 focus:outline-none focus:ring-1 focus:ring-yellow-500/20 min-w-0"
+                                        />
+                                        <div className="relative shrink-0">
+                                          <span className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-500 text-xs">$</span>
+                                          <input
+                                            type="text" inputMode="numeric"
+                                            placeholder="0"
+                                            value={fmtCOP(cs.price)}
+                                            onWheel={e => e.currentTarget.blur()}
+                                            onChange={e => setCustomServices(prev => prev.map((x, j) => j === i ? { ...x, price: parseCOP(e.target.value) } : x))}
+                                            className="w-28 rounded-lg border border-white/10 bg-white/5 pl-5 pr-2 py-1.5 text-sm text-gray-100 focus:border-yellow-500/50 focus:outline-none focus:ring-1 focus:ring-yellow-500/20"
+                                          />
+                                        </div>
+                                        <button type="button" onClick={() => setCustomServices(prev => prev.filter((_, j) => j !== i))}
+                                          className="shrink-0 p-1 rounded-md text-gray-600 hover:text-red-400 hover:bg-red-500/10 transition-colors">
+                                          <X size={14} />
+                                        </button>
+                                      </div>
+                                    ))}
+                                    {customServices.length < otroSlots.length && (
+                                      <button type="button"
+                                        onClick={() => setCustomServices(prev => [...prev, { name: '', price: '' }])}
+                                        className="flex items-center gap-1.5 text-xs text-yellow-400 hover:text-yellow-300 transition-colors mt-1"
+                                      >
+                                        <Plus size={12} /> Agregar servicio
+                                      </button>
+                                    )}
+                                  </div>
                                 )}
                               </div>
                             </motion.div>
@@ -918,37 +967,67 @@ export default function IngresarServicio() {
                         <p className="text-sm text-gray-600 italic">Selecciona servicios...</p>
                       ) : (
                         <AnimatePresence>
-                          {selectedServiceObjs.map(s => (
-                            <motion.div key={s.id}
-                              initial={{ opacity: 0, x: 10 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 10 }}
-                              className="flex justify-between items-center py-2 border-b border-white/6">
-                              <span className="text-sm text-gray-300">{s.name}</span>
-                              <span className="text-sm font-medium text-yellow-400">${Number(getEffectivePrice(s)).toLocaleString('es-CO')}</span>
-                            </motion.div>
-                          ))}
-                          {customServices.filter(cs => cs.name).map((cs, i) => (
-                            <motion.div key={`otro-${i}`}
-                              initial={{ opacity: 0, x: 10 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 10 }}
-                              className="flex justify-between items-center py-2 border-b border-white/6">
-                              <span className="text-sm text-gray-300">{cs.name || '—'}</span>
-                              <span className="text-sm font-medium text-yellow-400">
-                                {Number(parseCOP(cs.price)) > 0 ? `$${Number(parseCOP(cs.price)).toLocaleString('es-CO')}` : '—'}
-                              </span>
-                            </motion.div>
-                          ))}
+                          {selectedServiceObjs.map(s => {
+                            const effP = getEffectivePrice(s)
+                            const iva  = serviceNeedsIva(s) && effP > 0 ? ivaOf(effP) : 0
+                            return (
+                              <motion.div key={s.id}
+                                initial={{ opacity: 0, x: 10 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 10 }}
+                                className="py-2 border-b border-white/6">
+                                <div className="flex justify-between items-center">
+                                  <span className="text-sm text-gray-300">{s.name}</span>
+                                  <span className="text-sm font-medium text-yellow-400">${effP.toLocaleString('es-CO')}</span>
+                                </div>
+                                {iva > 0 && (
+                                  <div className="flex justify-end mt-0.5">
+                                    <span className="text-[11px] text-blue-400/70">+IVA ${iva.toLocaleString('es-CO')}</span>
+                                  </div>
+                                )}
+                              </motion.div>
+                            )
+                          })}
+                          {customServices.filter(cs => cs.name).map((cs, i) => {
+                            const n = Number(parseCOP(cs.price))
+                            const iva = n > 0 ? ivaOf(n) : 0
+                            return (
+                              <motion.div key={`otro-${i}`}
+                                initial={{ opacity: 0, x: 10 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 10 }}
+                                className="py-2 border-b border-white/6">
+                                <div className="flex justify-between items-center">
+                                  <span className="text-sm text-gray-300">{cs.name || '—'}</span>
+                                  <span className="text-sm font-medium text-yellow-400">
+                                    {n > 0 ? `$${n.toLocaleString('es-CO')}` : '—'}
+                                  </span>
+                                </div>
+                                {iva > 0 && (
+                                  <div className="flex justify-end mt-0.5">
+                                    <span className="text-[11px] text-blue-400/70">+IVA ${iva.toLocaleString('es-CO')}</span>
+                                  </div>
+                                )}
+                              </motion.div>
+                            )
+                          })}
                         </AnimatePresence>
                       )}
                     </div>
 
                     {total > 0 && (
-                      <div className="mt-4 pt-4 border-t border-white/10 flex justify-between items-center">
-                        <span className="text-gray-300">Total</span>
-                        <motion.span key={total}
-                          initial={{ scale: 1.15 }} animate={{ scale: 1 }}
-                          className="text-2xl font-bold text-yellow-400"
-                        >
-                          ${total.toLocaleString('es-CO')}
-                        </motion.span>
+                      <div className="mt-4 pt-4 border-t border-white/10 space-y-1">
+                        <div className="flex justify-between items-center">
+                          <span className="text-gray-300">Total</span>
+                          <motion.span key={total}
+                            initial={{ scale: 1.15 }} animate={{ scale: 1 }}
+                            className="text-2xl font-bold text-yellow-400"
+                          >
+                            ${total.toLocaleString('es-CO')}
+                          </motion.span>
+                        </div>
+                        {ivaTotal > 0 && (
+                          <div className="flex justify-between items-center text-xs text-blue-400/70">
+                            <span>IVA estimado (19%)</span>
+                            <span>+${ivaTotal.toLocaleString('es-CO')}</span>
+                          </div>
+                        )}
                       </div>
                     )}
 
@@ -1069,6 +1148,7 @@ export default function IngresarServicio() {
                       const effPrice       = getEffectivePrice(s)          // 0 if warranty
                       const discAmt        = isWarrantySvc ? 0 : stdPrice - effPrice
                       const isEditingThis  = !isWarrantySvc && editingPriceId === s.id
+                      const ivaAmt         = (!isWarrantySvc && serviceNeedsIva(s) && effPrice > 0) ? ivaOf(effPrice) : 0
 
                       function toggleWarrantySvc() {
                         setForm(f => ({
@@ -1157,19 +1237,29 @@ export default function IngresarServicio() {
                               Descuento: −${discAmt.toLocaleString('es-CO')} ({Math.round((discAmt / stdPrice) * 100)}%)
                             </p>
                           )}
+                          {ivaAmt > 0 && (
+                            <p className="text-xs text-blue-400/70 mt-0.5 text-right">+IVA ${ivaAmt.toLocaleString('es-CO')}</p>
+                          )}
                         </div>
                       )
                     })}
                     {/* Custom "otro" services in step 3 */}
-                    {customServices.filter(cs => cs.name && Number(parseCOP(cs.price)) > 0).map((cs, i) => (
-                      <div key={`otro-${i}`} className="rounded-xl border border-white/6 bg-white/[0.02] px-3 py-2.5">
-                        <div className="flex items-center gap-2 min-w-0">
-                          <Badge variant="gray">Otro</Badge>
-                          <span className="flex-1 text-sm text-gray-200 truncate">{cs.name}</span>
-                          <span className="text-sm font-medium text-yellow-400 shrink-0">${Number(parseCOP(cs.price)).toLocaleString('es-CO')}</span>
+                    {customServices.filter(cs => cs.name && Number(parseCOP(cs.price)) > 0).map((cs, i) => {
+                      const n = Number(parseCOP(cs.price))
+                      const iva = n > 0 ? ivaOf(n) : 0
+                      return (
+                        <div key={`otro-${i}`} className="rounded-xl border border-white/6 bg-white/[0.02] px-3 py-2.5">
+                          <div className="flex items-center gap-2 min-w-0">
+                            <Badge variant="gray">Otro</Badge>
+                            <span className="flex-1 text-sm text-gray-200 truncate">{cs.name}</span>
+                            <span className="text-sm font-medium text-yellow-400 shrink-0">${n.toLocaleString('es-CO')}</span>
+                          </div>
+                          {iva > 0 && (
+                            <p className="text-xs text-blue-400/70 mt-0.5 text-right">+IVA ${iva.toLocaleString('es-CO')}</p>
+                          )}
                         </div>
-                      </div>
-                    ))}
+                      )
+                    })}
                   </div>
 
                   {/* Totals */}
@@ -1194,6 +1284,12 @@ export default function IngresarServicio() {
                       <div className="flex justify-between items-center">
                         <span className="text-lg text-gray-200 font-medium">Total</span>
                         <span className="text-3xl font-bold text-yellow-400">${total.toLocaleString('es-CO')}</span>
+                      </div>
+                    )}
+                    {ivaTotal > 0 && (
+                      <div className="flex justify-between items-center text-xs text-blue-400/70 pt-1 border-t border-white/5">
+                        <span>IVA estimado (19%) — no incluido en total</span>
+                        <span>+${ivaTotal.toLocaleString('es-CO')}</span>
                       </div>
                     )}
                   </div>

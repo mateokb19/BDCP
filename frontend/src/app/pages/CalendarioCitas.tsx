@@ -28,7 +28,7 @@ const BRANDS = [
   'Subaru', 'Mitsubishi', 'Fiat', 'Seat', 'Cupra', 'Skoda',
   'BYD', 'Chery', 'JAC', 'Jetour', 'GAC Aion', 'Zeekr', 'Fang Cheng Bao', 'SsangYong',
   'Tesla',
-]
+].sort((a, b) => a.localeCompare(b, 'es'))
 
 const MODELS_BY_BRAND: Record<string, string[]> = {
   Toyota:           ['Corolla', 'Hilux', 'Camry', 'RAV4', 'Fortuner', 'Land Cruiser', 'Yaris', 'Rush', 'SW4'],
@@ -77,7 +77,7 @@ const MOTO_BRANDS = [
   'Yamaha', 'AKT', 'Bajaj', 'Suzuki', 'Honda', 'Victory', 'TVS', 'Hero',
   'KTM', 'Kymco', 'Ceronte', 'Royal Enfield', 'Benelli', 'Fratelli',
   'BMW', 'Vaisand', 'Starker', 'Ducati', 'Piaggio', 'Ayco',
-]
+].sort((a, b) => a.localeCompare(b, 'es'))
 
 const STATUS_LABELS: Record<string, { label: string; color: string }> = {
   completada:  { label: 'Completada',  color: 'bg-green-500/15 text-green-400' },
@@ -444,7 +444,7 @@ export default function CalendarioCitas() {
       </Modal>
 
       {/* Create / Edit Modal */}
-      <Modal open={showModal} onClose={() => setShowModal(false)} title={editAppt ? 'Editar Cita' : 'Nueva Cita'} size="lg">
+      <Modal open={showModal} onClose={() => setShowModal(false)} title={editAppt ? 'Editar Cita' : 'Nueva Cita'} size="lg" closeOnOverlay={false}>
         <div className="p-6 space-y-4">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="flex flex-col gap-1.5">
@@ -526,22 +526,50 @@ export default function CalendarioCitas() {
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div className="flex flex-col gap-1.5">
               <label className="text-sm font-medium text-gray-300">Marca</label>
-              <select value={form.brand}
+              <input
+                type="text"
+                list="appt-brands"
+                value={form.brand}
+                placeholder="Ej. Toyota"
+                autoComplete="off"
                 onChange={e => setForm(p => ({ ...p, brand: e.target.value, model: '' }))}
-                className={selectCls}>
-                <option value="">— Seleccionar —</option>
-                {(form.vehicleType === 'moto' ? MOTO_BRANDS : BRANDS).map(b => <option key={b} value={b}>{b}</option>)}
-              </select>
+                onBlur={e => {
+                  const typed = e.target.value.trim()
+                  const list = form.vehicleType === 'moto' ? MOTO_BRANDS : BRANDS
+                  const match = list.find(b => b.toLowerCase() === typed.toLowerCase())
+                  if (match) setForm(p => ({ ...p, brand: match }))
+                }}
+                onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }}
+                className={selectCls}
+              />
+              <datalist id="appt-brands">
+                {(form.vehicleType === 'moto' ? MOTO_BRANDS : BRANDS).map(b => (
+                  <option key={b} value={b} />
+                ))}
+              </datalist>
             </div>
             <div className="flex flex-col gap-1.5">
               <label className="text-sm font-medium text-gray-300">Modelo</label>
-              <select value={form.model}
+              <input
+                type="text"
+                list="appt-models"
+                value={form.model}
+                placeholder="Ej. Corolla"
+                autoComplete="off"
                 onChange={e => setForm(p => ({ ...p, model: e.target.value }))}
-                disabled={!form.brand}
-                className={selectCls}>
-                <option value="">— Seleccionar —</option>
-                {availableModels.map(m => <option key={m} value={m}>{m}</option>)}
-              </select>
+                onBlur={e => {
+                  const typed = e.target.value.trim()
+                  const match = availableModels.find(m => m.toLowerCase() === typed.toLowerCase())
+                  if (match) setForm(p => ({ ...p, model: match }))
+                }}
+                onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }}
+                className={selectCls}
+              />
+              <datalist id="appt-models">
+                {availableModels.map(m => (
+                  <option key={m} value={m} />
+                ))}
+              </datalist>
             </div>
             <div className="flex flex-col gap-1.5">
               <label className="text-sm font-medium text-gray-300">Placa</label>
