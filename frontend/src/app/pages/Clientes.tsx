@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
-  Search, ChevronRight, X, Pencil, Check, Car, Users, Package, DollarSign,
+  Search, ChevronRight, X, Pencil, Check, Car, Users, Package, Wrench,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { PageHeader } from '@/app/components/ui/PageHeader'
@@ -542,7 +542,9 @@ export default function Clientes() {
     if (!search.trim()) return clients
     const q = search.toLowerCase()
     return clients.filter(
-      c => c.name.toLowerCase().includes(q) || (c.phone ?? '').includes(q),
+      c => c.name.toLowerCase().includes(q) ||
+           (c.phone ?? '').includes(q) ||
+           c.vehicles.some(v => v.plate.toLowerCase().includes(q)),
     )
   }, [clients, search])
 
@@ -561,7 +563,7 @@ export default function Clientes() {
             <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none" />
             <input
               type="text"
-              placeholder="Buscar por nombre o teléfono…"
+              placeholder="Buscar por nombre, teléfono o placa…"
               value={search}
               onChange={e => setSearch(e.target.value)}
               className="w-64 rounded-xl border border-white/10 bg-white/5 pl-8 pr-3 py-2 text-sm text-gray-200 placeholder-gray-500 focus:border-yellow-500/50 focus:outline-none focus:ring-2 focus:ring-yellow-500/20"
@@ -587,7 +589,7 @@ export default function Clientes() {
         <KpiCard
           label="Servicios Totales"
           value={totalServices}
-          icon={<DollarSign size={18} />}
+          icon={<Wrench size={18} />}
           color="bg-yellow-500/15 text-yellow-400"
         />
       </div>

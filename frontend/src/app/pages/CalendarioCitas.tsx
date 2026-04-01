@@ -275,7 +275,12 @@ export default function CalendarioCitas() {
                   key={day.toISOString()}
                   whileHover={{ scale: isPast ? 1 : 1.08 }}
                   whileTap={{ scale: 0.95 }}
-                  onClick={() => setSelectedDate(day)}
+                  onClick={() => {
+                    setSelectedDate(day)
+                    if (!isSameMonth(day, currentMonth)) {
+                      setCurrentMonth(startOfMonth(day))
+                    }
+                  }}
                   className={cn(
                     'relative flex flex-col items-center justify-center rounded-xl py-2 px-1 text-sm transition-colors',
                     isSelected

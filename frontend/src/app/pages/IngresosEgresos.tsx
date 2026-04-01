@@ -31,7 +31,10 @@ const TOOLTIP_STYLE = {
   cursor: { fill: 'rgba(255,255,255,0.03)' },
 }
 
-const PIE_COLORS = ['#eab308', '#3b82f6', '#8b5cf6', '#ef4444', '#22c55e', '#f97316']
+const PIE_COLORS = [
+  '#eab308', '#3b82f6', '#8b5cf6', '#ef4444', '#22c55e', '#f97316',
+  '#06b6d4', '#f43f5e', '#84cc16', '#a78bfa', '#fb923c', '#34d399',
+]
 
 const stagger = { hidden: {}, show: { transition: { staggerChildren: 0.04 } } }
 const rowAnim = { hidden: { opacity: 0, y: 6 }, show: { opacity: 1, y: 0, transition: { duration: 0.2 } } }
@@ -67,9 +70,19 @@ const PAY_METHODS = [
   { key: 'payment_bancolombia' as const, label: 'Bancolombia', color: '#eab308', icon: <CreditCard size={13} /> },
 ]
 
+// "Salarios" is NOT in this list — it is auto-assigned by liquidation
 const EXPENSE_CATEGORIES = [
-  'Insumos', 'Servicios públicos', 'Arriendo', 'Equipos y herramientas',
-  'Marketing', 'Salarios', 'Transporte', 'Otros',
+  'Compra varios',
+  'Pago terceros',
+  'Pago proveedores',
+  'Pago arriendo',
+  'Gasto hormiga',
+  'Pago servicios',
+  'Insumos',
+  'Equipos y herramientas',
+  'Marketing',
+  'Transporte',
+  'Otros',
 ]
 
 // ── Sub-components ────────────────────────────────────────────────────────────
@@ -166,11 +179,20 @@ export default function IngresosEgresos() {
     }
   }
 
+  // Category filter for expense table
+  const [catFilter, setCatFilter] = useState<string>('')
+
   // New expense modal
   const [showModal,   setShowModal]   = useState(false)
   const [saving,      setSaving]      = useState(false)
+  const [formErrors,  setFormErrors]  = useState<Record<string, boolean>>({})
+  const localToday = () => {
+    const d = new Date()
+    const pad = (n: number) => String(n).padStart(2, '0')
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+  }
   const [newExpense,  setNewExpense]  = useState({
-    date:           new Date().toISOString().slice(0, 10),
+    date:           localToday(),
     amount:         '',
     category:       '',
     description:    '',
@@ -195,10 +217,17 @@ export default function IngresosEgresos() {
   }, [dateStart, dateEnd])
 
   async function saveExpense() {
-    if (!newExpense.amount || Number(newExpense.amount) <= 0) {
-      toast.error('El monto debe ser mayor a 0')
+    const errors: Record<string, boolean> = {}
+    if (!newExpense.date)                                   errors.date = true
+    if (!newExpense.amount || Number(newExpense.amount) <= 0) errors.amount = true
+    if (!newExpense.category)                               errors.category = true
+    if (!newExpense.payment_method)                         errors.payment_method = true
+    if (Object.keys(errors).length > 0) {
+      setFormErrors(errors)
+      toast.error('Completa los campos obligatorios')
       return
     }
+    setFormErrors({})
     setSaving(true)
     try {
       const created = await api.egresos.create({
@@ -211,7 +240,8 @@ export default function IngresosEgresos() {
       setExpenses(prev => [created, ...prev].sort((a, b) => b.date.localeCompare(a.date) || b.id - a.id))
       toast.success('Egreso registrado')
       setShowModal(false)
-      setNewExpense({ date: new Date().toISOString().slice(0, 10), amount: '', category: '', description: '', payment_method: '' })
+      setFormErrors({})
+      setNewExpense({ date: localToday(), amount: '', category: '', description: '', payment_method: '' })
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Error al guardar')
     } finally {
@@ -434,6 +464,16 @@ export default function IngresosEgresos() {
           <span className="hidden sm:inline text-gray-600 self-center">–</span>
           <input type="date" value={dateEnd} onChange={e => setDateEnd(e.target.value)}
             className="rounded-xl border border-white/10 bg-white/5 px-3 py-1.5 text-sm text-gray-300 focus:border-yellow-500/50 focus:outline-none" />
+          <select
+            value={catFilter}
+            onChange={e => setCatFilter(e.target.value)}
+            className="rounded-xl border border-white/10 bg-white/5 px-3 py-1.5 text-sm text-gray-300 focus:border-yellow-500/50 focus:outline-none appearance-none"
+          >
+            <option value="" className="bg-gray-900">Todas las categorías</option>
+            {['Salarios', ...EXPENSE_CATEGORIES].map(cat => (
+              <option key={cat} value={cat} className="bg-gray-900">{cat}</option>
+            ))}
+          </select>
         </div>
         <Button variant="primary" size="sm" onClick={() => setShowModal(true)} className="w-full sm:w-auto justify-center">
           <Plus size={14} /> Nuevo Egreso
@@ -453,7 +493,7 @@ export default function IngresosEgresos() {
             </tr>
           </thead>
           <motion.tbody variants={stagger} initial="hidden" animate="show">
-            {expenses.map(e => (
+            {expenses.filter(e => !catFilter || (e.category ?? '') === catFilter).map(e => (
               <motion.tr key={e.id} variants={rowAnim} className="border-b border-white/5 hover:bg-white/[0.02] transition-colors group">
                 <td className="px-3 py-3 text-gray-400 text-xs whitespace-nowrap">
                   {format(parseISO(e.date), "d MMM yy", { locale: es })}
@@ -474,8 +514,10 @@ export default function IngresosEgresos() {
             ))}
           </motion.tbody>
         </table>
-        {expenses.length === 0 && (
-          <p className="text-center text-gray-600 py-10 text-sm">Sin egresos en el período seleccionado</p>
+        {expenses.filter(e => !catFilter || (e.category ?? '') === catFilter).length === 0 && (
+          <p className="text-center text-gray-600 py-10 text-sm">
+            {catFilter ? `Sin egresos de "${catFilter}" en el período` : 'Sin egresos en el período seleccionado'}
+          </p>
         )}
       </div>
 
@@ -485,7 +527,7 @@ export default function IngresosEgresos() {
           <motion.div
             initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
             className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
-            onClick={e => { if (e.target === e.currentTarget) setShowModal(false) }}
+            onClick={e => { if (e.target === e.currentTarget) { setShowModal(false); setFormErrors({}) } }}
           >
             <motion.div
               initial={{ opacity: 0, scale: 0.94, y: 12 }}
@@ -498,37 +540,39 @@ export default function IngresosEgresos() {
 
               <div className="space-y-3">
                 <div>
-                  <label className="text-xs text-gray-500 block mb-1.5">Fecha *</label>
+                  <label className={cn("text-xs block mb-1.5", formErrors.date ? "text-red-400" : "text-gray-500")}>Fecha *</label>
                   <input type="date" value={newExpense.date}
-                    onChange={e => setNewExpense(f => ({ ...f, date: e.target.value }))}
-                    className={inputCls} />
+                    onChange={e => { setNewExpense(f => ({ ...f, date: e.target.value })); setFormErrors(fe => ({ ...fe, date: false })) }}
+                    className={cn(inputCls, formErrors.date && "!border-red-500/60")} />
                 </div>
                 <div>
-                  <label className="text-xs text-gray-500 block mb-1.5">Monto *</label>
+                  <label className={cn("text-xs block mb-1.5", formErrors.amount ? "text-red-400" : "text-gray-500")}>Monto *</label>
                   <input type="text" inputMode="numeric" placeholder="0" value={fmtCOP(newExpense.amount)}
-                    onChange={e => setNewExpense(f => ({ ...f, amount: parseCOP(e.target.value) }))}
-                    className={inputCls} />
+                    onChange={e => { setNewExpense(f => ({ ...f, amount: parseCOP(e.target.value) })); setFormErrors(fe => ({ ...fe, amount: false })) }}
+                    className={cn(inputCls, formErrors.amount && "!border-red-500/60")} />
                 </div>
                 <div>
-                  <label className="text-xs text-gray-500 block mb-1.5">Categoría</label>
+                  <label className={cn("text-xs block mb-1.5", formErrors.category ? "text-red-400" : "text-gray-500")}>Categoría *</label>
                   <select value={newExpense.category}
-                    onChange={e => setNewExpense(f => ({ ...f, category: e.target.value }))}
-                    className="w-full rounded-xl border border-white/10 bg-gray-800 px-3 py-2.5 text-sm text-gray-100 focus:border-yellow-500/50 focus:outline-none focus:ring-2 focus:ring-yellow-500/20 appearance-none">
-                    <option value="" className="bg-gray-800 text-gray-400">Sin categoría</option>
-                    {EXPENSE_CATEGORIES.map(c => <option key={c} value={c} className="bg-gray-800">{c}</option>)}
+                    onChange={e => { setNewExpense(f => ({ ...f, category: e.target.value })); setFormErrors(fe => ({ ...fe, category: false })) }}
+                    className={cn("w-full rounded-xl border bg-gray-800 px-3 py-2.5 text-sm focus:border-yellow-500/50 focus:outline-none focus:ring-2 focus:ring-yellow-500/20 appearance-none",
+                      formErrors.category ? "border-red-500/60 text-gray-500" : newExpense.category ? "border-white/10 text-gray-100" : "border-white/10 text-gray-500")}>
+                    <option value="" className="bg-gray-800 text-gray-400">Selecciona una categoría...</option>
+                    {EXPENSE_CATEGORIES.map(c => <option key={c} value={c} className="bg-gray-800 text-gray-100">{c}</option>)}
                   </select>
                 </div>
                 <div>
-                  <label className="text-xs text-gray-500 block mb-1.5">Método de pago</label>
+                  <label className={cn("text-xs block mb-1.5", formErrors.payment_method ? "text-red-400" : "text-gray-500")}>Método de pago *</label>
                   <select value={newExpense.payment_method}
-                    onChange={e => setNewExpense(f => ({ ...f, payment_method: e.target.value }))}
-                    className="w-full rounded-xl border border-white/10 bg-gray-800 px-3 py-2.5 text-sm text-gray-100 focus:border-yellow-500/50 focus:outline-none focus:ring-2 focus:ring-yellow-500/20 appearance-none">
-                    <option value="" className="bg-gray-800 text-gray-400">Sin especificar</option>
-                    <option value="Efectivo"      className="bg-gray-800">Efectivo</option>
-                    <option value="Nequi"         className="bg-gray-800">Nequi</option>
-                    <option value="Bancolombia"   className="bg-gray-800">Bancolombia</option>
-                    <option value="Datáfono"      className="bg-gray-800">Banco Caja Social</option>
-                    <option value="Transferencia" className="bg-gray-800">Transferencia</option>
+                    onChange={e => { setNewExpense(f => ({ ...f, payment_method: e.target.value })); setFormErrors(fe => ({ ...fe, payment_method: false })) }}
+                    className={cn("w-full rounded-xl border bg-gray-800 px-3 py-2.5 text-sm focus:border-yellow-500/50 focus:outline-none focus:ring-2 focus:ring-yellow-500/20 appearance-none",
+                      formErrors.payment_method ? "border-red-500/60 text-gray-500" : newExpense.payment_method ? "border-white/10 text-gray-100" : "border-white/10 text-gray-500")}>
+                    <option value="" className="bg-gray-800 text-gray-400">Selecciona un método...</option>
+                    <option value="Efectivo"      className="bg-gray-800 text-gray-100">Efectivo</option>
+                    <option value="Nequi"         className="bg-gray-800 text-gray-100">Nequi</option>
+                    <option value="Bancolombia"   className="bg-gray-800 text-gray-100">Bancolombia</option>
+                    <option value="Datáfono"      className="bg-gray-800 text-gray-100">Banco Caja Social</option>
+                    <option value="Transferencia" className="bg-gray-800 text-gray-100">Transferencia</option>
                   </select>
                 </div>
                 <div>
@@ -540,7 +584,7 @@ export default function IngresosEgresos() {
               </div>
 
               <div className="flex gap-3 pt-1">
-                <Button variant="secondary" size="md" className="flex-1" onClick={() => setShowModal(false)}>
+                <Button variant="secondary" size="md" className="flex-1" onClick={() => { setShowModal(false); setFormErrors({}) }}>
                   Cancelar
                 </Button>
                 <Button variant="primary" size="md" className="flex-1" onClick={saveExpense} disabled={saving}>

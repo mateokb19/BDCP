@@ -1,6 +1,6 @@
 import { useState, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Car, Truck, Bike, Check, ChevronRight, Search, User, Phone, Palette, Hash, Calendar, Pencil, AlertTriangle, ShieldCheck, Sparkles, Wrench, Paintbrush, Shield, Layers, Plus, X } from 'lucide-react'
+import { Car, Truck, Bike, Check, ChevronRight, Search, User, Phone, Palette, Hash, Calendar, Pencil, AlertTriangle, ShieldCheck, Sparkles, Wrench, Paintbrush, Shield, Layers, Plus, Minus, X } from 'lucide-react'
 import { useNavigate, useLocation } from 'react-router'
 import { toast } from 'sonner'
 import { Button } from '@/app/components/ui/Button'
@@ -348,6 +348,9 @@ export default function IngresarServicio() {
   function hasPartSelector(service: Service): boolean {
     return service.category === 'polarizado' || service.name.toLowerCase().includes('parcial')
   }
+  function isCountableOtro(service: Service): boolean {
+    return service.name === 'Restauración de farolas'
+  }
   function getPartQty(id: number): number {
     return partQuantities[id] ?? 1
   }
@@ -358,7 +361,7 @@ export default function IngresarServicio() {
   function getEffectivePrice(service: Service): number {
     if (form.warrantyServiceIds.includes(service.id)) return 0
     const isPpfPol = service.category === 'ppf' || service.category === 'polarizado'
-    const qty = isPpfPol ? 1 : (hasPartSelector(service) ? getPartQty(service.id) : 1)
+    const qty = isPpfPol ? 1 : (isCountableOtro(service) || hasPartSelector(service)) ? getPartQty(service.id) : 1
     const custom = form.customPrices[service.id]
     if (custom !== undefined && custom !== '') {
       const n = Number(custom)
@@ -438,7 +441,13 @@ export default function IngresarServicio() {
         custom_name: cs.name.trim(),
       }))
 
-      const itemOverrides = [...customOverrides, ...warrantyOverrides, ...customOverridesOtro]
+      // Countable otro services (e.g. Restauración de farolas) with qty > 1 need a unit_price override
+      const countableOtroOverrides = form.selectedServices
+        .map(id => services.find(s => s.id === id))
+        .filter((s): s is Service => !!s && isCountableOtro(s) && getPartQty(s.id) > 1 && !form.warrantyServiceIds.includes(s.id))
+        .map(s => ({ service_id: s.id, unit_price: getStandardPrice(s) * getPartQty(s.id) }))
+
+      const itemOverrides = [...customOverrides, ...warrantyOverrides, ...customOverridesOtro, ...countableOtroOverrides]
       const allServiceIds = [...form.selectedServices, ...customIds]
 
       const scheduledDeliveryAt = form.deliveryDate
@@ -809,12 +818,12 @@ export default function IngresarServicio() {
                                   {/* ── PINTURA: pieces list + fixed prices ─────────── */}
                                   {area.id === 'pintura' && (
                                     <div className={cn('rounded-xl border p-3', categoryColors.pintura)}>
-                                      <p className="text-[11px] text-gray-600 mb-3">½ pieza $220.000 · 1 pieza $430.000 · 2 piezas $860.000</p>
+                                      <p className="text-[11px] text-gray-600 mb-3">¼ pieza $110.000 · ½ pieza $220.000 · 1 pieza $440.000 · 1½ piezas $660.000 · 2 piezas $880.000</p>
                                       <div className="space-y-1 max-h-72 overflow-y-auto pr-1">
                                         {services.filter(s => s.category === 'pintura').map(service => {
                                           const price   = getStandardPrice(service)
                                           const checked = form.selectedServices.includes(service.id)
-                                          const pieces  = price >= 800000 ? '2 piezas' : price >= 400000 ? '1 pieza' : '½ pieza'
+                                          const pieces  = price >= 800000 ? '2 piezas' : price >= 600000 ? '1½ piezas' : price >= 400000 ? '1 pieza' : price >= 150000 ? '½ pieza' : '¼ pieza'
                                           return (
                                             <motion.label key={service.id} whileHover={{ x: 2 }}
                                               className="flex items-center gap-3 rounded-lg px-2 py-1.5 cursor-pointer hover:bg-white/5 transition-colors">
@@ -893,6 +902,40 @@ export default function IngresarServicio() {
                                       {otroFixed.map(service => {
                                         const price   = getStandardPrice(service)
                                         const checked = form.selectedServices.includes(service.id)
+                                        if (isCountableOtro(service)) {
+                                          const qty = partQuantities[service.id] ?? 0
+                                          return (
+                                            <div key={service.id} className="flex items-center gap-2 rounded-lg px-2 py-1.5 hover:bg-white/5 transition-colors">
+                                              <span className="flex-1 text-sm text-gray-200">{service.name}</span>
+                                              <div className="flex items-center gap-1.5 shrink-0">
+                                                <button type="button"
+                                                  onClick={() => {
+                                                    const newQty = Math.max(0, qty - 1)
+                                                    setPartQuantities(prev => ({ ...prev, [service.id]: newQty }))
+                                                    if (newQty === 0) setForm(f => ({ ...f, selectedServices: f.selectedServices.filter(id => id !== service.id) }))
+                                                  }}
+                                                  disabled={qty === 0}
+                                                  className="w-7 h-7 rounded-lg border border-white/10 bg-white/5 text-gray-300 hover:bg-white/10 flex items-center justify-center transition-colors disabled:opacity-30 disabled:cursor-not-allowed">
+                                                  <Minus size={12} />
+                                                </button>
+                                                <span className={cn('w-5 text-center text-sm font-semibold', qty > 0 ? 'text-yellow-400' : 'text-gray-600')}>{qty}</span>
+                                                <button type="button"
+                                                  onClick={() => {
+                                                    const newQty = qty + 1
+                                                    setPartQuantities(prev => ({ ...prev, [service.id]: newQty }))
+                                                    if (qty === 0) setForm(f => ({ ...f, selectedServices: [...f.selectedServices, service.id] }))
+                                                  }}
+                                                  disabled={qty >= 10}
+                                                  className="w-7 h-7 rounded-lg border border-white/10 bg-white/5 text-gray-300 hover:bg-white/10 flex items-center justify-center transition-colors disabled:opacity-30 disabled:cursor-not-allowed">
+                                                  <Plus size={12} />
+                                                </button>
+                                                <span className="text-sm font-medium text-yellow-400 w-24 text-right">
+                                                  {qty > 0 ? `$${(price * qty).toLocaleString('es-CO')}` : `$${price.toLocaleString('es-CO')}`}
+                                                </span>
+                                              </div>
+                                            </div>
+                                          )
+                                        }
                                         return (
                                           <motion.label key={service.id} whileHover={{ x: 2 }}
                                             className="flex items-center gap-3 rounded-lg px-2 py-1.5 cursor-pointer hover:bg-white/5 transition-colors">

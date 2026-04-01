@@ -43,7 +43,9 @@ def list_clients(search: Optional[str] = None, db: Session = Depends(get_db)):
     if search:
         term = f"%{search}%"
         q = q.filter(
-            models.Client.name.ilike(term) | models.Client.phone.ilike(term)
+            models.Client.name.ilike(term) |
+            models.Client.phone.ilike(term) |
+            models.Client.vehicles.any(models.Vehicle.plate.ilike(term))
         )
     clients = q.order_by(models.Client.name).all()
     return [_build_client_out(c) for c in clients]

@@ -59,10 +59,12 @@ def _std(item) -> Decimal:
 
 
 def _pintura_pieces(standard_price: Decimal) -> Decimal:
-    """Convert a pintura item standard price to piece count (½ / 1 / 2)."""
-    if standard_price >= Decimal("800000"): return Decimal("2")
-    if standard_price >= Decimal("400000"): return Decimal("1")
-    if standard_price >  Decimal("0"):      return Decimal("0.5")
+    """Convert a pintura item standard price to piece count (¼ / ½ / 1 / 1.5 / 2)."""
+    if standard_price >= Decimal("800000"):  return Decimal("2")
+    if standard_price >= Decimal("600000"):  return Decimal("1.5")
+    if standard_price >= Decimal("400000"):  return Decimal("1")
+    if standard_price >= Decimal("150000"):  return Decimal("0.5")
+    if standard_price >  Decimal("0"):       return Decimal("0.25")
     return Decimal("0")
 
 
