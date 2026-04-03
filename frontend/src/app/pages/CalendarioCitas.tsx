@@ -129,12 +129,20 @@ export default function CalendarioCitas() {
   const calEnd     = endOfWeek(monthEnd,   { weekStartsOn: 0 })
   const calDays    = eachDayOfInterval({ start: calStart, end: calEnd })
 
-  // Fetch appointments whenever month changes
+  // Fetch appointments whenever month changes; also fetch adjacent months if the
+  // calendar grid shows trailing/leading days from them.
   useEffect(() => {
     const month = format(currentMonth, 'yyyy-MM')
     setLoading(true)
-    api.appointments.list(month)
-      .then(setAppointments)
+    const fetches: Promise<ApiAppointment[]>[] = [api.appointments.list(month)]
+    if (!isSameMonth(calStart, currentMonth)) {
+      fetches.push(api.appointments.list(format(calStart, 'yyyy-MM')))
+    }
+    if (!isSameMonth(calEnd, currentMonth)) {
+      fetches.push(api.appointments.list(format(calEnd, 'yyyy-MM')))
+    }
+    Promise.all(fetches)
+      .then(results => setAppointments(results.flat()))
       .catch(() => toast.error('Error al cargar citas'))
       .finally(() => setLoading(false))
   }, [currentMonth])

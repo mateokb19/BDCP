@@ -152,6 +152,7 @@ export interface ApiCeramicTreatment {
   created_at:       string
   vehicle?:         ApiCeramicVehicle
   operator?:        ApiCeramicOperator
+  maintenance_dates: string[]
 }
 
 export interface ApiLiqWeekOrderItem {

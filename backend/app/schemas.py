@@ -261,6 +261,7 @@ class CeramicTreatmentOut(OrmBase):
     created_at:       datetime
     vehicle:          Optional[CeramicVehicleOut]
     operator:         Optional[CeramicOperatorOut]
+    maintenance_dates: list[date] = []
 
 
 # ── Historial ─────────────────────────────────────────────────────────────────
