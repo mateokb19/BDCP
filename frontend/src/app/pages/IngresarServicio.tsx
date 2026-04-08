@@ -226,6 +226,7 @@ export default function IngresarServicio() {
   const [partQuantities, setPartQuantities] = useState<Record<number, number>>({})
   const [submitting, setSubmitting]   = useState(false)
   const [plateTypeMismatch, setPlateTypeMismatch] = useState(false)
+  const [latOperatorPays, setLatOperatorPays] = useState<Record<number, string>>({})
   const [form, setForm] = useState<OrderDraft>({
     plate:       fromAppt?.plate?.toUpperCase() ?? '',
     brand:       fromAppt?.brand ?? '',
@@ -402,11 +403,26 @@ export default function IngresarServicio() {
     const price = custom !== undefined && custom !== '' ? Number(custom) : Number(s.price_automovil)
     return price <= 0
   })
+
+  const hasLatoneria = selectedServiceObjs.some(s => s.category === 'latoneria')
+  const latClientTotal = selectedServiceObjs
+    .filter(s => s.category === 'latoneria')
+    .reduce((sum, s) => {
+      const custom = form.customPrices[s.id]
+      return sum + (custom !== undefined && custom !== '' ? Number(custom) : Number(s.price_automovil))
+    }, 0)
   // Custom service has name but no price — block confirm
   const customWithNoPrice = customServices.filter(cs => cs.name && !Number(parseCOP(cs.price)))
 
+  // Latonería services with no operator pay assigned
+  const latWithNoOperatorPay = selectedServiceObjs.filter(s => {
+    if (s.category !== 'latoneria') return false
+    const v = latOperatorPays[s.id]
+    return !v || Number(parseCOP(v)) <= 0
+  })
+
   async function handleConfirm() {
-    if (!vehicleType || submitting || latWithNoPrice.length > 0 || customWithNoPrice.length > 0) return
+    if (!vehicleType || submitting || latWithNoPrice.length > 0 || customWithNoPrice.length > 0 || latWithNoOperatorPay.length > 0) return
     setSubmitting(true)
     try {
       // Custom price overrides (skip if service is warranty — warranty takes precedence)
@@ -469,6 +485,11 @@ export default function IngresarServicio() {
         downpaymentMethod: abonoAmt > 0 && form.downpaymentMethod ? form.downpaymentMethod : undefined,
         isWarranty:        form.isWarranty,
         itemOverrides: itemOverrides.length > 0 ? itemOverrides : undefined,
+        latoneraOperatorPays: hasLatoneria
+          ? selectedServiceObjs
+              .filter(s => s.category === 'latoneria' && latOperatorPays[s.id] && Number(parseCOP(latOperatorPays[s.id])) > 0)
+              .map(s => ({ service_id: s.id, amount: Number(parseCOP(latOperatorPays[s.id])) }))
+          : undefined,
       })
       toast.success(`Orden ${orderNumber} creada`, {
         description: `${form.plate} · ${form.clientName} → Estado de Patio`,
@@ -480,7 +501,7 @@ export default function IngresarServicio() {
       setStep(1); setPrevStep(1); setVehicleType(null); setExpandedAreas(new Set()); setPartQuantities({})
       setForm({ plate: '', brand: '', model: '', color: '', clientName: '', clientPhone: '', selectedServices: [], notes: '', deliveryDate: '', deliveryTime: '', customPrices: {}, warrantyServiceIds: [], downpayment: '', downpaymentMethod: '', isWarranty: false })
       setCustomServices([]); setOtroOpen(false)
-      setBrandQuery('')
+      setBrandQuery(''); setLatOperatorPays({})
       navigate('/')
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Error al crear la orden')
@@ -1414,15 +1435,66 @@ export default function IngresarServicio() {
                   </div>
                 </div>
 
+                {/* Pago al latonero — por servicio */}
+                {hasLatoneria && (
+                  <div className="mt-4 pt-4 border-t border-white/8">
+                    <p className="text-xs text-blue-400 font-medium uppercase tracking-wider mb-2">Pago al latonero</p>
+                    <div className="space-y-2">
+                      {selectedServiceObjs.filter(s => s.category === 'latoneria').map(s => {
+                        const custom = form.customPrices[s.id]
+                        const svcPrice = custom !== undefined && custom !== '' ? Number(custom) : Number(s.price_automovil)
+                        const val = latOperatorPays[s.id] ?? ''
+                        return (
+                          <div key={s.id} className="rounded-xl border border-blue-500/20 bg-blue-500/5 px-4 py-3 space-y-1.5">
+                            <div className="flex items-center justify-between">
+                              <p className="text-xs text-gray-300 font-medium truncate flex-1 min-w-0">{s.name}</p>
+                              <span className="text-[11px] text-gray-500 ml-2 shrink-0">
+                                máx. <span className="text-gray-400">${svcPrice.toLocaleString('es-CO')}</span>
+                              </span>
+                            </div>
+                            <div className="relative">
+                              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 text-sm">$</span>
+                              <input
+                                type="text"
+                                inputMode="numeric"
+                                placeholder="0"
+                                value={fmtCOP(val)}
+                                onChange={e => {
+                                  const raw = parseCOP(e.target.value)
+                                  setLatOperatorPays(prev => ({
+                                    ...prev,
+                                    [s.id]: raw === '' ? '' : String(Math.min(Number(raw), svcPrice)),
+                                  }))
+                                }}
+                                onWheel={e => e.currentTarget.blur()}
+                                className="w-full rounded-xl border border-blue-500/30 bg-white/5 pl-7 pr-3 py-2 text-sm text-gray-100 focus:border-blue-500/60 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                              />
+                            </div>
+                          </div>
+                        )
+                      })}
+                      {(() => {
+                        const totalPay = Object.values(latOperatorPays).reduce((s, v) => s + (Number(parseCOP(v)) || 0), 0)
+                        return totalPay > 0 ? (
+                          <p className="text-xs text-blue-400/70 text-right">
+                            Total pago latonero: <span className="font-medium text-blue-300">${totalPay.toLocaleString('es-CO')}</span>
+                          </p>
+                        ) : null
+                      })()}
+                    </div>
+                  </div>
+                )}
+
                 {/* Actions */}
                 <div className="flex gap-3 pt-2">
                   <Button variant="secondary" size="lg" className="flex-1" onClick={() => goTo(2)} disabled={submitting}>
                     ← Editar
                   </Button>
                   <Button variant="primary" size="lg" className="flex-1" onClick={handleConfirm}
-                    disabled={submitting || latWithNoPrice.length > 0 || customWithNoPrice.length > 0}>
+                    disabled={submitting || latWithNoPrice.length > 0 || customWithNoPrice.length > 0 || latWithNoOperatorPay.length > 0}>
                     {submitting ? 'Guardando...'
                       : latWithNoPrice.length > 0 ? 'Ingresa el precio de latonería'
+                      : latWithNoOperatorPay.length > 0 ? 'Ingresa el pago al latonero'
                       : customWithNoPrice.length > 0 ? 'Ingresa el precio del servicio adicional'
                       : <><Check size={18} /> Confirmar Orden</>}
                   </Button>

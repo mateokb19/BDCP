@@ -84,8 +84,6 @@ def advance_status(id: int, payload: schemas.AdvancePayload = schemas.AdvancePay
         entry.order.payment_nequi       = payload.payment_nequi
         entry.order.payment_bancolombia = payload.payment_bancolombia
         entry.order.paid                = True
-        if payload.latoneria_operator_pay is not None:
-            entry.order.latoneria_operator_pay = payload.latoneria_operator_pay
 
     db.commit()
     db.refresh(entry)
@@ -190,6 +188,19 @@ def edit_patio_entry(id: int, payload: schemas.PatioPatch, db: Session = Depends
 
     if "scheduled_delivery_at" in payload.model_fields_set:
         entry.scheduled_delivery_at = payload.scheduled_delivery_at
+
+    if payload.latoneria_operator_pays:
+        lat_pay_map = {lp.service_id: lp.amount for lp in payload.latoneria_operator_pays}
+        # Update per-item pay amounts
+        for item in entry.order.items:
+            if item.service_category == models.ServiceCategoryEnum.latoneria and item.service_id in lat_pay_map:
+                item.latoneria_operator_pay = lat_pay_map[item.service_id]
+        # Recalculate order-level total
+        entry.order.latoneria_operator_pay = sum(
+            (item.latoneria_operator_pay or 0)
+            for item in entry.order.items
+            if item.service_category == models.ServiceCategoryEnum.latoneria
+        ) or None
 
     db.commit()
     db.refresh(entry)

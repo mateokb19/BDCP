@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Search, ChevronDown, ChevronUp, Clock, User, Wrench, Download, Eye, EyeOff, ArrowLeft } from 'lucide-react'
+import { Search, ChevronDown, ChevronUp, Clock, User, Wrench, Download, Eye, EyeOff, ArrowLeft, ArrowUp, ArrowDown, X } from 'lucide-react'
 import { format, parseISO, startOfWeek, startOfMonth, endOfMonth } from 'date-fns'
 import { es } from 'date-fns/locale'
 import { toast } from 'sonner'
@@ -17,6 +17,7 @@ const TODAY = format(new Date(), 'yyyy-MM-dd')
 const LS_KEY = 'bdcpolo_revealed_orders'
 const ADMIN_PASSWORD = 'BDCP123'
 const RESTRICTED_CATS = new Set(['ppf', 'polarizado'])
+const PAGE_SIZE = 30
 
 function hasRestrictedServices(entry: { items: { service_category: string }[] }) {
   return entry.items.some(i => RESTRICTED_CATS.has(i.service_category))
@@ -310,31 +311,58 @@ export default function Historial() {
     setRevealedIds(next)
   }
 
-  // ── Main view ──────────────────────────────────────────────────────────────
-  const [entries, setEntries]         = useState<ApiHistorialEntry[]>([])
-  const [loading, setLoading]         = useState(true)
-  const [dateFilter, setDateFilter]   = useState(TODAY)
-  const [search, setSearch]           = useState('')
+  // ── Main view state ─────────────────────────────────────────────────────────
+  const [entries,         setEntries]         = useState<ApiHistorialEntry[]>([])
+  const [loading,         setLoading]         = useState(true)
+  const [total,           setTotal]           = useState(0)
+  const [offset,          setOffset]          = useState(0)
+  const [dayFilter,       setDayFilter]       = useState('')
+  const [monthFilter,     setMonthFilter]     = useState('')
+  const [sortDir,         setSortDir]         = useState<'desc' | 'asc'>('desc')
+  const [search,          setSearch]          = useState('')
   const [debouncedSearch, setDebouncedSearch] = useState('')
-  const [showDlModal, setShowDlModal] = useState(false)
-  const [dlLoading, setDlLoading]     = useState(false)
+  const [showDlModal,     setShowDlModal]     = useState(false)
+  const [dlLoading,       setDlLoading]       = useState(false)
 
   useEffect(() => {
     const t = setTimeout(() => setDebouncedSearch(search), 350)
     return () => clearTimeout(t)
   }, [search])
 
-  const fetchHistory = useCallback(async () => {
+  const fetchHistory = useCallback(async (opts?: { append?: boolean; offsetOverride?: number }) => {
+    const { append = false, offsetOverride = 0 } = opts ?? {}
     setLoading(true)
     try {
-      const data = await api.history.list({ date_filter: dateFilter, search: debouncedSearch || undefined })
-      setEntries(data)
+      const result = await api.history.list({
+        date_filter: dayFilter   || undefined,
+        month:       monthFilter || undefined,
+        search:      debouncedSearch || undefined,
+        offset:      append ? offsetOverride : 0,
+        limit:       PAGE_SIZE,
+        sort:        sortDir,
+      })
+      if (append) {
+        setEntries(prev => [...prev, ...result.items])
+      } else {
+        setEntries(result.items)
+      }
+      setTotal(result.total)
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Error al cargar historial')
     } finally { setLoading(false) }
-  }, [dateFilter, debouncedSearch])
+  }, [dayFilter, monthFilter, debouncedSearch, sortDir])
 
-  useEffect(() => { fetchHistory() }, [fetchHistory])
+  useEffect(() => {
+    setOffset(0)
+    setEntries([])
+    fetchHistory({ append: false })
+  }, [fetchHistory])
+
+  function handleLoadMore() {
+    const newOffset = offset + PAGE_SIZE
+    setOffset(newOffset)
+    fetchHistory({ append: true, offsetOverride: newOffset })
+  }
 
   const visibleEntries = entries.filter(e => !hasRestrictedServices(e) || revealedIds.has(e.id))
 
@@ -343,8 +371,8 @@ export default function Historial() {
     if (from > to)    { toast.error('La fecha inicial no puede ser mayor a la final'); return }
     setDlLoading(true)
     try {
-      const data = await api.history.list({ date_from: from, date_to: to })
-      const filtered = data.filter(e => !hasRestrictedServices(e) || revealedIds.has(e.id))
+      const result = await api.history.list({ date_from: from, date_to: to, limit: 1000 })
+      const filtered = result.items.filter(e => !hasRestrictedServices(e) || revealedIds.has(e.id))
       if (filtered.length === 0) { toast.error('No hay servicios en ese período'); return }
       printReport(filtered, from, to)
       setShowDlModal(false)
@@ -352,45 +380,75 @@ export default function Historial() {
     finally { setDlLoading(false) }
   }
 
-  // ── Admin view ─────────────────────────────────────────────────────────────
-  const [adminEntries, setAdminEntries]         = useState<ApiHistorialEntry[]>([])
-  const [adminLoading, setAdminLoading]         = useState(false)
-  const [adminDateFilter, setAdminDateFilter]   = useState(TODAY)
-  const [adminSearch, setAdminSearch]           = useState('')
+  // ── Admin view state ────────────────────────────────────────────────────────
+  const [adminEntries,         setAdminEntries]         = useState<ApiHistorialEntry[]>([])
+  const [adminLoading,         setAdminLoading]         = useState(false)
+  const [adminTotal,           setAdminTotal]           = useState(0)
+  const [adminOffset,          setAdminOffset]          = useState(0)
+  const [adminDayFilter,       setAdminDayFilter]       = useState('')
+  const [adminMonthFilter,     setAdminMonthFilter]     = useState('')
+  const [adminSortDir,         setAdminSortDir]         = useState<'desc' | 'asc'>('desc')
+  const [adminSearch,          setAdminSearch]          = useState('')
   const [adminDebouncedSearch, setAdminDebouncedSearch] = useState('')
-  const [showAdminDlModal, setShowAdminDlModal] = useState(false)
-  const [adminDlLoading, setAdminDlLoading]     = useState(false)
+  const [showAdminDlModal,     setShowAdminDlModal]     = useState(false)
+  const [adminDlLoading,       setAdminDlLoading]       = useState(false)
 
   useEffect(() => {
     const t = setTimeout(() => setAdminDebouncedSearch(adminSearch), 350)
     return () => clearTimeout(t)
   }, [adminSearch])
 
-  const fetchAdminHistory = useCallback(async () => {
+  const fetchAdminHistory = useCallback(async (opts?: { append?: boolean; offsetOverride?: number }) => {
     if (!adminView) return
+    const { append = false, offsetOverride = 0 } = opts ?? {}
     setAdminLoading(true)
     try {
-      const data = await api.history.list({ date_filter: adminDateFilter, search: adminDebouncedSearch || undefined })
-      setAdminEntries(data.filter(hasRestrictedServices))
+      const result = await api.history.list({
+        date_filter: adminDayFilter   || undefined,
+        month:       adminMonthFilter || undefined,
+        search:      adminDebouncedSearch || undefined,
+        offset:      append ? offsetOverride : 0,
+        limit:       PAGE_SIZE,
+        sort:        adminSortDir,
+      })
+      const restricted = result.items.filter(hasRestrictedServices)
+      if (append) {
+        setAdminEntries(prev => [...prev, ...restricted])
+      } else {
+        setAdminEntries(restricted)
+      }
+      setAdminTotal(result.total)
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Error al cargar historial')
     } finally { setAdminLoading(false) }
-  }, [adminView, adminDateFilter, adminDebouncedSearch])
+  }, [adminView, adminDayFilter, adminMonthFilter, adminDebouncedSearch, adminSortDir])
 
-  useEffect(() => { fetchAdminHistory() }, [fetchAdminHistory])
+  useEffect(() => {
+    setAdminOffset(0)
+    setAdminEntries([])
+    fetchAdminHistory({ append: false })
+  }, [fetchAdminHistory])
+
+  function handleAdminLoadMore() {
+    const newOffset = adminOffset + PAGE_SIZE
+    setAdminOffset(newOffset)
+    fetchAdminHistory({ append: true, offsetOverride: newOffset })
+  }
 
   async function handleAdminDownload(from: string, to: string) {
     if (!from || !to) { toast.error('Selecciona el rango de fechas'); return }
     if (from > to)    { toast.error('La fecha inicial no puede ser mayor a la final'); return }
     setAdminDlLoading(true)
     try {
-      const data = await api.history.list({ date_from: from, date_to: to })
-      if (data.length === 0) { toast.error('No hay servicios en ese período'); return }
-      printReport(data, from, to)  // no filter — all services
+      const result = await api.history.list({ date_from: from, date_to: to, limit: 1000 })
+      if (result.items.length === 0) { toast.error('No hay servicios en ese período'); return }
+      printReport(result.items, from, to)
       setShowAdminDlModal(false)
     } catch { toast.error('Error al generar el reporte') }
     finally { setAdminDlLoading(false) }
   }
+
+  const filterBarCls = "flex-1 rounded-xl border border-white/10 bg-gray-900 px-3 py-2 text-sm text-gray-100 focus:border-yellow-500/50 focus:outline-none [color-scheme:dark]"
 
   // ── Render: admin view ─────────────────────────────────────────────────────
   if (adminView) {
@@ -398,7 +456,7 @@ export default function Historial() {
       <div className="max-w-xl mx-auto">
         <PageHeader
           title="PPF y Polarizado"
-          subtitle={`${adminEntries.length} servicio${adminEntries.length !== 1 ? 's' : ''}`}
+          subtitle={`${adminEntries.length}${adminEntries.length < adminTotal ? ` de ${adminTotal}` : ''} servicio${adminTotal !== 1 ? 's' : ''}`}
           actions={
             <div className="flex items-center gap-2">
               <Button variant="secondary" size="md" onClick={() => setAdminView(false)}>
@@ -412,12 +470,39 @@ export default function Historial() {
         />
 
         <div className="flex flex-col gap-3 mb-5">
-          <input
-            type="date"
-            value={adminDateFilter}
-            onChange={e => setAdminDateFilter(e.target.value)}
-            className="w-full rounded-xl border border-white/10 bg-gray-900 px-3 py-2 text-sm text-gray-100 focus:border-yellow-500/50 focus:outline-none focus:ring-2 focus:ring-yellow-500/20 appearance-none"
-          />
+          {/* Sort + day + month filter row */}
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setAdminSortDir(d => d === 'desc' ? 'asc' : 'desc')}
+              className="flex items-center gap-1.5 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-gray-400 hover:bg-white/10 hover:text-gray-200 transition-colors shrink-0"
+            >
+              {adminSortDir === 'desc' ? <ArrowDown size={14} /> : <ArrowUp size={14} />}
+              <span className="hidden sm:inline">{adminSortDir === 'desc' ? 'Más reciente' : 'Más antiguo'}</span>
+            </button>
+            <input
+              type="date"
+              value={adminDayFilter}
+              onChange={e => { setAdminDayFilter(e.target.value); setAdminMonthFilter('') }}
+              className={filterBarCls}
+            />
+            <input
+              type="month"
+              value={adminMonthFilter}
+              onChange={e => { setAdminMonthFilter(e.target.value); setAdminDayFilter('') }}
+              className={filterBarCls}
+            />
+            {(adminDayFilter || adminMonthFilter) && (
+              <button
+                type="button"
+                onClick={() => { setAdminDayFilter(''); setAdminMonthFilter('') }}
+                className="p-2 rounded-lg border border-white/10 bg-white/5 text-gray-500 hover:bg-white/10 hover:text-gray-300 transition-colors shrink-0"
+                title="Quitar filtro de fecha"
+              >
+                <X size={14} />
+              </button>
+            )}
+          </div>
           <div className="relative">
             <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none" />
             <input
@@ -429,7 +514,7 @@ export default function Historial() {
           </div>
         </div>
 
-        {adminLoading ? (
+        {adminLoading && adminEntries.length === 0 ? (
           <div className="flex items-center justify-center py-16">
             <p className="text-gray-500 text-sm">Cargando historial...</p>
           </div>
@@ -437,36 +522,45 @@ export default function Historial() {
           <EmptyState
             icon={Clock}
             title="Sin servicios"
-            description={adminDebouncedSearch ? 'No se encontraron resultados para tu búsqueda' : 'No hay servicios PPF ni Polarizado en esta fecha'}
+            description={adminDebouncedSearch ? 'No se encontraron resultados para tu búsqueda' : 'No hay servicios PPF ni Polarizado'}
           />
         ) : (
-          <div className="space-y-3 w-full overflow-hidden">
-            <AnimatePresence>
-              {adminEntries.map(entry => {
-                const isRevealed = revealedIds.has(entry.id)
-                return (
-                  <OrderCard
-                    key={entry.id}
-                    entry={entry}
-                    toggleButton={
-                      <button
-                        title={isRevealed ? 'Ocultar del historial principal' : 'Mostrar en historial principal'}
-                        onClick={() => toggleRevealed(entry.id)}
-                        className={cn(
-                          'p-1.5 rounded-lg border transition-colors',
-                          isRevealed
-                            ? 'border-yellow-500/40 bg-yellow-500/10 text-yellow-400 hover:bg-yellow-500/20'
-                            : 'border-white/10 bg-white/5 text-gray-500 hover:bg-white/10 hover:text-gray-300'
-                        )}
-                      >
-                        {isRevealed ? <EyeOff size={13} /> : <Eye size={13} />}
-                      </button>
-                    }
-                  />
-                )
-              })}
-            </AnimatePresence>
-          </div>
+          <>
+            <div className="space-y-3 w-full overflow-hidden">
+              <AnimatePresence>
+                {adminEntries.map(entry => {
+                  const isRevealed = revealedIds.has(entry.id)
+                  return (
+                    <OrderCard
+                      key={entry.id}
+                      entry={entry}
+                      toggleButton={
+                        <button
+                          title={isRevealed ? 'Ocultar del historial principal' : 'Mostrar en historial principal'}
+                          onClick={() => toggleRevealed(entry.id)}
+                          className={cn(
+                            'p-1.5 rounded-lg border transition-colors',
+                            isRevealed
+                              ? 'border-yellow-500/40 bg-yellow-500/10 text-yellow-400 hover:bg-yellow-500/20'
+                              : 'border-white/10 bg-white/5 text-gray-500 hover:bg-white/10 hover:text-gray-300'
+                          )}
+                        >
+                          {isRevealed ? <EyeOff size={13} /> : <Eye size={13} />}
+                        </button>
+                      }
+                    />
+                  )
+                })}
+              </AnimatePresence>
+            </div>
+            {adminEntries.length < adminTotal && (
+              <div className="mt-4 flex justify-center">
+                <Button variant="secondary" size="md" onClick={handleAdminLoadMore} disabled={adminLoading}>
+                  {adminLoading ? 'Cargando...' : 'Cargar más'}
+                </Button>
+              </div>
+            )}
+          </>
         )}
 
         <DownloadModal
@@ -484,7 +578,7 @@ export default function Historial() {
     <div className="max-w-xl mx-auto">
       <PageHeader
         title="Historial"
-        subtitle={`${visibleEntries.length} servicio${visibleEntries.length !== 1 ? 's' : ''}`}
+        subtitle={`${visibleEntries.length}${entries.length < total ? ` de ${total}` : ''} servicio${total !== 1 ? 's' : ''}`}
         actions={
           <div className="flex items-center gap-2">
             <button
@@ -502,12 +596,40 @@ export default function Historial() {
       />
 
       <div className="flex flex-col gap-3 mb-5">
-        <input
-          type="date"
-          value={dateFilter}
-          onChange={e => setDateFilter(e.target.value)}
-          className="w-full rounded-xl border border-white/10 bg-gray-900 px-3 py-2 text-sm text-gray-100 focus:border-yellow-500/50 focus:outline-none focus:ring-2 focus:ring-yellow-500/20 appearance-none"
-        />
+        {/* Sort + day + month filter row */}
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setSortDir(d => d === 'desc' ? 'asc' : 'desc')}
+            className="flex items-center gap-1.5 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-gray-400 hover:bg-white/10 hover:text-gray-200 transition-colors shrink-0"
+          >
+            {sortDir === 'desc' ? <ArrowDown size={14} /> : <ArrowUp size={14} />}
+            <span className="hidden sm:inline">{sortDir === 'desc' ? 'Más reciente' : 'Más antiguo'}</span>
+          </button>
+          <input
+            type="date"
+            value={dayFilter}
+            onChange={e => { setDayFilter(e.target.value); setMonthFilter('') }}
+            className={filterBarCls}
+          />
+          <input
+            type="month"
+            value={monthFilter}
+            onChange={e => { setMonthFilter(e.target.value); setDayFilter('') }}
+            className={filterBarCls}
+          />
+          {(dayFilter || monthFilter) && (
+            <button
+              type="button"
+              onClick={() => { setDayFilter(''); setMonthFilter('') }}
+              className="p-2 rounded-lg border border-white/10 bg-white/5 text-gray-500 hover:bg-white/10 hover:text-gray-300 transition-colors shrink-0"
+              title="Quitar filtro de fecha"
+            >
+              <X size={14} />
+            </button>
+          )}
+        </div>
+        {/* Search */}
         <div className="relative">
           <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none" />
           <input
@@ -519,7 +641,7 @@ export default function Historial() {
         </div>
       </div>
 
-      {loading ? (
+      {loading && entries.length === 0 ? (
         <div className="flex items-center justify-center py-16">
           <p className="text-gray-500 text-sm">Cargando historial...</p>
         </div>
@@ -527,16 +649,25 @@ export default function Historial() {
         <EmptyState
           icon={Clock}
           title="Sin servicios"
-          description={debouncedSearch ? 'No se encontraron resultados para tu búsqueda' : 'No hay servicios registrados para esta fecha'}
+          description={debouncedSearch ? 'No se encontraron resultados para tu búsqueda' : 'No hay servicios registrados'}
         />
       ) : (
-        <div className="space-y-3 w-full overflow-hidden">
-          <AnimatePresence>
-            {visibleEntries.map(entry => (
-              <OrderCard key={entry.id} entry={entry} />
-            ))}
-          </AnimatePresence>
-        </div>
+        <>
+          <div className="space-y-3 w-full overflow-hidden">
+            <AnimatePresence>
+              {visibleEntries.map(entry => (
+                <OrderCard key={entry.id} entry={entry} />
+              ))}
+            </AnimatePresence>
+          </div>
+          {entries.length < total && (
+            <div className="mt-4 flex justify-center">
+              <Button variant="secondary" size="md" onClick={handleLoadMore} disabled={loading}>
+                {loading ? 'Cargando...' : 'Cargar más'}
+              </Button>
+            </div>
+          )}
+        </>
       )}
 
       {/* Login modal */}

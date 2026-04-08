@@ -123,6 +123,9 @@ with engine.connect() as _conn:
         "ALTER TABLE service_orders ADD COLUMN IF NOT EXISTS "
         "pintura_liquidation_id INTEGER REFERENCES week_liquidations(id) ON DELETE SET NULL"
     ))
+    _conn.execute(text(
+        "ALTER TABLE service_order_items ADD COLUMN IF NOT EXISTS latoneria_operator_pay NUMERIC(12,2)"
+    ))
     # Remove legacy detallado operator if present
     _conn.execute(text(
         "DELETE FROM operators WHERE name = 'Jose Domingo Lindarte' AND operator_type = 'detallado'"

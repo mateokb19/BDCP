@@ -1,3 +1,4 @@
+import calendar
 from datetime import date
 from typing import Optional
 
@@ -7,24 +8,30 @@ from sqlalchemy.orm import Session, joinedload
 
 from app.database import get_db
 from app import models, schemas
-from app.tz import today_bogota
 
 router = APIRouter(prefix="/history", tags=["history"])
 
 
-@router.get("", response_model=list[schemas.HistorialEntryOut])
+@router.get("", response_model=schemas.HistorialPageOut)
 def list_history(
     date_filter: Optional[str] = None,
     date_from:   Optional[str] = None,
     date_to:     Optional[str] = None,
+    month:       Optional[str] = None,
     search:      Optional[str] = None,
+    offset:      int           = 0,
+    limit:       int           = 30,
+    sort:        str           = "desc",
     db: Session = Depends(get_db),
 ):
     """
-    List service orders.
-    - date_filter: YYYY-MM-DD (default = today, used for single-day view)
-    - date_from + date_to: YYYY-MM-DD range (used for PDF export)
-    - search: filters by plate, client name, or order number
+    List service orders (paginated).
+    - date_filter: YYYY-MM-DD — single day filter
+    - date_from + date_to: YYYY-MM-DD range — for PDF export (use limit=1000)
+    - month: YYYY-MM — filter by month
+    - No date params → returns all orders
+    - sort: 'desc' (newest first, default) | 'asc' (oldest first)
+    - offset/limit: pagination
     """
     q = (
         db.query(models.ServiceOrder)
@@ -44,12 +51,21 @@ def list_history(
             q = q.filter(models.ServiceOrder.date >= d_from, models.ServiceOrder.date <= d_to)
         except ValueError:
             pass
-    else:
+    elif date_filter:
         try:
-            target_date = date.fromisoformat(date_filter) if date_filter else today_bogota()
+            target_date = date.fromisoformat(date_filter)
+            q = q.filter(models.ServiceOrder.date == target_date)
         except ValueError:
-            target_date = today_bogota()
-        q = q.filter(models.ServiceOrder.date == target_date)
+            pass
+    elif month:
+        try:
+            y, m = (int(x) for x in month.split("-"))
+            d_from = date(y, m, 1)
+            d_to   = date(y, m, calendar.monthrange(y, m)[1])
+            q = q.filter(models.ServiceOrder.date >= d_from, models.ServiceOrder.date <= d_to)
+        except (ValueError, AttributeError):
+            pass
+    # else: no date filter → all orders
 
     if search and search.strip():
         s = f"%{search.strip()}%"
@@ -61,4 +77,10 @@ def list_history(
             )
         )
 
-    return q.order_by(models.ServiceOrder.created_at.desc()).all()
+    order_col = models.ServiceOrder.created_at
+    q = q.order_by(order_col.asc() if sort == "asc" else order_col.desc())
+
+    total = q.count()
+    items = q.offset(offset).limit(limit).all()
+
+    return {"items": items, "total": total}

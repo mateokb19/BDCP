@@ -571,6 +571,7 @@ export default function EstadoPatio() {
     serviceIds: [] as number[],
     customPrices: {} as Record<number, string>,
     operatorByType: {} as Record<string, string>,   // operator_type → operator_id
+    latOperatorPays: {} as Record<number, string>,  // service_id → operator pay amount
   })
   const [openCats, setOpenCats] = useState<Set<string>>(new Set())
   const [confirmCancel, setConfirmCancel] = useState(false)
@@ -586,7 +587,6 @@ export default function EstadoPatio() {
   // Payment modal state (delivery)
   const [paymentEntry, setPaymentEntry] = useState<ApiPatioEntry | null>(null)
   const [payMethods,   setPayMethods]   = useState<Record<string, string>>({})
-  const [latPay,       setLatPay]       = useState('')
   const [delivering,   setDelivering]   = useState(false)
   const [applyIva,     setApplyIva]     = useState(false)
   const [factura,      setFactura]      = useState(false)
@@ -665,7 +665,17 @@ export default function EstadoPatio() {
       }
     }
 
-    setEditForm({ serviceIds: selectedIds, customPrices: prices, operatorByType: opByType })
+    // Pre-fill latonería operator pays from per-item values
+    const latItems = items.filter(i => i.service_category === 'latoneria' && i.service_id != null)
+    const latPays: Record<number, string> = {}
+    for (const item of latItems) {
+      const perItemPay = Number(item.latoneria_operator_pay ?? 0)
+      if (perItemPay > 0) {
+        latPays[item.service_id!] = String(perItemPay)
+      }
+    }
+
+    setEditForm({ serviceIds: selectedIds, customPrices: prices, operatorByType: opByType, latOperatorPays: latPays })
     setOpenCats(new Set())
     setConfirmCancel(false)
     setEditingEntry(entry)
@@ -695,18 +705,22 @@ export default function EstadoPatio() {
         return
       }
     }
-
     try {
       // Build item_overrides for any custom prices
       const overrides = editForm.serviceIds
         .filter(id => editForm.customPrices[id] != null)
         .map(id => ({ service_id: id, unit_price: Number(parseCOP(editForm.customPrices[id])) }))
 
+      const latPayEntries = Object.entries(editForm.latOperatorPays)
+        .filter(([, v]) => Number(parseCOP(v)) > 0)
+        .map(([svcId, v]) => ({ service_id: Number(svcId), amount: Number(parseCOP(v)) }))
+
       const payload: Parameters<typeof api.patio.edit>[1] = {}
       if (canEdit) {
         payload.service_ids = editForm.serviceIds
         if (overrides.length > 0) payload.item_overrides = overrides
       }
+      if (latPayEntries.length > 0) payload.latoneria_operator_pays = latPayEntries
 
       // Resolve which operator to save as order.operator_id
       // Priority: detallado > first type with an assigned operator
@@ -807,7 +821,6 @@ export default function EstadoPatio() {
       }
       setPaymentEntry(entry)
       setPayMethods({})
-      setLatPay('')
       setApplyIva(false)
       const savedClient = entry.vehicle?.client
       const hasSavedFactura = !!(savedClient?.tipo_persona && savedClient?.identificacion)
@@ -863,10 +876,8 @@ export default function EstadoPatio() {
         payment[keyToField[k]] = Number(payMethods[k]) || 0
       }
     }
-    const hasLatoneria = (paymentEntry.order?.items ?? []).some(i => i.service_category === 'latoneria')
     const advancePayload: Parameters<typeof api.patio.advance>[1] = {
       ...payment,
-      ...(hasLatoneria && latPay ? { latoneria_operator_pay: Number(parseCOP(latPay)) } : {}),
     }
     setDelivering(true)
     try {
@@ -1232,9 +1243,8 @@ export default function EstadoPatio() {
                                               type="button"
                                               onClick={() => setEditForm(f => {
                                                 const next = { ...f, serviceIds: f.serviceIds.filter(id => id !== svcId) }
-                                                const cp = { ...next.customPrices }
-                                                delete cp[svcId]
-                                                next.customPrices = cp
+                                                const cp = { ...next.customPrices }; delete cp[svcId]; next.customPrices = cp
+                                                const lp = { ...next.latOperatorPays }; delete lp[svcId]; next.latOperatorPays = lp
                                                 return next
                                               })}
                                               className="p-1.5 rounded-lg text-gray-600 hover:text-red-400 hover:bg-red-500/10 transition-colors shrink-0"
@@ -1260,6 +1270,36 @@ export default function EstadoPatio() {
                                             />
                                           </div>
                                         )}
+                                        {/* Latonería operator pay per service */}
+                                        {canEdit && (() => {
+                                          const svcCat = services.find(s => s.id === svcId)?.category
+                                            ?? allItems.find(i => i.service_id === svcId)?.service_category
+                                          if (svcCat !== 'latoneria') return null
+                                          const latVal = editForm.latOperatorPays[svcId] ?? ''
+                                          return (
+                                            <div className="space-y-1">
+                                              <p className="text-[10px] font-medium uppercase tracking-wider text-blue-400">
+                                                Pago al latonero
+                                              </p>
+                                              <div className="flex items-center gap-2">
+                                                <span className="text-xs text-gray-500 shrink-0">$</span>
+                                                <input
+                                                  type="text"
+                                                  inputMode="numeric"
+                                                  placeholder="0"
+                                                  value={latVal ? fmtCOP(latVal) : ''}
+                                                  onChange={e => {
+                                                    const raw = parseCOP(e.target.value)
+                                                    const capped = raw ? String(Math.min(Number(raw), effPrice)) : ''
+                                                    setEditForm(f => ({ ...f, latOperatorPays: { ...f.latOperatorPays, [svcId]: capped } }))
+                                                  }}
+                                                  onWheel={e => e.currentTarget.blur()}
+                                                  className="flex-1 rounded-lg border border-blue-500/30 bg-blue-500/5 px-2 py-1 text-sm text-gray-100 text-right focus:outline-none focus:ring-1 focus:border-blue-500/50 focus:ring-blue-500/20"
+                                                />
+                                              </div>
+                                            </div>
+                                          )
+                                        })()}
                                       </div>
                                     </motion.div>
                                   )
@@ -1403,7 +1443,8 @@ export default function EstadoPatio() {
                           >
                             {cantSave && (
                               <p className="text-[11px] text-center text-red-400">
-                                {belowAbono ? 'El total no puede ser menor al abono del cliente' : `Selecciona un operario de ${missingOpType}`}
+                                {belowAbono ? 'El total no puede ser menor al abono del cliente'
+                                  : `Selecciona un operario de ${missingOpType}`}
                               </p>
                             )}
                             <div className="flex gap-3">
@@ -1448,10 +1489,6 @@ export default function EstadoPatio() {
           ]
 
           const inputCls = "w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2.5 text-sm text-gray-100 focus:border-yellow-500/50 focus:outline-none focus:ring-2 focus:ring-yellow-500/20"
-
-          const latItems = (paymentEntry.order?.items ?? []).filter(i => i.service_category === 'latoneria')
-          const hasLatoneria = latItems.length > 0
-          const latClientTotal = latItems.reduce((s, i) => s + Number(i.unit_price) * i.quantity, 0)
 
           const checkedKeys = Object.keys(payMethods)
           const isMulti     = checkedKeys.length > 1
@@ -1589,29 +1626,6 @@ export default function EstadoPatio() {
                       </div>
                     )}
                   </>
-                )}
-
-                {/* Latonería operator pay */}
-                {hasLatoneria && (
-                  <div className="rounded-xl border border-blue-500/25 bg-blue-500/5 px-4 py-3 space-y-2">
-                    <div className="flex items-center justify-between">
-                      <p className="text-xs text-blue-400 font-medium uppercase tracking-wider">Pago al operario de latonería</p>
-                      <span className="text-xs text-gray-500">máx. <span className="text-gray-300 font-medium">${latClientTotal.toLocaleString('es-CO')}</span></span>
-                    </div>
-                    <input
-                      type="text"
-                      inputMode="numeric"
-                      placeholder="$0"
-                      value={latPay ? `$${fmtCOP(latPay)}` : ''}
-                      onChange={e => {
-                        const raw = parseCOP(e.target.value)
-                        if (raw === '') { setLatPay(''); return }
-                        setLatPay(String(Math.min(Number(raw), latClientTotal)))
-                      }}
-                      className="w-full rounded-xl border border-blue-500/30 bg-white/5 px-3 py-2.5 text-sm text-gray-100 focus:border-blue-500/60 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
-                    />
-                    <p className="text-[11px] text-gray-600">Total latonería cobrado al cliente: <span className="text-gray-400">${latClientTotal.toLocaleString('es-CO')}</span></p>
-                  </div>
                 )}
 
                 {/* Facturación electrónica */}
@@ -1770,7 +1784,7 @@ export default function EstadoPatio() {
                   </Button>
                   <Button variant="primary" size="md" className="flex-1"
                     onClick={confirmDelivery}
-                    disabled={delivering || (effectiveRestante > 0 && Object.keys(payMethods).length === 0) || (hasLatoneria && !latPay)}>
+                    disabled={delivering || (effectiveRestante > 0 && Object.keys(payMethods).length === 0)}>
                     {delivering ? 'Entregando...' : 'Confirmar Entrega'}
                   </Button>
                 </div>

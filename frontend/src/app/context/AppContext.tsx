@@ -17,6 +17,7 @@ export interface NewOrderPayload {
   downpaymentMethod?: string
   isWarranty?: boolean
   itemOverrides?: { service_id: number; unit_price: number }[]
+  latoneraOperatorPays?: { service_id: number; amount: number }[]
 }
 
 interface AppCtx {
@@ -55,7 +56,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       downpayment:            data.downpayment,
       downpayment_method:     data.downpaymentMethod,
       is_warranty:            data.isWarranty,
-      item_overrides:         data.itemOverrides,
+      item_overrides:          data.itemOverrides,
+      latoneria_operator_pays: data.latoneraOperatorPays,
     })
     return order.order_number
   }

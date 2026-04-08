@@ -95,6 +95,11 @@ class ItemOverride(BaseModel):
     custom_name: Optional[str] = None
 
 
+class LatOperatorPayItem(BaseModel):
+    service_id: int
+    amount:     Decimal
+
+
 class OrderCreate(BaseModel):
     # Vehicle fields
     vehicle_type: str
@@ -113,7 +118,8 @@ class OrderCreate(BaseModel):
     scheduled_delivery_at:  Optional[datetime]  = None
     downpayment:            Optional[Decimal]   = None
     downpayment_method:     Optional[str]       = None
-    is_warranty:            bool                = False
+    is_warranty:             bool                      = False
+    latoneria_operator_pays: list[LatOperatorPayItem]  = []
 
     @field_validator("plate")
     @classmethod
@@ -166,7 +172,8 @@ class OrderItemOut(OrmBase):
     unit_price:       Decimal
     quantity:         int
     subtotal:         Decimal
-    is_confirmed:     bool = False
+    is_confirmed:             bool = False
+    latoneria_operator_pay:   Optional[Decimal] = None
 
 
 class OrderOut(OrmBase):
@@ -217,12 +224,13 @@ class AdvancePayload(BaseModel):
 
 
 class PatioPatch(BaseModel):
-    color:                  Optional[str]      = None
-    operator_id:            Optional[int]      = None
-    notes:                  Optional[str]      = None
-    service_ids:            Optional[list[int]]= None
-    item_overrides:         list[ItemOverride]  = []
-    scheduled_delivery_at:  Optional[datetime] = None
+    color:                   Optional[str]             = None
+    operator_id:             Optional[int]             = None
+    notes:                   Optional[str]             = None
+    service_ids:             Optional[list[int]]       = None
+    item_overrides:          list[ItemOverride]        = []
+    scheduled_delivery_at:   Optional[datetime]        = None
+    latoneria_operator_pays: list[LatOperatorPayItem]  = []
 
 
 # ── Ceramics ─────────────────────────────────────────────────────────────────
@@ -306,6 +314,11 @@ class HistorialEntryOut(OrmBase):
     payment_datafono:    Optional[Decimal] = None
     payment_nequi:       Optional[Decimal] = None
     payment_bancolombia: Optional[Decimal] = None
+
+
+class HistorialPageOut(BaseModel):
+    items: List[HistorialEntryOut]
+    total: int
 
 
 # ── Appointments ──────────────────────────────────────────────────────────────

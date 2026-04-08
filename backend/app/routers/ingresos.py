@@ -4,7 +4,8 @@ from datetime import date, timedelta
 from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy import func
+from sqlalchemy.orm import Session, joinedload, contains_eager
 
 from app.database import get_db
 from app import models, schemas
@@ -46,12 +47,20 @@ def get_ingresos(
         date_start = date(today.year, today.month, 1)
         date_end   = date(today.year, today.month, monthrange(today.year, today.month)[1])
 
+    # Income is counted on the DELIVERY date (when payment is received), not the order creation date.
+    # Use patio.delivered_at; fall back to order.date if no patio entry.
+    _eff_date = func.coalesce(
+        func.date(models.PatioEntry.delivered_at),
+        models.ServiceOrder.date,
+    )
     delivered_orders = (
         db.query(models.ServiceOrder)
+        .outerjoin(models.PatioEntry, models.PatioEntry.order_id == models.ServiceOrder.id)
+        .options(contains_eager(models.ServiceOrder.patio_entry))
         .filter(
             models.ServiceOrder.status == models.OrderStatusEnum.entregado,
-            models.ServiceOrder.date >= date_start,
-            models.ServiceOrder.date <= date_end,
+            _eff_date >= date_start,
+            _eff_date <= date_end,
         )
         .all()
     )
@@ -96,7 +105,10 @@ def get_ingresos(
         "payment_datafono": 0.0, "payment_nequi": 0.0, "payment_bancolombia": 0.0,
     })
     for o in delivered_orders:
-        key = str(o.date)
+        if o.patio_entry and o.patio_entry.delivered_at:
+            key = str(o.patio_entry.delivered_at.date())
+        else:
+            key = str(o.date)
         daily[key]["payment_cash"]        += float(o.payment_cash)
         daily[key]["payment_datafono"]    += float(o.payment_datafono)
         daily[key]["payment_nequi"]       += float(o.payment_nequi)
@@ -168,21 +180,50 @@ def get_breakdown(
 
     col_attr, abono_label = _METHOD_MAP[method]
 
-    def _load(q):
-        return q.options(
-            joinedload(models.ServiceOrder.vehicle).joinedload(models.Vehicle.client)
-        ).filter(
-            models.ServiceOrder.date >= ds,
-            models.ServiceOrder.date <= de,
-        ).all()
+    _eff_date_bd = func.coalesce(
+        func.date(models.PatioEntry.delivered_at),
+        models.ServiceOrder.date,
+    )
+
+    def _load_delivered(base_q):
+        return (
+            base_q
+            .outerjoin(models.PatioEntry, models.PatioEntry.order_id == models.ServiceOrder.id)
+            .options(
+                contains_eager(models.ServiceOrder.patio_entry),
+                joinedload(models.ServiceOrder.vehicle).joinedload(models.Vehicle.client),
+            )
+            .filter(
+                _eff_date_bd >= ds,
+                _eff_date_bd <= de,
+            )
+            .all()
+        )
+
+    def _load_abono(base_q):
+        return (
+            base_q
+            .options(
+                joinedload(models.ServiceOrder.vehicle).joinedload(models.Vehicle.client)
+            )
+            .filter(
+                models.ServiceOrder.date >= ds,
+                models.ServiceOrder.date <= de,
+            )
+            .all()
+        )
 
     def _item(o, amount, is_abono=False):
         v = o.vehicle
         brand_model = f"{v.brand or ''} {v.model or ''}".strip() if v else "—"
         client_name = (v.client.name if v and v.client else None) or "—"
+        if not is_abono and o.patio_entry and o.patio_entry.delivered_at:
+            item_date = str(o.patio_entry.delivered_at.date())
+        else:
+            item_date = str(o.date)
         return schemas.IngresoBreakdownItem(
             order_number=o.order_number or f"#{o.id}",
-            date=str(o.date),
+            date=item_date,
             plate=v.plate if v else "—",
             vehicle=brand_model,
             client=client_name,
@@ -192,8 +233,8 @@ def get_breakdown(
 
     results: list[schemas.IngresoBreakdownItem] = []
 
-    # Final payments (delivered orders)
-    delivered = _load(
+    # Final payments (delivered orders) — filtered by delivery date
+    delivered = _load_delivered(
         db.query(models.ServiceOrder).filter(
             models.ServiceOrder.status == models.OrderStatusEnum.entregado,
             getattr(models.ServiceOrder, col_attr) > 0,
@@ -202,8 +243,8 @@ def get_breakdown(
     for o in delivered:
         results.append(_item(o, getattr(o, col_attr)))
 
-    # Abono payments
-    abono_orders = _load(
+    # Abono payments (filtered by order creation date — abono is received when order is created)
+    abono_orders = _load_abono(
         db.query(models.ServiceOrder).filter(
             models.ServiceOrder.status != models.OrderStatusEnum.cancelado,
             models.ServiceOrder.downpayment > 0,

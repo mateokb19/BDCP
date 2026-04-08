@@ -53,6 +53,7 @@ export interface ApiOrderItem {
   quantity: number
   subtotal: number
   is_confirmed: boolean
+  latoneria_operator_pay?: string
 }
 
 export interface ApiOrder {
@@ -107,6 +108,7 @@ export interface OrderCreatePayload {
   downpayment?: number
   downpayment_method?: string
   is_warranty?: boolean
+  latoneria_operator_pays?: { service_id: number; amount: number }[]
 }
 
 export interface PatioPatchPayload {
@@ -116,6 +118,7 @@ export interface PatioPatchPayload {
   service_ids?: number[]
   item_overrides?: { service_id: number; unit_price: number }[]
   scheduled_delivery_at?: string | null
+  latoneria_operator_pays?: { service_id: number; amount: number }[]
 }
 
 export interface ApiCeramicClient {
@@ -268,6 +271,11 @@ export interface ApiHistorialVehicle {
 export interface ApiHistorialOperator {
   id:   number
   name: string
+}
+
+export interface ApiHistorialPage {
+  items: ApiHistorialEntry[]
+  total: number
 }
 
 export interface ApiHistorialEntry {
@@ -515,14 +523,27 @@ export const api = {
     list: () => apiFetch<ApiCeramicTreatment[]>('/ceramics'),
   },
   history: {
-    list: (params?: { date_filter?: string; date_from?: string; date_to?: string; search?: string }) => {
+    list: (params?: {
+      date_filter?: string
+      date_from?: string
+      date_to?: string
+      month?: string
+      search?: string
+      offset?: number
+      limit?: number
+      sort?: 'asc' | 'desc'
+    }) => {
       const qs = new URLSearchParams()
-      if (params?.date_filter) qs.set('date_filter', params.date_filter)
-      if (params?.date_from)   qs.set('date_from',   params.date_from)
-      if (params?.date_to)     qs.set('date_to',     params.date_to)
-      if (params?.search)      qs.set('search', params.search)
+      if (params?.date_filter)      qs.set('date_filter', params.date_filter)
+      if (params?.date_from)        qs.set('date_from',   params.date_from)
+      if (params?.date_to)          qs.set('date_to',     params.date_to)
+      if (params?.month)            qs.set('month',        params.month)
+      if (params?.search)           qs.set('search',       params.search)
+      if (params?.offset != null)   qs.set('offset',       String(params.offset))
+      if (params?.limit  != null)   qs.set('limit',        String(params.limit))
+      if (params?.sort)             qs.set('sort',          params.sort)
       const query = qs.toString() ? `?${qs}` : ''
-      return apiFetch<ApiHistorialEntry[]>(`/history${query}`)
+      return apiFetch<ApiHistorialPage>(`/history${query}`)
     },
   },
   appointments: {

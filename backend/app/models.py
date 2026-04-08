@@ -173,11 +173,12 @@ class ServiceOrderItem(Base):
     service_id       = Column(Integer, ForeignKey("services.id", ondelete="SET NULL"))
     service_name     = Column(String(100), nullable=False)
     service_category = Column(_enum(ServiceCategoryEnum, "service_category"), nullable=False)
-    unit_price       = Column(Numeric(10, 2), nullable=False)
-    standard_price   = Column(Numeric(10, 2))
-    is_confirmed     = Column(Boolean, nullable=False, default=False)
-    quantity         = Column(Integer, nullable=False, default=1)
-    subtotal         = Column(Numeric(10, 2), nullable=False)
+    unit_price              = Column(Numeric(10, 2), nullable=False)
+    standard_price          = Column(Numeric(10, 2))
+    is_confirmed            = Column(Boolean, nullable=False, default=False)
+    quantity                = Column(Integer, nullable=False, default=1)
+    subtotal                = Column(Numeric(10, 2), nullable=False)
+    latoneria_operator_pay  = Column(Numeric(12, 2), nullable=True)
 
     order = relationship("ServiceOrder", back_populates="items")
 

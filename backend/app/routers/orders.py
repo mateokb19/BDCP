@@ -104,6 +104,7 @@ def create_order(payload: schemas.OrderCreate, db: Session = Depends(get_db)):
 
     # 4. Build order items with price snapshot (overrides supported)
     override_map = {ov.service_id: ov for ov in payload.item_overrides}
+    lat_pay_map  = {lp.service_id: lp.amount for lp in payload.latoneria_operator_pays}
     subtotal = Decimal("0.00")
     discount = Decimal("0.00")
     item_rows = []
@@ -124,8 +125,12 @@ def create_order(payload: schemas.OrderCreate, db: Session = Depends(get_db)):
             standard_price=std_price,
             quantity=1,
             subtotal=price,
+            latoneria_operator_pay=lat_pay_map.get(svc.id),
         ))
         subtotal += price
+
+    # Sum per-item latonería pay → order-level total
+    total_lat_pay = sum(lat_pay_map.values()) or None
 
     # 5. Create service order (date set explicitly in Bogota timezone)
     order = models.ServiceOrder(
@@ -142,6 +147,7 @@ def create_order(payload: schemas.OrderCreate, db: Session = Depends(get_db)):
         downpayment_method=payload.downpayment_method,
         is_warranty=payload.is_warranty,
         notes=payload.notes,
+        latoneria_operator_pay=total_lat_pay,
     )
     db.add(order)
     db.flush()
