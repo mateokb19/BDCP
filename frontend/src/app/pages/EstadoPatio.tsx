@@ -665,13 +665,16 @@ export default function EstadoPatio() {
       }
     }
 
-    // Pre-fill latonería operator pays from per-item values
+    // Pre-fill latonería operator pays from per-item values (fall back to unit_price)
     const latItems = items.filter(i => i.service_category === 'latoneria' && i.service_id != null)
     const latPays: Record<number, string> = {}
     for (const item of latItems) {
       const perItemPay = Number(item.latoneria_operator_pay ?? 0)
       if (perItemPay > 0) {
         latPays[item.service_id!] = String(perItemPay)
+      } else {
+        const itemPrice = Number(item.unit_price ?? 0)
+        if (itemPrice > 0) latPays[item.service_id!] = String(itemPrice)
       }
     }
 
