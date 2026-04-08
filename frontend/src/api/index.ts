@@ -336,11 +336,12 @@ export interface AppointmentPatchPayload {
 }
 
 export interface ApiReportOrderItem {
-  service_name:     string
-  service_category: string
-  unit_price:       string
-  quantity:         number
-  subtotal:         string
+  service_name:           string
+  service_category:       string
+  unit_price:             string
+  quantity:               number
+  subtotal:               string
+  latoneria_operator_pay?: string
 }
 
 export interface ApiReportOrder {

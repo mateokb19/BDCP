@@ -48,13 +48,22 @@ function buildWeekSection(
       </td>
     </tr>`
 
-    const items = o.items.map(i =>
-      `<tr>
+    const items = o.items.map(i => {
+      let commCell: string
+      if (isLatoneria) {
+        const perItemPay = Number(i.latoneria_operator_pay ?? 0)
+        commCell = perItemPay > 0 ? fmt(perItemPay) : '—'
+      } else if (isPintura) {
+        commCell = '—'
+      } else {
+        commCell = fmt(Number(i.subtotal) * rate / 100)
+      }
+      return `<tr>
         <td style="padding:5px 10px 5px 20px;font-size:13px;color:#333;">${escapeHtml(i.service_name)}</td>
         <td style="padding:5px 10px;text-align:right;font-size:13px;color:#444;">${fmt(i.subtotal)}</td>
-        <td style="padding:5px 10px;text-align:right;font-size:13px;color:#d97706;font-weight:500;">${isPintura || isLatoneria ? '—' : fmt(Number(i.subtotal) * rate / 100)}</td>
+        <td style="padding:5px 10px;text-align:right;font-size:13px;color:#d97706;font-weight:500;">${commCell}</td>
       </tr>`
-    ).join('')
+    }).join('')
 
     const commCell = isPintura
       ? `${orderPieces} pieza${orderPieces !== 1 ? 's' : ''} = ${fmt(orderComm)}`

@@ -468,11 +468,12 @@ class LiquidatePayload(BaseModel):
 # ── Report ─────────────────────────────────────────────────────────────────────
 
 class ReportOrderItem(BaseModel):
-    service_name:     str
-    service_category: str
-    unit_price:       Decimal
-    quantity:         int
-    subtotal:         Decimal
+    service_name:           str
+    service_category:       str
+    unit_price:             Decimal
+    quantity:               int
+    subtotal:               Decimal
+    latoneria_operator_pay: Optional[Decimal] = None
 
 
 class ReportOrder(BaseModel):

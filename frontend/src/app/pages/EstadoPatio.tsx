@@ -585,10 +585,13 @@ export default function EstadoPatio() {
   const [activeOperators, setActiveOperators]     = useState(operators.filter(o => (o.operator_type ?? 'detallado') === 'detallado'))
 
   // Payment modal state (delivery)
-  const [paymentEntry, setPaymentEntry] = useState<ApiPatioEntry | null>(null)
-  const [payMethods,   setPayMethods]   = useState<Record<string, string>>({})
-  const [delivering,   setDelivering]   = useState(false)
-  const [applyIva,     setApplyIva]     = useState(false)
+  const [paymentEntry,  setPaymentEntry]  = useState<ApiPatioEntry | null>(null)
+  const [payMethods,    setPayMethods]    = useState<Record<string, string>>({})
+  const [delivering,    setDelivering]    = useState(false)
+  const [applyIva,      setApplyIva]      = useState(false)
+  const [deliveryOpId,  setDeliveryOpId]  = useState('')
+  const [deliveryOps,   setDeliveryOps]   = useState<typeof operators>([])
+
   const [factura,      setFactura]      = useState(false)
   const [facturaData,  setFacturaData]  = useState({
     tipo:      'persona_natural' as 'persona_natural' | 'empresa',
@@ -757,63 +760,40 @@ export default function EstadoPatio() {
   }
 
   async function advanceStatus(entry: ApiPatioEntry) {
-    if (entry.status === 'esperando' && !entry.order?.operator_id) {
-      const items = entry.order?.items ?? []
-      const categories = items.map(i => i.service_category)
+    if (entry.status === 'esperando') {
+      const orderItems = entry.order?.items ?? []
+      const categories = orderItems.map(i => i.service_category)
 
-      // Collect all required operator types from the order's service categories (exclude third-party types)
-      const requiredTypes = [...new Set(categories.map(c => CAT_TO_OP_TYPE[c] ?? 'detallado').filter(t => !NO_OPERATOR_TYPES.has(t)))]
+      // Silently auto-assign specialist (latonería/pintura) operators if single candidate
+      // Detallado operator is deferred to delivery (listo → entregado)
+      const specialistTypes = [...new Set(
+        categories
+          .map(c => CAT_TO_OP_TYPE[c] ?? 'detallado')
+          .filter(t => t !== 'detallado' && !NO_OPERATOR_TYPES.has(t))
+      )]
 
-      // Fetch fresh active operators
-      const allOps = await api.operators.list().catch(() => [] as typeof operators)
-      const activeOps = allOps.filter(o => o.active !== false)
-
-      // Map each required type to its candidates
-      const typeToOps: Record<string, typeof activeOps> = {}
-      for (const t of requiredTypes) {
-        typeToOps[t] = activeOps.filter(o => (o.operator_type ?? 'detallado') === t)
-      }
-
-      // No internal operator needed (only third-party services like ppf/polarizado) — advance directly
-      if (requiredTypes.length === 0) {
-        try {
-          const updated = await api.patio.advance(entry.id)
-          setEntries(prev => prev.map(e => e.id === updated.id ? updated : e))
-          toast.success(`${updated.vehicle?.plate ?? 'Vehículo'} → En Proceso`)
-        } catch (err) {
-          toast.error(err instanceof Error ? err.message : 'Error al iniciar proceso')
-        }
-        return
-      }
-
-      // If all required types have exactly 1 candidate, auto-assign without showing picker
-      const allAutoAssignable = requiredTypes.every(t => typeToOps[t].length === 1)
-      if (allAutoAssignable) {
-        // operator_id: detallado takes priority, else first required type
-        const detOp = typeToOps['detallado']?.[0]
-        const assignOp = detOp ?? typeToOps[requiredTypes[0]]?.[0]
-        if (assignOp) {
-          try {
-            await api.patio.edit(entry.id, { operator_id: assignOp.id })
-            const updated = await api.patio.advance(entry.id)
-            setEntries(prev => prev.map(e => e.id === updated.id ? updated : e))
-            toast.success(`${updated.vehicle?.plate ?? 'Vehículo'} → En Proceso`)
-          } catch (err) {
-            toast.error(err instanceof Error ? err.message : 'Error al iniciar proceso')
+      if (specialistTypes.length > 0 && !entry.order?.operator_id) {
+        const allOps = await api.operators.list().catch(() => [] as typeof operators)
+        const activeOps = allOps.filter(o => o.active !== false)
+        for (const t of specialistTypes) {
+          const candidates = activeOps.filter(o => (o.operator_type ?? 'detallado') === t)
+          if (candidates.length === 1) {
+            await api.patio.edit(entry.id, { operator_id: candidates[0].id }).catch(() => {})
+            break
           }
-          return
         }
       }
 
-      // Show picker (only for detallado — the only type that can have multiple candidates)
-      const detallado = activeOps.filter(o => (o.operator_type ?? 'detallado') === 'detallado')
-      setActiveOperators(detallado)
-      setOperatorPickEntry(entry)
-      setPickedOpId('')
-      setEntryNotes(entry.notes ?? '')
+      try {
+        const updated = await api.patio.advance(entry.id)
+        setEntries(prev => prev.map(e => e.id === updated.id ? updated : e))
+        toast.success(`${updated.vehicle?.plate ?? 'Vehículo'} → En Proceso`)
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : 'Error al iniciar proceso')
+      }
       return
     }
-    // Intercept delivery to collect payment info
+    // Intercept delivery to collect payment info + assign detallado operator
     if (entry.status === 'listo') {
       if (entry.scheduled_delivery_at) {
         const scheduledDate = format(parseISO(entry.scheduled_delivery_at), 'dd/MM/yyyy')
@@ -822,6 +802,22 @@ export default function EstadoPatio() {
           toast.warning(`Este vehículo estaba programado para entregarse el ${scheduledDate}`)
         }
       }
+
+      // Load detallado operators if order has detallado items
+      const DETALLADO_CATS_SET = new Set(['exterior', 'interior', 'ceramico', 'correccion_pintura'])
+      const hasDetallado = (entry.order?.items ?? []).some(i => DETALLADO_CATS_SET.has(i.service_category))
+      if (hasDetallado) {
+        const allOps = await api.operators.list().catch(() => [] as typeof operators)
+        const detOps = allOps.filter(o => o.active !== false && (o.operator_type ?? 'detallado') === 'detallado')
+        setDeliveryOps(detOps)
+        // Pre-select existing operator or auto-select if single candidate
+        const existingId = entry.order?.operator_id ? String(entry.order.operator_id) : ''
+        setDeliveryOpId(existingId || (detOps.length === 1 ? String(detOps[0].id) : ''))
+      } else {
+        setDeliveryOps([])
+        setDeliveryOpId('')
+      }
+
       setPaymentEntry(entry)
       setPayMethods({})
       setApplyIva(false)
@@ -884,6 +880,10 @@ export default function EstadoPatio() {
     }
     setDelivering(true)
     try {
+      // Assign detallado operator if selected at delivery
+      if (deliveryOpId) {
+        await api.patio.edit(paymentEntry.id, { operator_id: Number(deliveryOpId) })
+      }
       const updated = await api.patio.advance(paymentEntry.id, advancePayload)
       setEntries(prev => prev.map(e => e.id === updated.id ? updated : e))
       // Persist factura data keyed by order id (localStorage) and to client profile (API)
@@ -1519,6 +1519,21 @@ export default function EstadoPatio() {
                   </p>
                 </div>
 
+                {/* Detallado operator selector */}
+                {deliveryOps.length > 0 && (
+                  <div className="space-y-2">
+                    <p className="text-xs text-gray-500 uppercase tracking-wider">Operario *</p>
+                    <Select
+                      value={deliveryOpId || '0'}
+                      onValueChange={v => setDeliveryOpId(v === '0' ? '' : v)}
+                      options={[
+                        { value: '0', label: 'Seleccionar operario...' },
+                        ...deliveryOps.map(op => ({ value: String(op.id), label: op.name })),
+                      ]}
+                    />
+                  </div>
+                )}
+
                 {/* Amount summary */}
                 <div className="rounded-xl bg-white/[0.04] border border-white/8 px-4 py-3 space-y-1">
                   {abono > 0 && (
@@ -1787,7 +1802,7 @@ export default function EstadoPatio() {
                   </Button>
                   <Button variant="primary" size="md" className="flex-1"
                     onClick={confirmDelivery}
-                    disabled={delivering || (effectiveRestante > 0 && Object.keys(payMethods).length === 0)}>
+                    disabled={delivering || (effectiveRestante > 0 && Object.keys(payMethods).length === 0) || (deliveryOps.length > 0 && !deliveryOpId)}>
                     {delivering ? 'Entregando...' : 'Confirmar Entrega'}
                   </Button>
                 </div>

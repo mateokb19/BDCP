@@ -946,6 +946,7 @@ def get_report(
                     unit_price=_std(i),
                     quantity=i.quantity,
                     subtotal=_std(i),
+                    latoneria_operator_pay=i.latoneria_operator_pay if op_type == "latoneria" else None,
                 )
                 for i in filtered
             ],
