@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Search, ChevronDown, ChevronUp, Clock, User, Wrench, Download, Eye, EyeOff, ArrowLeft, ArrowUp, ArrowDown, X } from 'lucide-react'
+import { Search, ChevronDown, ChevronUp, Clock, User, Wrench, Download, Eye, EyeOff, ArrowLeft, X, Car } from 'lucide-react'
 import { format, parseISO, startOfWeek, startOfMonth, endOfMonth } from 'date-fns'
 import { es } from 'date-fns/locale'
 import { toast } from 'sonner'
@@ -34,8 +34,17 @@ function saveRevealed(ids: Set<number>) {
 }
 
 const VEHICLE_TYPE_LABEL: Record<string, string> = {
-  automovil: 'Automóvil', camion_estandar: 'C. Estándar', camion_xl: 'C. XL',
+  moto: 'Moto', automovil: 'Automóvil', camion_estandar: 'C. Estándar', camion_xl: 'C. XL',
 }
+
+const VEHICLE_TYPE_OPTIONS = [
+  { value: '', label: 'Todos los vehículos' },
+  { value: 'automovil', label: 'Automóvil' },
+  { value: 'camion_estandar', label: 'Camioneta Estándar' },
+  { value: 'camion_xl', label: 'Camioneta XL' },
+  { value: 'moto', label: 'Moto' },
+]
+
 
 function esc(s: string) {
   return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
@@ -59,17 +68,18 @@ function printReport(entries: ApiHistorialEntry[], dateFrom: string, dateTo: str
     const plate     = entry.vehicle?.plate ?? '—'
     const op        = entry.operator?.name ?? '—'
     const dateLabel = format(parseISO(`${entry.date}T00:00:00`), 'dd/MM/yyyy')
-    const services  = entry.items.map(i => esc(i.service_name)).join('<br>')
+    const isCancelled = entry.status === 'cancelado'
+    const services  = isCancelled ? '<em style="color:#888">Cancelado</em>' : entry.items.map(i => esc(i.service_name)).join('<br>')
     const total     = Number(entry.total ?? 0)
     const payment   = fmtPaymentMethod(entry)
-    return `<tr>
+    return `<tr${isCancelled ? ' style="color:#999"' : ''}>
       <td>${esc(dateLabel)}</td><td>${esc(vt)}</td><td class="plate">${esc(plate)}</td>
       <td>${services}</td><td>${esc(op)}</td>
-      <td class="price">$${total.toLocaleString('es-CO')}</td>
-      <td style="text-align:center">${esc(payment)}</td>
+      <td class="price">${isCancelled ? '—' : '$' + total.toLocaleString('es-CO')}</td>
+      <td style="text-align:center">${isCancelled ? '—' : esc(payment)}</td>
     </tr>`
   }).join('')
-  const grandTotal = sorted.reduce((s, e) => s + Number(e.total ?? 0), 0)
+  const grandTotal = sorted.filter(e => e.status !== 'cancelado').reduce((s, e) => s + Number(e.total ?? 0), 0)
   const fromLabel = format(parseISO(`${dateFrom}T00:00:00`), "d 'de' MMMM yyyy", { locale: es })
   const toLabel   = format(parseISO(`${dateTo}T00:00:00`), "d 'de' MMMM yyyy", { locale: es })
   const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Reporte BDCPolo</title>
@@ -123,15 +133,26 @@ function OrderCard({
     >
       <button
         onClick={() => setExpanded(e => !e)}
-        className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl border border-white/8 bg-white/[0.02] hover:bg-white/[0.04] transition-colors text-left"
+        className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl border border-white/8 bg-white/[0.02] hover:bg-white/[0.04] transition-colors text-left"
       >
         <div className="flex-1 min-w-0">
           <p className="text-sm font-medium text-white truncate">
             {vehicle?.brand ?? '—'}{vehicle?.model ? ` ${vehicle.model}` : ''}
           </p>
+          <p className="text-xs text-gray-500 truncate mt-0.5">
+            {entry.items.slice(0, 1).map(i => i.service_name).join(', ')}
+            {entry.items.length > 1 && <span className="text-gray-600 sm:hidden"> +{entry.items.length - 1} más</span>}
+            <span className="hidden sm:inline">
+              {entry.items.slice(1, 2).map(i => `, ${i.service_name}`)}
+              {entry.items.length > 2 && <span className="text-gray-600"> +{entry.items.length - 2} más</span>}
+            </span>
+          </p>
         </div>
-        <span className="font-mono text-xs font-semibold text-gray-400 shrink-0">{vehicle?.plate ?? '—'}</span>
-        <span className="text-xs text-gray-600 shrink-0">
+        <div className="flex flex-col items-end gap-0.5 shrink-0">
+          <span className="font-mono text-xs font-semibold text-gray-400">{vehicle?.plate ?? '—'}</span>
+          <span className="text-[11px] text-yellow-400 font-medium">${Number(entry.total ?? 0).toLocaleString('es-CO')}</span>
+        </div>
+        <span className="text-xs text-gray-600 shrink-0 hidden sm:block">
           {format(parseISO(`${entry.date}T00:00:00`), "d MMM", { locale: es })}
         </span>
         {toggleButton && <span onClick={e => e.stopPropagation()}>{toggleButton}</span>}
@@ -148,16 +169,19 @@ function OrderCard({
             className="overflow-hidden"
           >
             <div className="mx-1 px-3 py-3 rounded-b-xl border border-t-0 border-white/8 bg-white/[0.02] space-y-2.5">
-              <div className="flex items-center justify-between gap-2">
-                <div className="flex items-center gap-2">
+              <div className="flex items-center justify-between gap-2 flex-wrap">
+                <div className="flex items-center gap-2 flex-wrap">
                   <span className="font-mono text-xs font-semibold text-yellow-400">{entry.order_number}</span>
                   <StatusBadge status={entry.status as any} />
+                  <span className="text-xs text-gray-500">
+                    {format(parseISO(`${entry.date}T00:00:00`), "d 'de' MMM yyyy", { locale: es })}
+                  </span>
                 </div>
                 <span className="text-sm font-bold text-yellow-400">
                   ${Number(entry.total ?? 0).toLocaleString('es-CO')}
                 </span>
               </div>
-              {vehicle?.color && <p className="text-xs text-gray-500">{vehicle.color}</p>}
+              {vehicle?.color && <p className="text-xs text-gray-500">{vehicle.color} · {VEHICLE_TYPE_LABEL[vehicle.type] ?? vehicle.type}</p>}
               <div className="space-y-0.5">
                 {client && (
                   <div className="flex items-center gap-1.5 text-xs text-gray-400">
@@ -201,7 +225,7 @@ function OrderCard({
   )
 }
 
-// ─── Shared download modal ───────────────────────────────────────────────────
+// ─── Download modal ──────────────────────────────────────────────────────────
 function DownloadModal({
   open,
   onClose,
@@ -261,19 +285,6 @@ function DownloadModal({
           }}
         />
 
-        <div className="grid grid-cols-2 gap-3">
-          <div className="flex flex-col gap-1.5">
-            <label className="text-xs font-medium text-gray-400">Desde</label>
-            <input type="date" value={dlFrom} onChange={e => setDlFrom(e.target.value)}
-              className="w-full rounded-xl border border-white/10 bg-gray-900 px-3 py-2 text-sm text-gray-100 focus:border-yellow-500/50 focus:outline-none [color-scheme:dark]" />
-          </div>
-          <div className="flex flex-col gap-1.5">
-            <label className="text-xs font-medium text-gray-400">Hasta</label>
-            <input type="date" value={dlTo} onChange={e => setDlTo(e.target.value)}
-              className="w-full rounded-xl border border-white/10 bg-gray-900 px-3 py-2 text-sm text-gray-100 focus:border-yellow-500/50 focus:outline-none [color-scheme:dark]" />
-          </div>
-        </div>
-
         <div className="flex gap-3 pt-1">
           <Button variant="secondary" size="lg" className="flex-1" onClick={onClose}>Cancelar</Button>
           <Button variant="primary" size="lg" className="flex-1" onClick={() => onDownload(dlFrom, dlTo)} disabled={loading}>
@@ -282,6 +293,92 @@ function DownloadModal({
         </div>
       </div>
     </Modal>
+  )
+}
+
+// ─── Filter bar ──────────────────────────────────────────────────────────────
+type SortMode = 'newest' | 'oldest' | 'expensive' | 'cheapest'
+
+function FilterBar({
+  sortMode, onSortChange,
+  dayFilter, onDayChange,
+  vehicleType, onVehicleTypeChange,
+  search, onSearchChange,
+  hasActiveFilters, onClearFilters,
+}: {
+  sortMode: SortMode
+  onSortChange: (v: SortMode) => void
+  dayFilter: string
+  onDayChange: (v: string) => void
+  vehicleType: string
+  onVehicleTypeChange: (v: string) => void
+  search: string
+  onSearchChange: (v: string) => void
+  hasActiveFilters: boolean
+  onClearFilters: () => void
+}) {
+  const inputCls = "w-full rounded-xl border border-white/10 bg-gray-900 px-2.5 py-2 text-sm text-gray-100 focus:border-yellow-500/50 focus:outline-none [color-scheme:dark]"
+
+  return (
+    <div className="flex flex-col gap-2 mb-4">
+      {/* Row 1: search + clear */}
+      <div className="flex items-center gap-2">
+        <div className="relative flex-1">
+          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none" />
+          <input
+            value={search}
+            onChange={e => onSearchChange(e.target.value)}
+            placeholder="Placa, nombre u orden..."
+            className="w-full rounded-xl border border-white/10 bg-white/5 pl-8 pr-3 py-2 text-sm text-gray-100 placeholder:text-gray-500 focus:border-yellow-500/50 focus:outline-none focus:ring-2 focus:ring-yellow-500/20"
+          />
+        </div>
+        {hasActiveFilters && (
+          <button
+            type="button"
+            onClick={onClearFilters}
+            className="flex items-center gap-1 rounded-xl border border-white/10 bg-white/5 px-2.5 py-2 text-xs text-gray-500 hover:bg-white/10 hover:text-gray-300 transition-colors shrink-0"
+            title="Limpiar filtros"
+          >
+            <X size={13} /> <span className="hidden sm:inline">Limpiar</span>
+          </button>
+        )}
+      </div>
+
+      {/* Row 2: date + vehicle type */}
+      <div className="grid grid-cols-2 gap-2">
+        <input
+          type="date"
+          value={dayFilter}
+          onChange={e => onDayChange(e.target.value)}
+          className={inputCls}
+          title="Filtrar por día"
+        />
+        <div className="relative">
+          <Car size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none" />
+          <select
+            value={vehicleType}
+            onChange={e => onVehicleTypeChange(e.target.value)}
+            className="w-full rounded-xl border border-white/10 bg-gray-900 pl-7 pr-2 py-2 text-sm text-gray-100 focus:border-yellow-500/50 focus:outline-none appearance-none [color-scheme:dark]"
+          >
+            {VEHICLE_TYPE_OPTIONS.map(o => (
+              <option key={o.value} value={o.value}>{o.label}</option>
+            ))}
+          </select>
+        </div>
+      </div>
+
+      {/* Row 3: sort */}
+      <select
+        value={sortMode}
+        onChange={e => onSortChange(e.target.value as SortMode)}
+        className="w-full rounded-xl border border-white/10 bg-gray-900 px-3 py-2 text-sm text-gray-100 focus:border-yellow-500/50 focus:outline-none appearance-none [color-scheme:dark]"
+      >
+        <option value="newest">Más reciente primero</option>
+        <option value="oldest">Más antiguo primero</option>
+        <option value="expensive">Más caro primero</option>
+        <option value="cheapest">Más barato primero</option>
+      </select>
+    </div>
   )
 }
 
@@ -318,9 +415,10 @@ export default function Historial() {
   const [offset,          setOffset]          = useState(0)
   const [dayFilter,       setDayFilter]       = useState('')
   const [monthFilter,     setMonthFilter]     = useState('')
-  const [sortDir,         setSortDir]         = useState<'desc' | 'asc'>('desc')
+  const [sortMode,        setSortMode]        = useState<SortMode>('newest')
   const [search,          setSearch]          = useState('')
   const [debouncedSearch, setDebouncedSearch] = useState('')
+  const [vehicleTypeFilter, setVehicleTypeFilter] = useState('')
   const [showDlModal,     setShowDlModal]     = useState(false)
   const [dlLoading,       setDlLoading]       = useState(false)
 
@@ -339,7 +437,7 @@ export default function Historial() {
         search:      debouncedSearch || undefined,
         offset:      append ? offsetOverride : 0,
         limit:       PAGE_SIZE,
-        sort:        sortDir,
+        sort:        sortMode === 'oldest' ? 'asc' : 'desc',
       })
       if (append) {
         setEntries(prev => [...prev, ...result.items])
@@ -350,7 +448,7 @@ export default function Historial() {
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Error al cargar historial')
     } finally { setLoading(false) }
-  }, [dayFilter, monthFilter, debouncedSearch, sortDir])
+  }, [dayFilter, monthFilter, debouncedSearch, sortMode])
 
   useEffect(() => {
     setOffset(0)
@@ -364,7 +462,25 @@ export default function Historial() {
     fetchHistory({ append: true, offsetOverride: newOffset })
   }
 
-  const visibleEntries = entries.filter(e => !hasRestrictedServices(e) || revealedIds.has(e.id))
+  // Client-side filters + sort
+  const visibleEntries = entries
+    .filter(e => {
+      if (hasRestrictedServices(e) && !revealedIds.has(e.id)) return false
+      if (vehicleTypeFilter && e.vehicle?.type !== vehicleTypeFilter) return false
+      return true
+    })
+    .sort((a, b) => {
+      if (sortMode === 'expensive') return Number(b.total ?? 0) - Number(a.total ?? 0)
+      if (sortMode === 'cheapest')  return Number(a.total ?? 0) - Number(b.total ?? 0)
+      return 0 // newest/oldest already handled server-side
+    })
+
+  const hasActiveFilters = !!(dayFilter || monthFilter || vehicleTypeFilter || search || sortMode !== 'newest')
+
+  function clearAllFilters() {
+    setDayFilter(''); setMonthFilter(''); setVehicleTypeFilter('')
+    setSortMode('newest'); setSearch('')
+  }
 
   async function handleMainDownload(from: string, to: string) {
     if (!from || !to) { toast.error('Selecciona el rango de fechas'); return }
@@ -387,9 +503,10 @@ export default function Historial() {
   const [adminOffset,          setAdminOffset]          = useState(0)
   const [adminDayFilter,       setAdminDayFilter]       = useState('')
   const [adminMonthFilter,     setAdminMonthFilter]     = useState('')
-  const [adminSortDir,         setAdminSortDir]         = useState<'desc' | 'asc'>('desc')
+  const [adminSortMode,        setAdminSortMode]        = useState<SortMode>('newest')
   const [adminSearch,          setAdminSearch]          = useState('')
   const [adminDebouncedSearch, setAdminDebouncedSearch] = useState('')
+  const [adminVehicleType,     setAdminVehicleType]     = useState('')
   const [showAdminDlModal,     setShowAdminDlModal]     = useState(false)
   const [adminDlLoading,       setAdminDlLoading]       = useState(false)
 
@@ -409,7 +526,7 @@ export default function Historial() {
         search:      adminDebouncedSearch || undefined,
         offset:      append ? offsetOverride : 0,
         limit:       PAGE_SIZE,
-        sort:        adminSortDir,
+        sort:        adminSortMode === 'oldest' ? 'asc' : 'desc',
       })
       const restricted = result.items.filter(hasRestrictedServices)
       if (append) {
@@ -421,7 +538,7 @@ export default function Historial() {
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Error al cargar historial')
     } finally { setAdminLoading(false) }
-  }, [adminView, adminDayFilter, adminMonthFilter, adminDebouncedSearch, adminSortDir])
+  }, [adminView, adminDayFilter, adminMonthFilter, adminDebouncedSearch, adminSortMode])
 
   useEffect(() => {
     setAdminOffset(0)
@@ -434,6 +551,19 @@ export default function Historial() {
     setAdminOffset(newOffset)
     fetchAdminHistory({ append: true, offsetOverride: newOffset })
   }
+
+  const adminVisibleEntries = adminEntries
+    .filter(e => {
+      if (adminVehicleType && e.vehicle?.type !== adminVehicleType) return false
+      return true
+    })
+    .sort((a, b) => {
+      if (adminSortMode === 'expensive') return Number(b.total ?? 0) - Number(a.total ?? 0)
+      if (adminSortMode === 'cheapest')  return Number(a.total ?? 0) - Number(b.total ?? 0)
+      return 0
+    })
+
+  const adminHasActiveFilters = !!(adminDayFilter || adminMonthFilter || adminVehicleType || adminSearch || adminSortMode !== 'newest')
 
   async function handleAdminDownload(from: string, to: string) {
     if (!from || !to) { toast.error('Selecciona el rango de fechas'); return }
@@ -448,87 +578,49 @@ export default function Historial() {
     finally { setAdminDlLoading(false) }
   }
 
-  const filterBarCls = "flex-1 rounded-xl border border-white/10 bg-gray-900 px-3 py-2 text-sm text-gray-100 focus:border-yellow-500/50 focus:outline-none [color-scheme:dark]"
-
   // ── Render: admin view ─────────────────────────────────────────────────────
   if (adminView) {
     return (
-      <div className="max-w-xl mx-auto">
+      <div className="max-w-lg mx-auto">
         <PageHeader
           title="PPF y Polarizado"
-          subtitle={`${adminEntries.length}${adminEntries.length < adminTotal ? ` de ${adminTotal}` : ''} servicio${adminTotal !== 1 ? 's' : ''}`}
+          subtitle={`${adminVisibleEntries.length}${adminEntries.length < adminTotal ? ` de ${adminTotal}` : ''} servicio${adminTotal !== 1 ? 's' : ''}`}
           actions={
             <div className="flex items-center gap-2">
               <Button variant="secondary" size="md" onClick={() => setAdminView(false)}>
                 <ArrowLeft size={15} /> Volver
               </Button>
               <Button variant="secondary" size="md" onClick={() => setShowAdminDlModal(true)}>
-                <Download size={15} /> Descargar
+                <Download size={15} />
               </Button>
             </div>
           }
         />
 
-        <div className="flex flex-col gap-3 mb-5">
-          {/* Sort + day + month filter row */}
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={() => setAdminSortDir(d => d === 'desc' ? 'asc' : 'desc')}
-              className="flex items-center gap-1.5 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-gray-400 hover:bg-white/10 hover:text-gray-200 transition-colors shrink-0"
-            >
-              {adminSortDir === 'desc' ? <ArrowDown size={14} /> : <ArrowUp size={14} />}
-              <span className="hidden sm:inline">{adminSortDir === 'desc' ? 'Más reciente' : 'Más antiguo'}</span>
-            </button>
-            <input
-              type="date"
-              value={adminDayFilter}
-              onChange={e => { setAdminDayFilter(e.target.value); setAdminMonthFilter('') }}
-              className={filterBarCls}
-            />
-            <input
-              type="month"
-              value={adminMonthFilter}
-              onChange={e => { setAdminMonthFilter(e.target.value); setAdminDayFilter('') }}
-              className={filterBarCls}
-            />
-            {(adminDayFilter || adminMonthFilter) && (
-              <button
-                type="button"
-                onClick={() => { setAdminDayFilter(''); setAdminMonthFilter('') }}
-                className="p-2 rounded-lg border border-white/10 bg-white/5 text-gray-500 hover:bg-white/10 hover:text-gray-300 transition-colors shrink-0"
-                title="Quitar filtro de fecha"
-              >
-                <X size={14} />
-              </button>
-            )}
-          </div>
-          <div className="relative">
-            <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none" />
-            <input
-              value={adminSearch}
-              onChange={e => setAdminSearch(e.target.value)}
-              placeholder="Buscar por placa, nombre o número de orden..."
-              className="w-full rounded-xl border border-white/10 bg-white/5 pl-9 pr-3 py-2 text-sm text-gray-100 placeholder:text-gray-500 focus:border-yellow-500/50 focus:outline-none focus:ring-2 focus:ring-yellow-500/20"
-            />
-          </div>
-        </div>
+        <FilterBar
+          sortMode={adminSortMode}           onSortChange={setAdminSortMode}
+          dayFilter={adminDayFilter}         onDayChange={setAdminDayFilter}
+          vehicleType={adminVehicleType}     onVehicleTypeChange={setAdminVehicleType}
+          search={adminSearch}              onSearchChange={setAdminSearch}
+          hasActiveFilters={adminHasActiveFilters}
+          onClearFilters={() => { setAdminDayFilter(''); setAdminMonthFilter(''); setAdminVehicleType(''); setAdminSortMode('newest'); setAdminSearch('') }}
+        />
 
         {adminLoading && adminEntries.length === 0 ? (
           <div className="flex items-center justify-center py-16">
             <p className="text-gray-500 text-sm">Cargando historial...</p>
           </div>
-        ) : adminEntries.length === 0 ? (
+        ) : adminVisibleEntries.length === 0 ? (
           <EmptyState
             icon={Clock}
             title="Sin servicios"
-            description={adminDebouncedSearch ? 'No se encontraron resultados para tu búsqueda' : 'No hay servicios PPF ni Polarizado'}
+            description={adminDebouncedSearch ? 'No se encontraron resultados' : 'No hay servicios PPF ni Polarizado'}
           />
         ) : (
           <>
-            <div className="space-y-3 w-full overflow-hidden">
+            <div className="space-y-2.5 w-full overflow-hidden">
               <AnimatePresence>
-                {adminEntries.map(entry => {
+                {adminVisibleEntries.map(entry => {
                   const isRevealed = revealedIds.has(entry.id)
                   return (
                     <OrderCard
@@ -536,7 +628,7 @@ export default function Historial() {
                       entry={entry}
                       toggleButton={
                         <button
-                          title={isRevealed ? 'Ocultar del historial principal' : 'Mostrar en historial principal'}
+                          title={isRevealed ? 'Ocultar' : 'Mostrar en historial principal'}
                           onClick={() => toggleRevealed(entry.id)}
                           className={cn(
                             'p-1.5 rounded-lg border transition-colors',
@@ -575,7 +667,7 @@ export default function Historial() {
 
   // ── Render: main view ──────────────────────────────────────────────────────
   return (
-    <div className="max-w-xl mx-auto">
+    <div className="max-w-lg mx-auto">
       <PageHeader
         title="Historial"
         subtitle={`${visibleEntries.length}${entries.length < total ? ` de ${total}` : ''} servicio${total !== 1 ? 's' : ''}`}
@@ -589,57 +681,20 @@ export default function Historial() {
               <Eye size={15} />
             </button>
             <Button variant="secondary" size="md" onClick={() => setShowDlModal(true)}>
-              <Download size={15} /> Descargar
+              <Download size={15} />
             </Button>
           </div>
         }
       />
 
-      <div className="flex flex-col gap-3 mb-5">
-        {/* Sort + day + month filter row */}
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={() => setSortDir(d => d === 'desc' ? 'asc' : 'desc')}
-            className="flex items-center gap-1.5 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-gray-400 hover:bg-white/10 hover:text-gray-200 transition-colors shrink-0"
-          >
-            {sortDir === 'desc' ? <ArrowDown size={14} /> : <ArrowUp size={14} />}
-            <span className="hidden sm:inline">{sortDir === 'desc' ? 'Más reciente' : 'Más antiguo'}</span>
-          </button>
-          <input
-            type="date"
-            value={dayFilter}
-            onChange={e => { setDayFilter(e.target.value); setMonthFilter('') }}
-            className={filterBarCls}
-          />
-          <input
-            type="month"
-            value={monthFilter}
-            onChange={e => { setMonthFilter(e.target.value); setDayFilter('') }}
-            className={filterBarCls}
-          />
-          {(dayFilter || monthFilter) && (
-            <button
-              type="button"
-              onClick={() => { setDayFilter(''); setMonthFilter('') }}
-              className="p-2 rounded-lg border border-white/10 bg-white/5 text-gray-500 hover:bg-white/10 hover:text-gray-300 transition-colors shrink-0"
-              title="Quitar filtro de fecha"
-            >
-              <X size={14} />
-            </button>
-          )}
-        </div>
-        {/* Search */}
-        <div className="relative">
-          <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none" />
-          <input
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-            placeholder="Buscar por placa, nombre o número de orden..."
-            className="w-full rounded-xl border border-white/10 bg-white/5 pl-9 pr-3 py-2 text-sm text-gray-100 placeholder:text-gray-500 focus:border-yellow-500/50 focus:outline-none focus:ring-2 focus:ring-yellow-500/20"
-          />
-        </div>
-      </div>
+      <FilterBar
+        sortMode={sortMode}         onSortChange={setSortMode}
+        dayFilter={dayFilter}       onDayChange={setDayFilter}
+        vehicleType={vehicleTypeFilter} onVehicleTypeChange={setVehicleTypeFilter}
+        search={search}             onSearchChange={setSearch}
+        hasActiveFilters={hasActiveFilters}
+        onClearFilters={clearAllFilters}
+      />
 
       {loading && entries.length === 0 ? (
         <div className="flex items-center justify-center py-16">
@@ -649,11 +704,11 @@ export default function Historial() {
         <EmptyState
           icon={Clock}
           title="Sin servicios"
-          description={debouncedSearch ? 'No se encontraron resultados para tu búsqueda' : 'No hay servicios registrados'}
+          description={debouncedSearch ? 'No se encontraron resultados' : 'No hay servicios registrados'}
         />
       ) : (
         <>
-          <div className="space-y-3 w-full overflow-hidden">
+          <div className="space-y-2.5 w-full overflow-hidden">
             <AnimatePresence>
               {visibleEntries.map(entry => (
                 <OrderCard key={entry.id} entry={entry} />

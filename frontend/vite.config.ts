@@ -21,7 +21,10 @@ export default defineConfig({
       },
     },
     watch: {
-      usePolling: true,   // required for hot-reload inside Docker on Windows
+      usePolling: true,      // required for hot-reload inside Docker on Windows
+      interval: 3000,        // 3s instead of default 100ms — prevents spurious reloads from Docker volume events
+      binaryInterval: 3000,
+      ignored: ['**/node_modules/**', '**/.git/**'],
     },
   },
 })
