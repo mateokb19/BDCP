@@ -132,10 +132,10 @@ def create_order(payload: schemas.OrderCreate, db: Session = Depends(get_db)):
     # Sum per-item latonería pay → order-level total
     total_lat_pay = sum(lat_pay_map.values()) or None
 
-    # 5. Create service order (date set explicitly in Bogota timezone)
+    # 5. Create service order (date set explicitly in Bogota timezone, or overridden by entry_date)
     order = models.ServiceOrder(
         order_number=_next_order_number(db),
-        date=today_bogota(),
+        date=payload.entry_date or today_bogota(),
         vehicle_id=vehicle.id,
         operator_id=payload.operator_id,
         status=models.OrderStatusEnum.pendiente,

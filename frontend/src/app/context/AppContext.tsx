@@ -12,6 +12,7 @@ export interface NewOrderPayload {
   clientPhone: string
   serviceIds: number[]
   notes?: string
+  entryDate?: string
   scheduledDeliveryAt?: string
   downpayment?: number
   downpaymentMethod?: string
@@ -52,6 +53,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       client_phone:           data.clientPhone,
       service_ids:            data.serviceIds,
       notes:                  data.notes,
+      entry_date:             data.entryDate,
       scheduled_delivery_at:  data.scheduledDeliveryAt,
       downpayment:            data.downpayment,
       downpayment_method:     data.downpaymentMethod,

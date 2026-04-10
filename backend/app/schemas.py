@@ -114,6 +114,7 @@ class OrderCreate(BaseModel):
     operator_id:  Optional[int] = None
     service_ids:  list[int]
     notes:        Optional[str] = None
+    entry_date:              Optional[date]      = None
     item_overrides:         list[ItemOverride]  = []
     scheduled_delivery_at:  Optional[datetime]  = None
     downpayment:            Optional[Decimal]   = None

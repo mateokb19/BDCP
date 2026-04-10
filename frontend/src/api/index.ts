@@ -103,6 +103,7 @@ export interface OrderCreatePayload {
   operator_id?: number | null
   service_ids: number[]
   notes?: string
+  entry_date?: string
   item_overrides?: { service_id: number; unit_price: number; custom_name?: string }[]
   scheduled_delivery_at?: string
   downpayment?: number

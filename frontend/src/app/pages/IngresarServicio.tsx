@@ -31,6 +31,7 @@ interface OrderDraft {
   clientPhone: string
   selectedServices: number[]
   notes: string
+  entryDate: string
   deliveryDate: string
   deliveryTime: string
   customPrices: Record<number, string>
@@ -235,7 +236,7 @@ export default function IngresarServicio() {
     clientName:  fromAppt?.client_name ?? '',
     clientPhone: fromAppt?.client_phone ?? '',
     selectedServices: [], notes: '',
-    deliveryDate: '', deliveryTime: '',
+    entryDate: TODAY, deliveryDate: '', deliveryTime: '',
     customPrices: {}, warrantyServiceIds: [], downpayment: '', downpaymentMethod: '', isWarranty: false,
   })
 
@@ -480,6 +481,7 @@ export default function IngresarServicio() {
         clientPhone:  form.clientPhone,
         serviceIds:   allServiceIds,
         notes:        form.notes || undefined,
+        entryDate:    form.entryDate !== TODAY ? form.entryDate : undefined,
         scheduledDeliveryAt,
         downpayment:       abonoAmt > 0 ? abonoAmt : undefined,
         downpaymentMethod: abonoAmt > 0 && form.downpaymentMethod ? form.downpaymentMethod : undefined,
@@ -499,7 +501,7 @@ export default function IngresarServicio() {
         api.appointments.delete(fromAppt.id).catch(() => {})
       }
       setStep(1); setPrevStep(1); setVehicleType(null); setExpandedAreas(new Set()); setPartQuantities({})
-      setForm({ plate: '', brand: '', model: '', color: '', clientName: '', clientPhone: '', selectedServices: [], notes: '', deliveryDate: '', deliveryTime: '', customPrices: {}, warrantyServiceIds: [], downpayment: '', downpaymentMethod: '', isWarranty: false })
+      setForm({ plate: '', brand: '', model: '', color: '', clientName: '', clientPhone: '', selectedServices: [], notes: '', entryDate: TODAY, deliveryDate: '', deliveryTime: '', customPrices: {}, warrantyServiceIds: [], downpayment: '', downpaymentMethod: '', isWarranty: false })
       setCustomServices([]); setOtroOpen(false)
       setBrandQuery(''); setLatOperatorPays({})
       navigate('/')
@@ -663,7 +665,13 @@ export default function IngresarServicio() {
                       <label className="text-sm font-medium text-gray-300">Fecha</label>
                       <div className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-gray-400">
                         <Calendar size={14} className="shrink-0" />
-                        <span>{TODAY}</span>
+                        <input
+                          type="date"
+                          value={form.entryDate}
+                          max={TODAY}
+                          onChange={e => setForm(f => ({ ...f, entryDate: e.target.value }))}
+                          className="flex-1 bg-transparent text-gray-100 focus:outline-none [color-scheme:dark]"
+                        />
                       </div>
                     </div>
 
