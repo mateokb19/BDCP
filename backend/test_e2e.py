@@ -511,6 +511,203 @@ try:
 except Exception as e:
     fail(f"Re-liquidation test: {e}")
 
+# ===== CLIENT CREDIT FLOW =====
+header("CLIENT CREDIT FLOW (is_client_credit delivery → credits endpoint → pay)")
+
+try:
+    credit_plate = f"CR{random.randint(1000, 9999)}"
+    credit_phone = f"310{random.randint(1000000, 9999999)}"
+    credit_client_name = f"CreditTest {credit_plate}"
+
+    info(f"Credit test plate: {credit_plate}, phone: {credit_phone}")
+
+    payload = {
+        "vehicle_type": "automovil",
+        "plate": credit_plate,
+        "brand": "Mazda",
+        "model": "3",
+        "color": "Rojo",
+        "client_name": credit_client_name,
+        "client_phone": credit_phone,
+        "service_ids": [exterior_id],
+        "item_overrides": [],
+        "downpayment": "0",
+        "downpayment_method": "Efectivo",
+        "is_warranty": False,
+    }
+
+    r = requests.post(f"{BASE}/orders", json=payload)
+    assert r.status_code == 201, f"POST /orders (credit) failed: {r.status_code} {r.text}"
+    credit_order = r.json()
+    credit_order_id = credit_order['id']
+    credit_order_total = Decimal(str(credit_order['total']))
+    info(f"Credit order created: id={credit_order_id} total=${float(credit_order_total):,.0f}")
+
+    ok(f"Credit order created: #{credit_order['order_number']} total=${credit_order_total:,.0f}")
+
+except Exception as e:
+    fail(f"Credit order creation: {e}")
+    sys.exit(1)
+
+try:
+    # Get patio entry
+    r = requests.get(f"{BASE}/patio")
+    assert r.status_code == 200
+    patio_entries = r.json()
+    patio_credit = next((p for p in patio_entries if p['order_id'] == credit_order_id), None)
+    assert patio_credit, "Credit patio entry not found"
+    patio_credit_id = patio_credit['id']
+    info(f"Credit patio entry: id={patio_credit_id} status={patio_credit['status']}")
+
+    # Assign Carlos as operator
+    r = requests.patch(f"{BASE}/patio/{patio_credit_id}", json={"operator_id": carlos_id})
+    assert r.status_code == 200, f"Assign operator failed: {r.text}"
+    info("Assigned Carlos to credit patio entry")
+
+    # Advance esperando → en_proceso
+    r = requests.post(f"{BASE}/patio/{patio_credit_id}/advance", json={})
+    assert r.status_code == 200, f"Advance to en_proceso failed: {r.text}"
+    info("Advanced to en_proceso")
+
+    # Re-fetch to get current status and items
+    r = requests.get(f"{BASE}/patio")
+    assert r.status_code == 200
+    patio_entries = r.json()
+    patio_credit = next((p for p in patio_entries if p['order_id'] == credit_order_id), None)
+    assert patio_credit, "Credit patio entry not found after advance"
+    current_status = patio_credit['status']
+    info(f"Status after first advance: {current_status}")
+
+    # Confirm all items (required to qualify for liquidation and to trigger auto-advance to listo)
+    items = patio_credit.get('order', {}).get('items', [])
+    if not items:
+        # Try alternate structure
+        items = patio_credit.get('items', [])
+    info(f"Items to confirm: {len(items)}")
+
+    for item in items:
+        r = requests.patch(f"{BASE}/patio/{patio_credit_id}/items/{item['id']}/confirm")
+        assert r.status_code == 200, f"Confirm item {item['id']} failed: {r.text}"
+        info(f"Confirmed item {item['id']}")
+
+    # Re-fetch to check if auto-advanced to listo
+    r = requests.get(f"{BASE}/patio")
+    assert r.status_code == 200
+    patio_entries = r.json()
+    patio_credit = next((p for p in patio_entries if p['order_id'] == credit_order_id), None)
+    assert patio_credit, "Credit patio entry not found after item confirmation"
+    current_status = patio_credit['status']
+    info(f"Status after confirming all items: {current_status}")
+
+    # If not yet listo, explicitly advance
+    if current_status != 'listo':
+        r = requests.post(f"{BASE}/patio/{patio_credit_id}/advance", json={})
+        assert r.status_code == 200, f"Advance to listo failed: {r.text}"
+        info("Explicitly advanced to listo")
+
+    # Advance listo → entregado with is_client_credit=True
+    r = requests.post(f"{BASE}/patio/{patio_credit_id}/advance", json={"is_client_credit": True})
+    assert r.status_code == 200, f"Credit delivery failed: {r.status_code} {r.text}"
+    delivered = r.json()
+
+    # Verify credit state
+    assert delivered.get('status') == 'entregado', f"Expected entregado, got {delivered.get('status')}"
+    assert delivered.get('order', {}).get('is_client_credit') == True, \
+        f"is_client_credit not True: {delivered.get('order', {}).get('is_client_credit')}"
+    assert delivered.get('order', {}).get('paid') == False, \
+        f"paid not False: {delivered.get('order', {}).get('paid')}"
+    assert float(delivered.get('order', {}).get('payment_cash', 1)) == 0.0, \
+        f"payment_cash not 0: {delivered.get('order', {}).get('payment_cash')}"
+
+    ok("Credit delivery: status=entregado, is_client_credit=True, paid=False, payment_cash=0")
+
+except Exception as e:
+    fail(f"Credit delivery flow: {e}")
+    import traceback
+    traceback.print_exc()
+    sys.exit(1)
+
+try:
+    # Find client via GET /clients — assert pending_credit_total > 0
+    r = requests.get(f"{BASE}/clients", params={"search": credit_phone})
+    assert r.status_code == 200, f"GET /clients failed: {r.status_code} {r.text}"
+    clients = r.json()
+    credit_client = next((c for c in clients if c['phone'] == credit_phone), None)
+    assert credit_client, f"Credit client not found by phone {credit_phone}"
+    credit_client_id = credit_client['id']
+
+    pending_credit_total = float(credit_client.get('pending_credit_total', 0))
+    assert pending_credit_total > 0, f"pending_credit_total should be > 0, got {pending_credit_total}"
+
+    ok(f"GET /clients: pending_credit_total=${pending_credit_total:,.0f} > 0 for client id={credit_client_id}")
+
+except Exception as e:
+    fail(f"Client credit_total check: {e}")
+    import traceback
+    traceback.print_exc()
+    sys.exit(1)
+
+try:
+    # GET /clients/{id}/credits — assert returns 1 item with correct order_id
+    r = requests.get(f"{BASE}/clients/{credit_client_id}/credits")
+    assert r.status_code == 200, f"GET /clients/{credit_client_id}/credits failed: {r.status_code} {r.text}"
+    credits = r.json()
+    assert len(credits) == 1, f"Expected 1 credit, got {len(credits)}"
+    assert credits[0].get('id') == credit_order_id or credits[0].get('order_id') == credit_order_id, \
+        f"Credit order_id mismatch: {credits[0]}"
+
+    ok(f"GET /clients/{{id}}/credits: 1 pending credit order (id={credit_order_id})")
+
+except Exception as e:
+    fail(f"GET credits list: {e}")
+    import traceback
+    traceback.print_exc()
+
+try:
+    # POST /clients/{id}/credits/pay — pay in full via cash
+    r = requests.post(f"{BASE}/clients/{credit_client_id}/credits/pay", json={
+        "payment_cash": float(credit_order_total),
+        "payment_datafono": 0,
+        "payment_nequi": 0,
+        "payment_bancolombia": 0,
+    })
+    assert r.status_code == 200, f"POST /credits/pay failed: {r.status_code} {r.text}"
+    pay_result = r.json()
+    # Response should be [] (empty list = all paid)
+    assert pay_result == [], f"Expected empty list after full payment, got {pay_result}"
+
+    ok("POST /clients/{id}/credits/pay: returned [] (all credits paid)")
+
+except Exception as e:
+    fail(f"Credits pay: {e}")
+    import traceback
+    traceback.print_exc()
+
+try:
+    # Verify after payment: GET /clients/{id}/credits → empty list
+    r = requests.get(f"{BASE}/clients/{credit_client_id}/credits")
+    assert r.status_code == 200
+    credits_after = r.json()
+    assert credits_after == [], f"Expected empty credits list after payment, got {credits_after}"
+
+    ok("After payment: GET /clients/{id}/credits → [] (empty)")
+
+    # Verify GET /clients?search → pending_credit_total == 0
+    r = requests.get(f"{BASE}/clients", params={"search": credit_phone})
+    assert r.status_code == 200
+    clients_after = r.json()
+    credit_client_after = next((c for c in clients_after if c['phone'] == credit_phone), None)
+    assert credit_client_after, "Credit client not found after payment"
+    pending_after = float(credit_client_after.get('pending_credit_total', -1))
+    assert pending_after == 0.0, f"pending_credit_total should be 0 after payment, got {pending_after}"
+
+    ok(f"After payment: GET /clients pending_credit_total=0")
+
+except Exception as e:
+    fail(f"Post-payment verification: {e}")
+    import traceback
+    traceback.print_exc()
+
 # ===== SUMMARY =====
 header("FINAL SUMMARY")
 
