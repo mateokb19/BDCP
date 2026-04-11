@@ -2,14 +2,16 @@ import { useState, useEffect, useMemo, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   Search, ChevronRight, X, Pencil, Check, Car, Users, Package, Wrench,
+  AlertCircle, Download, CreditCard,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { PageHeader } from '@/app/components/ui/PageHeader'
 import { Button } from '@/app/components/ui/Button'
 import { cn } from '@/app/components/ui/cn'
 import { VehicleTypeIcon, vehicleTypeLabel } from '@/app/components/ui/VehicleTypeIcon'
-import { api, type ApiClient, type ApiClientVehicle } from '@/api'
+import { api, type ApiClient, type ApiClientVehicle, type ApiClientCredit } from '@/api'
 import type { VehicleType } from '@/types'
+import { buildCreditInvoiceHtml } from './clientes/creditInvoiceTemplate'
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 
@@ -38,6 +40,13 @@ function formatDate(iso?: string | null) {
   const d = new Date(iso + (iso.includes('T') ? '' : 'T00:00:00'))
   return d.toLocaleDateString('es-CO', { day: '2-digit', month: 'short', year: 'numeric' })
 }
+
+const CREDIT_METHODS = [
+  { key: 'cash',        label: 'Efectivo' },
+  { key: 'datafono',    label: 'Banco Caja Social' },
+  { key: 'nequi',       label: 'Nequi' },
+  { key: 'bancolombia', label: 'Bancolombia Ahorros' },
+]
 
 // ── skeleton ──────────────────────────────────────────────────────────────────
 
@@ -103,6 +112,12 @@ function ClientRow({ client, onClick }: ClientRowProps) {
             {client.tipo_identificacion === 'NIT' ? 'NIT' : 'ID'} {client.identificacion}{client.dv ? `-${client.dv}` : ''}
           </p>
         )}
+        {Number(client.pending_credit_total) > 0 && (
+          <p className="text-xs text-red-400 font-medium mt-0.5 flex items-center gap-1">
+            <AlertCircle size={10} />
+            Debe ${formatCOP(client.pending_credit_total)}
+          </p>
+        )}
       </div>
 
       {/* Chips */}
@@ -150,6 +165,13 @@ function ClientDrawer({ client, onClose, onUpdated }: DrawerProps) {
   })
   const [saving, setSaving] = useState(false)
 
+  // Credit debt state
+  const [credits, setCredits]               = useState<ApiClientCredit[]>([])
+  const [creditsLoading, setCreditsLoading] = useState(false)
+  const [payModal, setPayModal]             = useState(false)
+  const [payMethods, setPayMethods]         = useState<Record<string, string>>({})
+  const [paying, setPaying]                 = useState(false)
+
   // Reset form when client changes
   useEffect(() => {
     setEditing(false)
@@ -164,6 +186,74 @@ function ClientDrawer({ client, onClose, onUpdated }: DrawerProps) {
       notes:               client.notes               ?? '',
     })
   }, [client.id])
+
+  // Fetch credits when client has pending debt
+  useEffect(() => {
+    if (Number(client.pending_credit_total) <= 0) {
+      setCredits([])
+      return
+    }
+    setCreditsLoading(true)
+    api.clients.getCredits(client.id)
+      .then(setCredits)
+      .catch(() => toast.error('Error al cargar deudas'))
+      .finally(() => setCreditsLoading(false))
+  }, [client.id, client.pending_credit_total])
+
+  function togglePayMethod(key: string) {
+    setPayMethods(prev => {
+      const next = { ...prev }
+      if (key in next) delete next[key]
+      else next[key] = ''
+      return next
+    })
+  }
+
+  const totalDebt   = credits.reduce((s, c) => s + Number(c.amount), 0)
+  const checkedKeys = Object.keys(payMethods)
+  const isMulti     = checkedKeys.length > 1
+  const coveredAmt  = isMulti
+    ? checkedKeys.reduce((s, k) => s + (Number(payMethods[k]) || 0), 0)
+    : totalDebt
+  const diffAmt     = totalDebt - coveredAmt
+
+  async function handlePayCredits() {
+    const keyToField: Record<string, 'payment_cash' | 'payment_datafono' | 'payment_nequi' | 'payment_bancolombia'> = {
+      cash: 'payment_cash', datafono: 'payment_datafono',
+      nequi: 'payment_nequi', bancolombia: 'payment_bancolombia',
+    }
+    const payload = { payment_cash: 0, payment_datafono: 0, payment_nequi: 0, payment_bancolombia: 0 }
+    if (checkedKeys.length === 1) {
+      payload[keyToField[checkedKeys[0]]] = totalDebt
+    } else {
+      for (const k of checkedKeys) payload[keyToField[k]] = Number(payMethods[k]) || 0
+    }
+    setPaying(true)
+    try {
+      await api.clients.payCredits(client.id, payload)
+      toast.success('Pago registrado')
+      setPayModal(false)
+      setPayMethods({})
+      setCredits([])
+      const updated = await api.clients.patch(client.id, {})
+      onUpdated({ ...client, ...updated })
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Error al registrar pago')
+    } finally {
+      setPaying(false)
+    }
+  }
+
+  function handleDownloadInvoice() {
+    if (credits.length === 0) return
+    const now = new Date().toLocaleDateString('es-CO', { day: '2-digit', month: 'long', year: 'numeric' })
+    const html = buildCreditInvoiceHtml(client, credits, now)
+    const blob = new Blob([html], { type: 'text/html' })
+    const url  = URL.createObjectURL(blob)
+    const win  = window.open(url, '_blank')
+    if (win) win.focus()
+    setTimeout(() => URL.revokeObjectURL(url), 10000)
+  }
 
   async function handleSave() {
     if (!editForm.name.trim()) {
@@ -489,8 +579,179 @@ function ClientDrawer({ client, onClose, onUpdated }: DrawerProps) {
               </div>
             )}
           </div>
+
+          {/* Deudas pendientes */}
+          {(creditsLoading || credits.length > 0 || Number(client.pending_credit_total) > 0) && (
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <p className="text-xs font-medium text-red-400 uppercase tracking-wider flex items-center gap-1.5">
+                  <AlertCircle size={12} />
+                  Deudas pendientes
+                </p>
+                {credits.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={handleDownloadInvoice}
+                    className="flex items-center gap-1 text-xs text-gray-500 hover:text-gray-300 transition-colors"
+                  >
+                    <Download size={11} />
+                    Factura PDF
+                  </button>
+                )}
+              </div>
+
+              {creditsLoading ? (
+                <div className="text-xs text-gray-500 animate-pulse">Cargando deudas...</div>
+              ) : credits.length === 0 ? (
+                <div className="text-xs text-gray-500 italic">Sin deudas pendientes</div>
+              ) : (
+                <>
+                  <div className="rounded-xl border border-red-500/20 bg-red-500/5 overflow-hidden">
+                    <table className="w-full text-xs">
+                      <thead>
+                        <tr className="border-b border-red-500/10">
+                          <th className="text-left px-3 py-2 text-gray-500 font-medium">Orden</th>
+                          <th className="text-left px-3 py-2 text-gray-500 font-medium">Entrega</th>
+                          <th className="text-left px-3 py-2 text-gray-500 font-medium">Placa</th>
+                          <th className="text-right px-3 py-2 text-gray-500 font-medium">Monto</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {credits.map(c => (
+                          <tr key={c.order_id} className="border-b border-white/5 last:border-0">
+                            <td className="px-3 py-2 text-gray-300 font-mono">{c.order_number}</td>
+                            <td className="px-3 py-2 text-gray-400">{c.delivered_at}</td>
+                            <td className="px-3 py-2 text-gray-400 font-semibold">{c.plate}</td>
+                            <td className="px-3 py-2 text-red-400 text-right font-semibold">${formatCOP(c.amount)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                      <tfoot>
+                        <tr className="border-t border-red-500/20 bg-red-500/5">
+                          <td colSpan={3} className="px-3 py-2 text-xs font-semibold text-gray-300">Total</td>
+                          <td className="px-3 py-2 text-right text-sm font-bold text-red-400">${formatCOP(totalDebt)}</td>
+                        </tr>
+                      </tfoot>
+                    </table>
+                  </div>
+
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    className="w-full bg-red-600/80 hover:bg-red-600 border-red-500/40"
+                    onClick={() => { setPayModal(true); setPayMethods({}) }}
+                  >
+                    Registrar pago
+                  </Button>
+                </>
+              )}
+            </div>
+          )}
         </div>
       </motion.div>
+
+      {/* Credit payment modal */}
+      <AnimatePresence>
+        {payModal && (
+          <motion.div
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 backdrop-blur-sm p-4"
+            onClick={e => { if (e.target === e.currentTarget) setPayModal(false) }}
+          >
+            <motion.div
+              initial={{ opacity: 0, scale: 0.94, y: 12 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.94, y: 12 }}
+              transition={{ type: 'spring', stiffness: 300, damping: 28 }}
+              className="w-full max-w-sm rounded-2xl border border-white/10 bg-gray-900 shadow-2xl p-6 space-y-5"
+            >
+              <div>
+                <h3 className="text-base font-semibold text-white">Registrar pago</h3>
+                <p className="text-sm text-gray-500 mt-1">
+                  {client.name} · Total: <span className="text-red-400 font-semibold">${formatCOP(totalDebt)}</span>
+                </p>
+              </div>
+
+              <div className="space-y-2">
+                <p className="text-xs text-gray-500 uppercase tracking-wider">Método de pago</p>
+                <div className="space-y-1.5">
+                  {CREDIT_METHODS.map(m => {
+                    const isChecked = m.key in payMethods
+                    return (
+                      <button
+                        key={m.key}
+                        type="button"
+                        onClick={() => togglePayMethod(m.key)}
+                        className={cn(
+                          'w-full flex items-center gap-3 rounded-xl border px-3 py-2.5 text-left transition-colors',
+                          isChecked
+                            ? 'border-yellow-500/60 bg-yellow-500/10'
+                            : 'border-white/8 bg-white/[0.03] hover:bg-white/[0.06]'
+                        )}
+                      >
+                        <div className={cn(
+                          'w-4 h-4 rounded border-2 shrink-0 flex items-center justify-center transition-colors',
+                          isChecked ? 'border-yellow-500 bg-yellow-500' : 'border-gray-600'
+                        )}>
+                          {isChecked && (
+                            <svg viewBox="0 0 10 8" className="w-2.5 h-2 text-gray-900" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                              <path d="M1 4l2.5 2.5L9 1" />
+                            </svg>
+                          )}
+                        </div>
+                        <p className={cn('text-sm font-medium flex-1', isChecked ? 'text-yellow-300' : 'text-gray-300')}>
+                          {m.label}
+                        </p>
+                        {isChecked && isMulti && (
+                          <input
+                            type="text" inputMode="numeric" placeholder="0"
+                            value={Number(payMethods[m.key] || '0').toLocaleString('es-CO')}
+                            onChange={e => {
+                              e.stopPropagation()
+                              const raw = e.target.value.replace(/\./g, '').replace(/,/g, '')
+                              setPayMethods(prev => ({ ...prev, [m.key]: raw }))
+                            }}
+                            onClick={e => e.stopPropagation()}
+                            className="w-24 rounded-lg border border-white/10 bg-white/5 px-2 py-1 text-sm text-right text-gray-100 focus:border-yellow-500/50 focus:outline-none"
+                          />
+                        )}
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+
+              {isMulti && (
+                <div className={cn(
+                  'text-xs text-center rounded-xl px-3 py-2 font-medium',
+                  diffAmt === 0 ? 'text-green-400 bg-green-500/10 border border-green-500/20' :
+                  diffAmt <  0 ? 'text-blue-400  bg-blue-500/10  border border-blue-500/20'  :
+                                 'text-orange-400 bg-orange-500/10 border border-orange-500/20'
+                )}>
+                  {diffAmt === 0 && '✓ Pago completo'}
+                  {diffAmt <  0 && `Cambio al cliente: $${formatCOP(Math.abs(diffAmt))}`}
+                  {diffAmt >  0 && `Pendiente: $${formatCOP(diffAmt)}`}
+                </div>
+              )}
+
+              <div className="flex gap-3 pt-1">
+                <Button variant="secondary" size="md" className="flex-1" onClick={() => setPayModal(false)}>
+                  Cancelar
+                </Button>
+                <Button
+                  variant="primary"
+                  size="md"
+                  className="flex-1"
+                  onClick={handlePayCredits}
+                  disabled={paying || checkedKeys.length === 0 || (isMulti && diffAmt > 0)}
+                >
+                  {paying ? 'Guardando...' : 'Confirmar pago'}
+                </Button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </>
   )
 }
@@ -536,6 +797,10 @@ export default function Clientes() {
     () => clients.reduce((acc, c) => acc + c.order_count, 0),
     [clients],
   )
+  const totalWithDebt = useMemo(
+    () => clients.filter(c => Number(c.pending_credit_total) > 0).length,
+    [clients],
+  )
 
   // Client-side filter for instant feedback while debounce is pending
   const filtered = useMemo(() => {
@@ -573,7 +838,7 @@ export default function Clientes() {
       />
 
       {/* KPI cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <KpiCard
           label="Total Clientes"
           value={clients.length}
@@ -591,6 +856,12 @@ export default function Clientes() {
           value={totalServices}
           icon={<Wrench size={18} />}
           color="bg-yellow-500/15 text-yellow-400"
+        />
+        <KpiCard
+          label="Con Deuda"
+          value={totalWithDebt}
+          icon={<CreditCard size={18} />}
+          color="bg-red-500/15 text-red-400"
         />
       </div>
 
