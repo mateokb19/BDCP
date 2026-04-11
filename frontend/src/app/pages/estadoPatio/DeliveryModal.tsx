@@ -56,6 +56,7 @@ export function DeliveryModal({
     setCreditConfirm(false)
   }, [paymentEntry.id])
 
+  const hasConfirmedItems  = (paymentEntry.order?.items ?? []).some(i => i.is_confirmed)
   const total              = Number(paymentEntry.order?.total ?? 0)
   const abono              = Number(paymentEntry.order?.downpayment ?? 0)
   const restante           = Math.max(0, total - abono)
@@ -93,18 +94,31 @@ export function DeliveryModal({
           </p>
         </div>
 
-        {/* Detallado operator selector */}
+        {/* Detallado operator selector — locked once items are confirmed */}
         {deliveryOps.length > 0 && (
           <div className="space-y-2">
-            <p className="text-xs text-gray-500 uppercase tracking-wider">Operario *</p>
-            <Select
-              value={deliveryOpId || '0'}
-              onValueChange={v => setDeliveryOpId(v === '0' ? '' : v)}
-              options={[
-                { value: '0', label: 'Seleccionar operario...' },
-                ...deliveryOps.map(op => ({ value: String(op.id), label: op.name })),
-              ]}
-            />
+            <div className="flex items-center gap-2">
+              <p className="text-xs text-gray-500 uppercase tracking-wider">Operario</p>
+              {hasConfirmedItems && (
+                <span className="flex items-center gap-1 text-[10px] text-yellow-500/80 bg-yellow-500/10 border border-yellow-500/20 rounded-full px-2 py-0.5">
+                  🔒 Ya liquidado
+                </span>
+              )}
+            </div>
+            {hasConfirmedItems ? (
+              <p className="text-sm text-gray-200 px-1">
+                {deliveryOps.find(o => String(o.id) === deliveryOpId)?.name ?? '—'}
+              </p>
+            ) : (
+              <Select
+                value={deliveryOpId || '0'}
+                onValueChange={v => setDeliveryOpId(v === '0' ? '' : v)}
+                options={[
+                  { value: '0', label: 'Seleccionar operario...' },
+                  ...deliveryOps.map(op => ({ value: String(op.id), label: op.name })),
+                ]}
+              />
+            )}
           </div>
         )}
 
