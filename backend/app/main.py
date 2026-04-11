@@ -141,6 +141,10 @@ with engine.connect() as _conn:
         "SELECT 'Enrique Rodríguez', 30, 'latoneria', true "
         "WHERE NOT EXISTS (SELECT 1 FROM operators WHERE name = 'Enrique Rodríguez')"
     ))
+    # Move Lavado Motor and Lavado Chasis from 'otro' to 'exterior'
+    _conn.execute(text(
+        "UPDATE services SET category = 'exterior' WHERE name IN ('Lavado Motor', 'Lavado Chasis') AND category = 'otro'"
+    ))
     _conn.commit()
 
 
@@ -249,8 +253,8 @@ _SERVICES_SEED = [
     # ── Otros servicios (slots para servicios personalizados) ────────────────
     dict(category="otro", name="PDR",           price_automovil=200000, price_camion_estandar=200000, price_camion_xl=200000),
     dict(category="otro", name="Arreglo Rin",   price_automovil=250000, price_camion_estandar=250000, price_camion_xl=250000),
-    dict(category="otro", name="Lavado Motor",  price_automovil=60000,  price_camion_estandar=60000,  price_camion_xl=60000),
-    dict(category="otro", name="Lavado Chasis",           price_automovil=60000,  price_camion_estandar=60000,  price_camion_xl=60000),
+    dict(category="exterior", name="Lavado Motor",  price_automovil=60000,  price_camion_estandar=60000,  price_camion_xl=60000),
+    dict(category="exterior", name="Lavado Chasis", price_automovil=60000,  price_camion_estandar=60000,  price_camion_xl=60000),
     dict(category="otro", name="Restauración de farolas", price_automovil=150000, price_camion_estandar=150000, price_camion_xl=150000),
     dict(category="otro", name="Otro servicio 1", price_automovil=0, price_camion_estandar=0, price_camion_xl=0),
     dict(category="otro", name="Otro servicio 2", price_automovil=0, price_camion_estandar=0, price_camion_xl=0),
