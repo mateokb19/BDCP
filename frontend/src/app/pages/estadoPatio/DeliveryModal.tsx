@@ -1,3 +1,4 @@
+import { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Button } from '@/app/components/ui/Button'
 import { Select } from '@/app/components/ui/Select'
@@ -25,7 +26,8 @@ interface DeliveryModalProps {
   setFactura:      React.Dispatch<React.SetStateAction<boolean>>
   facturaData:     FacturaRecord
   setFacturaData:  React.Dispatch<React.SetStateAction<FacturaRecord>>
-  onConfirm:       () => Promise<void>
+  onConfirm:        () => Promise<void>
+  onCreditDelivery: () => Promise<void>
 }
 
 const METHODS = [
@@ -45,7 +47,15 @@ export function DeliveryModal({
   deliveryOpId, setDeliveryOpId, deliveryOps,
   factura, setFactura, facturaData, setFacturaData,
   onConfirm,
+  onCreditDelivery,
 }: DeliveryModalProps) {
+  const [creditConfirm, setCreditConfirm] = useState(false)
+
+  // Reset confirmation state when the entry changes
+  useEffect(() => {
+    setCreditConfirm(false)
+  }, [paymentEntry.id])
+
   const total              = Number(paymentEntry.order?.total ?? 0)
   const abono              = Number(paymentEntry.order?.downpayment ?? 0)
   const restante           = Math.max(0, total - abono)
@@ -205,6 +215,42 @@ export function DeliveryModal({
                 {diff === 0 && '✓ Pago completo'}
                 {diff <  0 && `Cambio al cliente: $${Math.abs(diff).toLocaleString('es-CO')}`}
                 {diff >  0 && `Pendiente: $${diff.toLocaleString('es-CO')}`}
+              </div>
+            )}
+
+            {/* Credit delivery button */}
+            {!creditConfirm ? (
+              <button
+                type="button"
+                onClick={() => setCreditConfirm(true)}
+                className="w-full text-left text-xs text-gray-500 hover:text-orange-400 transition-colors py-1 underline underline-offset-2"
+              >
+                El cliente debe este valor
+              </button>
+            ) : (
+              <div className="rounded-xl border border-orange-500/30 bg-orange-500/10 px-4 py-3 space-y-3">
+                <p className="text-sm text-orange-300 font-medium">
+                  ¿Confirmar que el cliente debe{' '}
+                  <span className="font-bold">${restante.toLocaleString('es-CO')}</span>?
+                </p>
+                <p className="text-xs text-orange-400/70">El vehículo saldrá del patio normalmente.</p>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setCreditConfirm(false)}
+                    className="flex-1 rounded-xl border border-white/10 bg-white/5 py-2 text-sm text-gray-400 hover:bg-white/10 transition-colors"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="button"
+                    onClick={onCreditDelivery}
+                    disabled={delivering}
+                    className="flex-1 rounded-xl border border-orange-500/40 bg-orange-500/20 py-2 text-sm font-medium text-orange-300 hover:bg-orange-500/30 transition-colors disabled:opacity-50"
+                  >
+                    {delivering ? 'Procesando...' : 'Confirmar deuda'}
+                  </button>
+                </div>
               </div>
             )}
           </>

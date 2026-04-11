@@ -330,6 +330,28 @@ export default function EstadoPatio() {
     }
   }
 
+  // ── Credit delivery (client owes the remaining balance) ────────────────────
+  async function confirmCreditDelivery() {
+    if (!paymentEntry) return
+    setDelivering(true)
+    try {
+      if (deliveryOpId) {
+        await api.patio.edit(paymentEntry.id, { operator_id: Number(deliveryOpId) })
+      }
+      // Advance with all payment amounts as 0 — the debt is tracked separately
+      const updated = await api.patio.advance(paymentEntry.id, {
+        payment_cash: 0, payment_datafono: 0, payment_nequi: 0, payment_bancolombia: 0,
+      })
+      setEntries(prev => prev.map(e => e.id === updated.id ? updated : e))
+      toast.success(`${updated.vehicle?.plate ?? 'Vehículo'} entregado (deuda pendiente)`)
+      setPaymentEntry(null)
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Error al entregar')
+    } finally {
+      setDelivering(false)
+    }
+  }
+
   // ── Operator picker confirmation ────────────────────────────────────────────
   async function confirmAdvanceWithOperator() {
     if (!operatorPickEntry || !pickedOpId) return
@@ -497,6 +519,7 @@ export default function EstadoPatio() {
             facturaData={facturaData}
             setFacturaData={setFacturaData}
             onConfirm={confirmDelivery}
+            onCreditDelivery={confirmCreditDelivery}
           />
         )}
       </AnimatePresence>
