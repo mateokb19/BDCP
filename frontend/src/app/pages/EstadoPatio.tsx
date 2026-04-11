@@ -345,6 +345,7 @@ export default function EstadoPatio() {
       setPaymentEntry(null)
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Error al entregar')
+      throw err
     } finally {
       setDelivering(false)
     }

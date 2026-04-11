@@ -231,7 +231,7 @@ export function DeliveryModal({
               <div className="rounded-xl border border-orange-500/30 bg-orange-500/10 px-4 py-3 space-y-3">
                 <p className="text-sm text-orange-300 font-medium">
                   ¿Confirmar que el cliente debe{' '}
-                  <span className="font-bold">${restante.toLocaleString('es-CO')}</span>?
+                  <span className="font-bold">${effectiveRestante.toLocaleString('es-CO')}</span>?
                 </p>
                 <p className="text-xs text-orange-400/70">El vehículo saldrá del patio normalmente.</p>
                 <div className="flex gap-2">
@@ -244,7 +244,7 @@ export function DeliveryModal({
                   </button>
                   <button
                     type="button"
-                    onClick={onCreditDelivery}
+                    onClick={() => onCreditDelivery().catch(() => setCreditConfirm(false))}
                     disabled={delivering}
                     className="flex-1 rounded-xl border border-orange-500/40 bg-orange-500/20 py-2 text-sm font-medium text-orange-300 hover:bg-orange-500/30 transition-colors disabled:opacity-50"
                   >
