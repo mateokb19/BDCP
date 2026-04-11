@@ -193,6 +193,8 @@ class OrderOut(OrmBase):
     payment_datafono:    Decimal
     payment_nequi:       Decimal
     payment_bancolombia: Decimal
+    is_client_credit:       bool              = False
+    client_credit_paid_at:  Optional[datetime] = None
     latoneria_operator_pay: Optional[Decimal] = None
     items:               list[OrderItemOut]
 
@@ -222,6 +224,7 @@ class AdvancePayload(BaseModel):
     payment_nequi:       Decimal = Decimal("0")
     payment_bancolombia: Decimal = Decimal("0")
     latoneria_operator_pay: Optional[Decimal] = None
+    is_client_credit:    bool    = False
 
 
 class PatioPatch(BaseModel):
@@ -558,6 +561,7 @@ class ClientOut(OrmBase):
     order_count:          int                    = 0
     total_spent:          Decimal                = Decimal("0")
     last_service:         Optional[date]         = None
+    pending_credit_total: Decimal                = Decimal("0")
 
 
 class ClientPatch(BaseModel):
@@ -569,6 +573,23 @@ class ClientPatch(BaseModel):
     identificacion:      Optional[str] = None
     dv:                  Optional[str] = None
     notes:               Optional[str] = None
+
+
+class ClientCreditOut(BaseModel):
+    order_id:     int
+    order_number: str
+    delivered_at: str
+    plate:        str
+    vehicle:      str   # "brand model"
+    services:     str   # service names joined by ", "
+    amount:       float  # restante = total - downpayment
+
+
+class ClientCreditPayment(BaseModel):
+    payment_cash:        Decimal = Decimal("0")
+    payment_datafono:    Decimal = Decimal("0")
+    payment_nequi:       Decimal = Decimal("0")
+    payment_bancolombia: Decimal = Decimal("0")
 
 
 # ── Ingresos ────────────────────────────────────────────────────────────────────
