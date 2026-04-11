@@ -1,7 +1,7 @@
 from decimal import Decimal
 from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from app.database import get_db
 from app import models, schemas
 
@@ -20,7 +20,7 @@ def _build_client_out(c: models.Client) -> schemas.ClientOut:
                 total_spent += Decimal(str(o.total))
                 if last_service is None or o.date > last_service:
                     last_service = o.date
-            if o.is_client_credit and o.client_credit_paid_at is None:
+            if o.is_client_credit and o.client_credit_paid_at is None and o.status != "cancelado":
                 pending_credit_total += Decimal(str(o.total)) - Decimal(str(o.downpayment))
     return schemas.ClientOut(
         id=c.id,
@@ -43,7 +43,6 @@ def _build_client_out(c: models.Client) -> schemas.ClientOut:
 
 @router.get("", response_model=list[schemas.ClientOut])
 def list_clients(search: Optional[str] = None, db: Session = Depends(get_db)):
-    from sqlalchemy.orm import joinedload
     q = db.query(models.Client).options(
         joinedload(models.Client.vehicles)
         .joinedload(models.Vehicle.orders)
@@ -65,7 +64,6 @@ def list_clients(search: Optional[str] = None, db: Session = Depends(get_db)):
 
 @router.patch("/{client_id}", response_model=schemas.ClientOut)
 def patch_client(client_id: int, data: schemas.ClientPatch, db: Session = Depends(get_db)):
-    from sqlalchemy.orm import joinedload
     c = (
         db.query(models.Client)
         .options(
@@ -97,7 +95,6 @@ def patch_client(client_id: int, data: schemas.ClientPatch, db: Session = Depend
 @router.get("/{client_id}/credits", response_model=list[schemas.ClientCreditOut])
 def list_client_credits(client_id: int, db: Session = Depends(get_db)):
     """List all pending (unpaid) credit orders for a client."""
-    from sqlalchemy.orm import joinedload
     c = (
         db.query(models.Client)
         .options(
@@ -148,7 +145,6 @@ def pay_client_credits(
     Payment amounts are distributed proportionally by order weight.
     Returns empty list when all debts are paid."""
     from app.tz import now_bogota
-    from sqlalchemy.orm import joinedload
 
     c = (
         db.query(models.Client)
@@ -188,6 +184,11 @@ def pay_client_credits(
 
     if total_paid <= 0:
         raise HTTPException(status_code=400, detail="El monto pagado debe ser mayor a 0")
+    if total_paid < total_debt:
+        raise HTTPException(
+            status_code=400,
+            detail=f"El pago (${total_paid:,.0f}) no cubre la deuda total (${total_debt:,.0f})"
+        )
     if total_paid > total_debt:
         raise HTTPException(
             status_code=400,
@@ -196,12 +197,24 @@ def pay_client_credits(
 
     now = now_bogota()
 
-    for order, order_amt in pending:
+    # Distribute payment proportionally; apply remainder to last order
+    for i, (order, order_amt) in enumerate(pending):
         weight = order_amt / total_debt
-        order.payment_cash        = (Decimal(str(data.payment_cash))        * weight).quantize(Decimal("0.01"))
-        order.payment_datafono    = (Decimal(str(data.payment_datafono))    * weight).quantize(Decimal("0.01"))
-        order.payment_nequi       = (Decimal(str(data.payment_nequi))       * weight).quantize(Decimal("0.01"))
-        order.payment_bancolombia = (Decimal(str(data.payment_bancolombia)) * weight).quantize(Decimal("0.01"))
+        if i < len(pending) - 1:
+            order.payment_cash        = (Decimal(str(data.payment_cash))        * weight).quantize(Decimal("0.01"))
+            order.payment_datafono    = (Decimal(str(data.payment_datafono))    * weight).quantize(Decimal("0.01"))
+            order.payment_nequi       = (Decimal(str(data.payment_nequi))       * weight).quantize(Decimal("0.01"))
+            order.payment_bancolombia = (Decimal(str(data.payment_bancolombia)) * weight).quantize(Decimal("0.01"))
+        else:
+            # Last order gets the remainder to avoid rounding loss
+            already_cash        = sum(o.payment_cash        for o, _ in pending[:-1])
+            already_datafono    = sum(o.payment_datafono    for o, _ in pending[:-1])
+            already_nequi       = sum(o.payment_nequi       for o, _ in pending[:-1])
+            already_bancolombia = sum(o.payment_bancolombia for o, _ in pending[:-1])
+            order.payment_cash        = Decimal(str(data.payment_cash))        - already_cash
+            order.payment_datafono    = Decimal(str(data.payment_datafono))    - already_datafono
+            order.payment_nequi       = Decimal(str(data.payment_nequi))       - already_nequi
+            order.payment_bancolombia = Decimal(str(data.payment_bancolombia)) - already_bancolombia
         order.paid                = True
         order.client_credit_paid_at = now
 
