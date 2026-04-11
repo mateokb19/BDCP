@@ -69,11 +69,21 @@ function SkeletonRow() {
 
 // ── KPI card ─────────────────────────────────────────────────────────────────
 
-interface KpiProps { label: string; value: number | string; icon: React.ReactNode; color: string }
+interface KpiProps { label: string; value: number | string; icon: React.ReactNode; color: string; onClick?: () => void; active?: boolean }
 
-function KpiCard({ label, value, icon, color }: KpiProps) {
+function KpiCard({ label, value, icon, color, onClick, active }: KpiProps) {
+  const Tag = onClick ? 'button' : 'div'
   return (
-    <div className={cn('rounded-2xl border border-white/8 bg-white/[0.03] p-4 flex items-center gap-4')}>
+    <Tag
+      {...(onClick ? { onClick, type: 'button' as const } : {})}
+      className={cn(
+        'rounded-2xl border p-4 flex items-center gap-4 transition-all duration-200',
+        active
+          ? 'border-red-500/50 bg-red-500/10 ring-1 ring-red-500/30'
+          : 'border-white/8 bg-white/[0.03]',
+        onClick && 'hover:border-white/16 hover:bg-white/[0.06] cursor-pointer w-full text-left',
+      )}
+    >
       <div className={cn('w-10 h-10 rounded-xl flex items-center justify-center shrink-0', color)}>
         {icon}
       </div>
@@ -81,7 +91,8 @@ function KpiCard({ label, value, icon, color }: KpiProps) {
         <p className="text-xs text-gray-400">{label}</p>
         <p className="text-xl font-semibold text-white mt-0.5">{value}</p>
       </div>
-    </div>
+      {active && <span className="ml-auto text-xs text-red-400 font-medium shrink-0">Filtrado</span>}
+    </Tag>
   )
 }
 
@@ -417,26 +428,32 @@ function ClientDrawer({ client, onClose, onUpdated }: DrawerProps) {
               {/* Tipo de identificación */}
               <div className="space-y-2">
                 <label className="block text-xs text-gray-400">Tipo de identificación</label>
-                <select
-                  className={cn(inputClass, 'appearance-none')}
-                  value={editForm.tipo_identificacion}
-                  onChange={e => setEditForm(f => ({ ...f, tipo_identificacion: e.target.value, dv: '' }))}
-                >
-                  <option value="">— Seleccionar —</option>
-                  {editForm.tipo_persona === 'natural' ? (
-                    <>
-                      <option value="Cédula de Ciudadanía">Cédula de Ciudadanía</option>
-                      <option value="Cédula de Extranjería">Cédula de Extranjería</option>
-                      <option value="Pasaporte">Pasaporte</option>
-                      <option value="Tarjeta de Identidad">Tarjeta de Identidad</option>
-                    </>
-                  ) : (
-                    <>
-                      <option value="NIT">NIT</option>
-                      <option value="NIT Extranjero">NIT Extranjero</option>
-                    </>
-                  )}
-                </select>
+                <div className="relative">
+                  <select
+                    className={cn(inputClass, 'appearance-none pr-8 cursor-pointer')}
+                    value={editForm.tipo_identificacion}
+                    onChange={e => setEditForm(f => ({ ...f, tipo_identificacion: e.target.value, dv: '' }))}
+                    style={{ colorScheme: 'dark' }}
+                  >
+                    <option value="">— Seleccionar —</option>
+                    {editForm.tipo_persona === 'natural' ? (
+                      <>
+                        <option value="Cédula de Ciudadanía">Cédula de Ciudadanía</option>
+                        <option value="Cédula de Extranjería">Cédula de Extranjería</option>
+                        <option value="Pasaporte">Pasaporte</option>
+                        <option value="Tarjeta de Identidad">Tarjeta de Identidad</option>
+                      </>
+                    ) : (
+                      <>
+                        <option value="NIT">NIT</option>
+                        <option value="NIT Extranjero">NIT Extranjero</option>
+                      </>
+                    )}
+                  </select>
+                  <svg className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-gray-400" width="12" height="12" viewBox="0 0 12 12" fill="none">
+                    <path d="M2 4l4 4 4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
+                </div>
               </div>
               {/* Número de identificación + DV */}
               <div className={cn('gap-2', editForm.tipo_identificacion === 'NIT' ? 'grid grid-cols-3' : 'block space-y-0')}>
@@ -759,6 +776,7 @@ export default function Clientes() {
   const [clients, setClients] = useState<ApiClient[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch]   = useState('')
+  const [filterDebt, setFilterDebt] = useState(false)
   const [selectedClient, setSelectedClient] = useState<ApiClient | null>(null)
 
   // Fetch clients (debounced server-side search)
@@ -801,14 +819,16 @@ export default function Clientes() {
 
   // Client-side filter for instant feedback while debounce is pending
   const filtered = useMemo(() => {
-    if (!search.trim()) return clients
+    let result = clients
+    if (filterDebt) result = result.filter(c => Number(c.pending_credit_total) > 0)
+    if (!search.trim()) return result
     const q = search.toLowerCase()
-    return clients.filter(
+    return result.filter(
       c => c.name.toLowerCase().includes(q) ||
            (c.phone ?? '').includes(q) ||
            c.vehicles.some(v => v.plate.toLowerCase().includes(q)),
     )
-  }, [clients, search])
+  }, [clients, search, filterDebt])
 
   function handleUpdated(updated: ApiClient) {
     setClients(prev => prev.map(c => c.id === updated.id ? updated : c))
@@ -859,6 +879,8 @@ export default function Clientes() {
           value={totalWithDebt}
           icon={<CreditCard size={18} />}
           color="bg-red-500/15 text-red-400"
+          onClick={() => setFilterDebt(f => !f)}
+          active={filterDebt}
         />
       </div>
 
