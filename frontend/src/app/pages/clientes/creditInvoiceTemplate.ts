@@ -12,6 +12,12 @@ function fmtCOP(n: number): string {
   return Number(n).toLocaleString('es-CO')
 }
 
+function fmtDate(iso: string): string {
+  if (!iso || iso === '—') return iso
+  const d = new Date(iso + (iso.includes('T') ? '' : 'T00:00:00'))
+  return d.toLocaleDateString('es-CO', { day: '2-digit', month: 'short', year: 'numeric' })
+}
+
 export function buildCreditInvoiceHtml(
   client: ApiClient,
   credits: ApiClientCredit[],
@@ -23,7 +29,7 @@ export function buildCreditInvoiceHtml(
     .map(c => `
       <tr>
         <td>${escapeHtml(c.order_number)}</td>
-        <td>${escapeHtml(c.delivered_at)}</td>
+        <td>${escapeHtml(fmtDate(c.delivered_at))}</td>
         <td>${escapeHtml(c.plate)}</td>
         <td>${escapeHtml(c.vehicle)}</td>
         <td class="services">${escapeHtml(c.services)}</td>

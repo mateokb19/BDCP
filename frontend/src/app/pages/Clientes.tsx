@@ -189,10 +189,8 @@ function ClientDrawer({ client, onClose, onUpdated }: DrawerProps) {
 
   // Fetch credits when client has pending debt
   useEffect(() => {
-    if (Number(client.pending_credit_total) <= 0) {
-      setCredits([])
-      return
-    }
+    setCredits([])
+    if (Number(client.pending_credit_total) <= 0) return
     setCreditsLoading(true)
     api.clients.getCredits(client.id)
       .then(setCredits)
@@ -608,7 +606,7 @@ function ClientDrawer({ client, onClose, onUpdated }: DrawerProps) {
                         {credits.map(c => (
                           <tr key={c.order_id} className="border-b border-white/5 last:border-0">
                             <td className="px-3 py-2 text-gray-300 font-mono">{c.order_number}</td>
-                            <td className="px-3 py-2 text-gray-400">{c.delivered_at}</td>
+                            <td className="px-3 py-2 text-gray-400">{formatDate(c.delivered_at)}</td>
                             <td className="px-3 py-2 text-gray-400 font-semibold">{c.plate}</td>
                             <td className="px-3 py-2 text-red-400 text-right font-semibold">${formatCOP(c.amount)}</td>
                           </tr>
@@ -655,7 +653,7 @@ function ClientDrawer({ client, onClose, onUpdated }: DrawerProps) {
           <motion.div
             initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
             className="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 backdrop-blur-sm p-4"
-            onClick={e => { if (e.target === e.currentTarget) setPayModal(false) }}
+            onClick={e => { if (e.target === e.currentTarget) { setPayModal(false); setPayMethods({}) } }}
           >
             <motion.div
               initial={{ opacity: 0, scale: 0.94, y: 12 }}
@@ -742,7 +740,7 @@ function ClientDrawer({ client, onClose, onUpdated }: DrawerProps) {
                   size="md"
                   className="flex-1"
                   onClick={handlePayCredits}
-                  disabled={paying || checkedKeys.length === 0 || (isMulti && diffAmt > 0)}
+                  disabled={paying || checkedKeys.length === 0 || (isMulti && diffAmt !== 0)}
                 >
                   {paying ? 'Guardando...' : 'Confirmar pago'}
                 </Button>
