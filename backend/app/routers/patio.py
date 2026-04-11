@@ -77,13 +77,22 @@ def advance_status(id: int, payload: schemas.AdvancePayload = schemas.AdvancePay
         entry.completed_at = now
         entry.order.status = models.OrderStatusEnum.listo
     elif next_status == models.PatioStatusEnum.entregado:
-        entry.delivered_at           = now
-        entry.order.status           = models.OrderStatusEnum.entregado
-        entry.order.payment_cash        = payload.payment_cash
-        entry.order.payment_datafono    = payload.payment_datafono
-        entry.order.payment_nequi       = payload.payment_nequi
-        entry.order.payment_bancolombia = payload.payment_bancolombia
-        entry.order.paid                = True
+        entry.delivered_at = now
+        entry.order.status = models.OrderStatusEnum.entregado
+        if payload.is_client_credit:
+            # Client owes the restante — payment recorded later from Clientes page
+            entry.order.is_client_credit     = True
+            entry.order.payment_cash         = 0
+            entry.order.payment_datafono     = 0
+            entry.order.payment_nequi        = 0
+            entry.order.payment_bancolombia  = 0
+            entry.order.paid                 = False
+        else:
+            entry.order.payment_cash         = payload.payment_cash
+            entry.order.payment_datafono     = payload.payment_datafono
+            entry.order.payment_nequi        = payload.payment_nequi
+            entry.order.payment_bancolombia  = payload.payment_bancolombia
+            entry.order.paid                 = True
 
     db.commit()
     db.refresh(entry)
