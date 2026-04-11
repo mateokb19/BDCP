@@ -338,10 +338,8 @@ export default function EstadoPatio() {
       if (deliveryOpId) {
         await api.patio.edit(paymentEntry.id, { operator_id: Number(deliveryOpId) })
       }
-      // Advance with all payment amounts as 0 — the debt is tracked separately
-      const updated = await api.patio.advance(paymentEntry.id, {
-        payment_cash: 0, payment_datafono: 0, payment_nequi: 0, payment_bancolombia: 0,
-      })
+      // Advance with is_client_credit flag — backend marks order as credit (not paid)
+      const updated = await api.patio.advance(paymentEntry.id, { is_client_credit: true })
       setEntries(prev => prev.map(e => e.id === updated.id ? updated : e))
       toast.success(`${updated.vehicle?.plate ?? 'Vehículo'} entregado (deuda pendiente)`)
       setPaymentEntry(null)
