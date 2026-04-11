@@ -583,22 +583,10 @@ function ClientDrawer({ client, onClose, onUpdated }: DrawerProps) {
           {/* Deudas pendientes */}
           {(creditsLoading || credits.length > 0 || Number(client.pending_credit_total) > 0) && (
             <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <p className="text-xs font-medium text-red-400 uppercase tracking-wider flex items-center gap-1.5">
-                  <AlertCircle size={12} />
-                  Deudas pendientes
-                </p>
-                {credits.length > 0 && (
-                  <button
-                    type="button"
-                    onClick={handleDownloadInvoice}
-                    className="flex items-center gap-1 text-xs text-gray-500 hover:text-gray-300 transition-colors"
-                  >
-                    <Download size={11} />
-                    Factura PDF
-                  </button>
-                )}
-              </div>
+              <p className="text-xs font-medium text-red-400 uppercase tracking-wider flex items-center gap-1.5">
+                <AlertCircle size={12} />
+                Deudas pendientes
+              </p>
 
               {creditsLoading ? (
                 <div className="text-xs text-gray-500 animate-pulse">Cargando deudas...</div>
@@ -635,14 +623,25 @@ function ClientDrawer({ client, onClose, onUpdated }: DrawerProps) {
                     </table>
                   </div>
 
-                  <Button
-                    variant="primary"
-                    size="sm"
-                    className="w-full bg-red-600/80 hover:bg-red-600 border-red-500/40"
-                    onClick={() => { setPayModal(true); setPayMethods({}) }}
-                  >
-                    Registrar pago
-                  </Button>
+                  <div className="flex gap-2">
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      className="flex-1 flex items-center justify-center gap-1.5"
+                      onClick={handleDownloadInvoice}
+                    >
+                      <Download size={13} />
+                      Descargar factura
+                    </Button>
+                    <Button
+                      variant="primary"
+                      size="sm"
+                      className="flex-1 bg-red-600/80 hover:bg-red-600 border-red-500/40"
+                      onClick={() => { setPayModal(true); setPayMethods({}) }}
+                    >
+                      Registrar pago
+                    </Button>
+                  </div>
                 </>
               )}
             </div>
