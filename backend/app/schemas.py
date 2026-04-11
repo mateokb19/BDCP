@@ -582,7 +582,7 @@ class ClientCreditOut(BaseModel):
     plate:        str
     vehicle:      str   # "brand model"
     services:     str   # service names joined by ", "
-    amount:       float  # restante = total - downpayment
+    amount:       Decimal  # restante = total - downpayment
 
 
 class ClientCreditPayment(BaseModel):
