@@ -148,6 +148,8 @@ class ServiceOrder(Base):
     payment_nequi       = Column(Numeric(12, 2), nullable=False, default=0)
     payment_bancolombia = Column(Numeric(12, 2), nullable=False, default=0)
     notes            = Column(Text)
+    is_client_credit        = Column(Boolean, nullable=False, default=False)
+    client_credit_paid_at   = Column(DateTime, nullable=True)
     downpayment        = Column(Numeric(12, 2), nullable=False, default=0)
     downpayment_method = Column(String(50))
     is_warranty        = Column(Boolean, nullable=False, default=False)

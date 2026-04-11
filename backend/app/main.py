@@ -141,6 +141,14 @@ with engine.connect() as _conn:
         "SELECT 'Enrique Rodríguez', 30, 'latoneria', true "
         "WHERE NOT EXISTS (SELECT 1 FROM operators WHERE name = 'Enrique Rodríguez')"
     ))
+    _conn.execute(text(
+        "ALTER TABLE service_orders ADD COLUMN IF NOT EXISTS "
+        "is_client_credit BOOLEAN NOT NULL DEFAULT FALSE"
+    ))
+    _conn.execute(text(
+        "ALTER TABLE service_orders ADD COLUMN IF NOT EXISTS "
+        "client_credit_paid_at TIMESTAMP"
+    ))
     _conn.commit()
 
 
