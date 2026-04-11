@@ -62,7 +62,8 @@ def list_patio(
 @router.post("/{id}/advance", response_model=schemas.PatioEntryOut)
 def advance_status(id: int, payload: schemas.AdvancePayload = schemas.AdvancePayload(), db: Session = Depends(get_db)):
     """Advance patio entry to the next status. When advancing to 'entregado',
-    optionally include payment_cash and payment_transfer amounts."""
+    supply payment amounts (payment_cash/datafono/nequi/bancolombia) for normal delivery,
+    or set is_client_credit=True to deliver on credit (payment recorded later from Clientes)."""
     entry = _get_entry_or_404(id, db)
     next_status = NEXT_STATUS.get(entry.status)
     if next_status is None:
