@@ -37,8 +37,9 @@ export function EditOrderModal({
   const vehicle  = editingEntry.vehicle
   const vType    = vehicle?.type ?? 'automovil'
   const allItems = editingEntry.order?.items ?? []
-  const canEdit  = editingEntry.status === 'esperando' || editingEntry.status === 'en_proceso'
-  const abono    = Number(editingEntry.order?.downpayment ?? 0)
+  const canEdit          = editingEntry.status === 'esperando' || editingEntry.status === 'en_proceso'
+  const hasConfirmedItems = allItems.some(i => i.is_confirmed)
+  const abono            = Number(editingEntry.order?.downpayment ?? 0)
 
   function getStdPrice(svcId: number): number {
     const svc = services.find(s => s.id === svcId)
@@ -99,15 +100,30 @@ export function EditOrderModal({
           {/* ── Operator selectors per type ── */}
           {canEdit && neededOpTypes.length > 0 && (
             <div className="space-y-2">
-              <p className="text-xs text-gray-500 uppercase tracking-wider">Operarios asignados</p>
+              <div className="flex items-center gap-2">
+                <p className="text-xs text-gray-500 uppercase tracking-wider">Operarios asignados</p>
+                {hasConfirmedItems && (
+                  <span className="flex items-center gap-1 text-[10px] text-yellow-500/80 bg-yellow-500/10 border border-yellow-500/20 rounded-full px-2 py-0.5">
+                    🔒 Bloqueado — hay servicios confirmados
+                  </span>
+                )}
+              </div>
               {neededOpTypes.map(opType => {
                 const candidates = editOperators.filter(o => (o.operator_type ?? 'detallado') === opType)
                 const selected   = editForm.operatorByType[opType] ?? ''
                 const isSingle   = candidates.length === 1
+                const selectedOp = candidates.find(o => String(o.id) === String(selected))
                 return (
                   <div key={opType} className="rounded-xl border border-white/8 bg-white/[0.02] px-3 py-2.5 space-y-1">
                     <p className="text-xs font-medium text-gray-400">{OP_TYPE_LABEL[opType] ?? opType}</p>
-                    {isSingle ? (
+                    {hasConfirmedItems ? (
+                      /* Operator locked — confirmed items are already in liquidation */
+                      <p className="text-sm text-gray-200">
+                        {isSingle
+                          ? candidates[0].name
+                          : selectedOp?.name ?? <span className="text-gray-500 italic">Sin asignar</span>}
+                      </p>
+                    ) : isSingle ? (
                       <p className="text-sm text-gray-200">{candidates[0].name}</p>
                     ) : candidates.length === 0 ? (
                       <p className="text-xs text-red-400 italic">No hay operarios de este tipo</p>
@@ -127,7 +143,7 @@ export function EditOrderModal({
                         ))}
                       </select>
                     )}
-                    {!selected && candidates.length > 1 && (
+                    {!hasConfirmedItems && !selected && candidates.length > 1 && (
                       <p className="text-[10px] text-gray-500">Opcional — se asigna al entregar</p>
                     )}
                   </div>
