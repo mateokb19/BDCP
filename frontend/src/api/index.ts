@@ -72,6 +72,8 @@ export interface ApiOrder {
   payment_datafono: string
   payment_nequi: string
   payment_bancolombia: string
+  is_client_credit: boolean
+  client_credit_paid_at?: string
   latoneria_operator_pay?: string
   items: ApiOrderItem[]
 }
@@ -475,6 +477,24 @@ export interface ApiClient {
   order_count:          number
   total_spent:          string
   last_service?:        string
+  pending_credit_total: string
+}
+
+export interface ApiClientCredit {
+  order_id:     number
+  order_number: string
+  delivered_at: string
+  plate:        string
+  vehicle:      string
+  services:     string
+  amount:       string
+}
+
+export interface ClientCreditPaymentPayload {
+  payment_cash:        number
+  payment_datafono:    number
+  payment_nequi:       number
+  payment_bancolombia: number
 }
 
 export interface ClientPatchPayload {
@@ -512,8 +532,18 @@ export const api = {
   },
   patio: {
     list: () => apiFetch<ApiPatioEntry[]>('/patio'),
-    advance: (id: number, payment?: { payment_cash: number; payment_datafono: number; payment_nequi: number; payment_bancolombia: number; latoneria_operator_pay?: number }) =>
-      apiFetch<ApiPatioEntry>(`/patio/${id}/advance`, { method: 'POST', body: JSON.stringify(payment ?? {}) }),
+    advance: (
+      id: number,
+      payload?: {
+        payment_cash?: number
+        payment_datafono?: number
+        payment_nequi?: number
+        payment_bancolombia?: number
+        latoneria_operator_pay?: number
+        is_client_credit?: boolean
+      }
+    ) =>
+      apiFetch<ApiPatioEntry>(`/patio/${id}/advance`, { method: 'POST', body: JSON.stringify(payload ?? {}) }),
     edit: (id: number, payload: PatioPatchPayload) =>
       apiFetch<ApiPatioEntry>(`/patio/${id}`, { method: 'PATCH', body: JSON.stringify(payload) }),
     cancel: (id: number) =>
@@ -608,11 +638,13 @@ export const api = {
       apiFetch<void>(`/egresos/${id}`, { method: 'DELETE' }),
   },
   clients: {
-    list: (search?: string) => {
-      const qs = search ? `?search=${encodeURIComponent(search)}` : ''
-      return apiFetch<ApiClient[]>(`/clients${qs}`)
-    },
+    list: (search?: string) =>
+      apiFetch<ApiClient[]>(`/clients${search ? `?search=${encodeURIComponent(search)}` : ''}`),
     patch: (id: number, payload: ClientPatchPayload) =>
       apiFetch<ApiClient>(`/clients/${id}`, { method: 'PATCH', body: JSON.stringify(payload) }),
+    getCredits: (id: number) =>
+      apiFetch<ApiClientCredit[]>(`/clients/${id}/credits`),
+    payCredits: (id: number, payload: ClientCreditPaymentPayload) =>
+      apiFetch<ApiClientCredit[]>(`/clients/${id}/credits/pay`, { method: 'POST', body: JSON.stringify(payload) }),
   },
 }
