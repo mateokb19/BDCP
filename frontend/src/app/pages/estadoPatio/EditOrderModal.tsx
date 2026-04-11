@@ -103,8 +103,8 @@ export function EditOrderModal({
               <div className="flex items-center gap-2">
                 <p className="text-xs text-gray-500 uppercase tracking-wider">Operarios asignados</p>
                 {hasConfirmedItems && (
-                  <span className="flex items-center gap-1 text-[10px] text-yellow-500/80 bg-yellow-500/10 border border-yellow-500/20 rounded-full px-2 py-0.5">
-                    🔒 Bloqueado — hay servicios confirmados
+                  <span className="flex items-center gap-1 text-[10px] text-green-400/80 bg-green-500/10 border border-green-500/20 rounded-full px-2 py-0.5">
+                    ✓ Listo para liquidar
                   </span>
                 )}
               </div>

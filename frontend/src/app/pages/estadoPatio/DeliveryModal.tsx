@@ -94,20 +94,20 @@ export function DeliveryModal({
           </p>
         </div>
 
-        {/* Detallado operator selector — locked once items are confirmed */}
+        {/* Detallado operator selector — locked only when confirmed AND already assigned */}
         {deliveryOps.length > 0 && (
           <div className="space-y-2">
             <div className="flex items-center gap-2">
-              <p className="text-xs text-gray-500 uppercase tracking-wider">Operario</p>
-              {hasConfirmedItems && (
-                <span className="flex items-center gap-1 text-[10px] text-yellow-500/80 bg-yellow-500/10 border border-yellow-500/20 rounded-full px-2 py-0.5">
-                  🔒 Ya liquidado
+              <p className="text-xs text-gray-500 uppercase tracking-wider">Operario *</p>
+              {hasConfirmedItems && !!deliveryOpId && (
+                <span className="flex items-center gap-1 text-[10px] text-green-400/80 bg-green-500/10 border border-green-500/20 rounded-full px-2 py-0.5">
+                  ✓ Listo para liquidar
                 </span>
               )}
             </div>
-            {hasConfirmedItems ? (
+            {hasConfirmedItems && !!deliveryOpId ? (
               <p className="text-sm text-gray-200 px-1">
-                {deliveryOps.find(o => String(o.id) === deliveryOpId)?.name ?? '—'}
+                {deliveryOps.find(o => String(o.id) === deliveryOpId)?.name}
               </p>
             ) : (
               <Select
@@ -239,7 +239,7 @@ export function DeliveryModal({
                 onClick={() => setCreditConfirm(true)}
                 className="w-full text-left text-xs text-gray-500 hover:text-orange-400 transition-colors py-1 underline underline-offset-2"
               >
-                El cliente debe este valor
+                Servicio fiado
               </button>
             ) : (
               <div className="rounded-xl border border-orange-500/30 bg-orange-500/10 px-4 py-3 space-y-3">
