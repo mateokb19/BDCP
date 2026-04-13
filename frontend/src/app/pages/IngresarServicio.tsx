@@ -240,6 +240,17 @@ export default function IngresarServicio() {
     customPrices: {}, warrantyServiceIds: [], downpayment: '', downpaymentMethod: '', isWarranty: false,
   })
 
+  // Pintura parcial toggles (service_id → true = parcial)
+  const [pinturaPartial, setPinturaPartial] = useState<Record<number, boolean>>({})
+  const PARCIAL_ELIGIBLE = new Set([
+    'Bumper', 'Capó',
+    'Guardafango Der.', 'Guardafango Izq.',
+    'Costado Der.', 'Costado Izq.',
+    'Puerta piloto', 'Puerta copiloto',
+    'Puerta pasajero Der.', 'Puerta pasajero Izq.',
+    'Puerta baúl',
+  ])
+
   // Custom "otro" services
   const [customServices, setCustomServices] = useState<{ name: string; price: string }[]>([])
   const [otroOpen, setOtroOpen] = useState(false)
@@ -345,6 +356,10 @@ export default function IngresarServicio() {
         ? f.selectedServices.filter(s => s !== id)
         : [...f.selectedServices, id],
     }))
+    // Clear parcial state when deselecting
+    if (pinturaPartial[id]) {
+      setPinturaPartial(p => { const n = { ...p }; delete n[id]; return n })
+    }
   }
 
   function hasPartSelector(service: Service): boolean {
@@ -362,6 +377,7 @@ export default function IngresarServicio() {
   }
   function getEffectivePrice(service: Service): number {
     if (form.warrantyServiceIds.includes(service.id)) return 0
+    if (pinturaPartial[service.id]) return 220000
     const isPpfPol = service.category === 'ppf' || service.category === 'polarizado'
     const qty = isPpfPol ? 1 : (isCountableOtro(service) || hasPartSelector(service)) ? getPartQty(service.id) : 1
     const custom = form.customPrices[service.id]
@@ -464,7 +480,16 @@ export default function IngresarServicio() {
         .filter((s): s is Service => !!s && isCountableOtro(s) && getPartQty(s.id) > 1 && !form.warrantyServiceIds.includes(s.id))
         .map(s => ({ service_id: s.id, unit_price: getStandardPrice(s) * getPartQty(s.id) }))
 
-      const itemOverrides = [...customOverrides, ...warrantyOverrides, ...customOverridesOtro, ...countableOtroOverrides]
+      // Parcial pintura overrides — half price + half standard_price for liquidation
+      const parcialOverrides = Object.entries(pinturaPartial)
+        .filter(([id, isPartial]) => isPartial && form.selectedServices.includes(Number(id)))
+        .map(([id]) => {
+          const s = services.find(s => s.id === Number(id))!
+          // unit_price and standard_price_override both fixed at 220000 (½ pieza rate)
+          return { service_id: Number(id), unit_price: 220000, standard_price_override: 220000, custom_name: `Parcial ${s.name}` }
+        })
+
+      const itemOverrides = [...customOverrides, ...warrantyOverrides, ...customOverridesOtro, ...countableOtroOverrides, ...parcialOverrides]
       const allServiceIds = [...form.selectedServices, ...customIds]
 
       const scheduledDeliveryAt = form.deliveryDate
@@ -502,7 +527,7 @@ export default function IngresarServicio() {
       }
       setStep(1); setPrevStep(1); setVehicleType(null); setExpandedAreas(new Set()); setPartQuantities({})
       setForm({ plate: '', brand: '', model: '', color: '', clientName: '', clientPhone: '', selectedServices: [], notes: '', entryDate: TODAY, deliveryDate: '', deliveryTime: '', customPrices: {}, warrantyServiceIds: [], downpayment: '', downpaymentMethod: '', isWarranty: false })
-      setCustomServices([]); setOtroOpen(false)
+      setCustomServices([]); setOtroOpen(false); setPinturaPartial({})
       setBrandQuery(''); setLatOperatorPays({})
       navigate('/')
     } catch (err) {
@@ -850,18 +875,42 @@ export default function IngresarServicio() {
                                       <p className="text-[11px] text-gray-600 mb-3">¼ pieza $110.000 · ½ pieza $220.000 · 1 pieza $440.000 · 1½ piezas $660.000 · 2 piezas $880.000</p>
                                       <div className="space-y-1 max-h-72 overflow-y-auto pr-1">
                                         {services.filter(s => s.category === 'pintura').map(service => {
-                                          const price   = getStandardPrice(service)
-                                          const checked = form.selectedServices.includes(service.id)
-                                          const pieces  = price >= 800000 ? '2 piezas' : price >= 600000 ? '1½ piezas' : price >= 400000 ? '1 pieza' : price >= 150000 ? '½ pieza' : '¼ pieza'
+                                          const fullPrice   = getStandardPrice(service)
+                                          const checked     = form.selectedServices.includes(service.id)
+                                          const canPartial  = PARCIAL_ELIGIBLE.has(service.name)
+                                          const isPartial   = !!pinturaPartial[service.id]
+                                          const displayPrice = isPartial ? 220000 : fullPrice
+                                          const piecesPrice = isPartial ? 220000 : displayPrice
+                                          const pieces = piecesPrice >= 800000 ? '2 piezas' : piecesPrice >= 600000 ? '1½ piezas' : piecesPrice >= 400000 ? '1 pieza' : piecesPrice >= 150000 ? '½ pieza' : '¼ pieza'
                                           return (
-                                            <motion.label key={service.id} whileHover={{ x: 2 }}
-                                              className="flex items-center gap-3 rounded-lg px-2 py-1.5 cursor-pointer hover:bg-white/5 transition-colors">
-                                              <input type="checkbox" checked={checked} onChange={() => toggleService(service.id)}
-                                                className="w-4 h-4 rounded accent-yellow-400 cursor-pointer shrink-0" />
-                                              <span className="flex-1 text-sm text-gray-200">{service.name}</span>
-                                              <span className="text-xs text-gray-500 shrink-0">{pieces}</span>
-                                              <span className="text-sm font-medium text-yellow-400 shrink-0">${price.toLocaleString('es-CO')}</span>
-                                            </motion.label>
+                                            <div key={service.id} className="rounded-lg hover:bg-white/5 transition-colors">
+                                              <motion.label whileHover={{ x: 2 }}
+                                                className="flex items-center gap-3 px-2 py-1.5 cursor-pointer">
+                                                <input type="checkbox" checked={checked} onChange={() => toggleService(service.id)}
+                                                  className="w-4 h-4 rounded accent-yellow-400 cursor-pointer shrink-0" />
+                                                <span className="flex-1 text-sm text-gray-200">{service.name}</span>
+                                                <span className="text-xs text-gray-500 shrink-0">{pieces}</span>
+                                                <span className="text-sm font-medium text-yellow-400 shrink-0">${displayPrice.toLocaleString('es-CO')}</span>
+                                              </motion.label>
+                                              {checked && canPartial && (
+                                                <div className="flex gap-1 px-2 pb-1.5 pl-9">
+                                                  <button type="button"
+                                                    onClick={() => setPinturaPartial(p => ({ ...p, [service.id]: false }))}
+                                                    className={cn('px-2.5 py-0.5 rounded-full text-[11px] font-medium transition-colors border',
+                                                      !isPartial ? 'bg-yellow-500/20 border-yellow-500/40 text-yellow-300' : 'bg-white/5 border-white/10 text-gray-500 hover:text-gray-300'
+                                                    )}>
+                                                    Completa
+                                                  </button>
+                                                  <button type="button"
+                                                    onClick={() => setPinturaPartial(p => ({ ...p, [service.id]: true }))}
+                                                    className={cn('px-2.5 py-0.5 rounded-full text-[11px] font-medium transition-colors border',
+                                                      isPartial ? 'bg-orange-500/20 border-orange-500/40 text-orange-300' : 'bg-white/5 border-white/10 text-gray-500 hover:text-gray-300'
+                                                    )}>
+                                                    Parcial
+                                                  </button>
+                                                </div>
+                                              )}
+                                            </div>
                                           )
                                         })}
                                       </div>
@@ -1254,6 +1303,9 @@ export default function IngresarServicio() {
                               {categoryLabels[s.category] ?? s.category}
                             </Badge>
                             <span className="text-sm text-gray-200 truncate">{s.name}</span>
+                            {pinturaPartial[s.id] && (
+                              <span className="shrink-0 text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-orange-500/15 border border-orange-500/30 text-orange-300">½ pieza</span>
+                            )}
                           </div>
                           {/* Row 2: price + actions (right-aligned) */}
                           <div className="flex items-center justify-end gap-2 mt-1.5">

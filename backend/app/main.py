@@ -153,10 +153,14 @@ with engine.connect() as _conn:
     _conn.execute(text(
         "UPDATE services SET category = 'exterior' WHERE name IN ('Lavado Motor', 'Lavado Chasis') AND category = 'otro'"
     ))
+    # Remove 'Parcial bumper' from pintura (parcial is now handled via item_overrides toggle)
+    _conn.execute(text(
+        "DELETE FROM services WHERE name = 'Parcial bumper' AND category = 'pintura'"
+    ))
     _conn.commit()
 
 
-_EXPECTED_SERVICES = 101
+_EXPECTED_SERVICES = 100
 
 _SERVICES_SEED = [
     # ── Servicios Básicos / Exterior ─────────────────────────────────────
@@ -199,7 +203,6 @@ _SERVICES_SEED = [
     dict(category="polarizado", name="Polarizado Llumar IRX / ATR", price_automovil=0, price_camion_estandar=0, price_camion_xl=0),
     # ── Pintura (precio por pieza, igual para todos los tipos) ───────────────
     dict(category="pintura", name="Bumper",                 price_automovil=440000, price_camion_estandar=440000, price_camion_xl=440000),
-    dict(category="pintura", name="Parcial bumper",         price_automovil=220000, price_camion_estandar=220000, price_camion_xl=220000),
     dict(category="pintura", name="Capó",                   price_automovil=880000, price_camion_estandar=880000, price_camion_xl=880000),
     dict(category="pintura", name="Guardafango Der.",        price_automovil=440000, price_camion_estandar=440000, price_camion_xl=440000),
     dict(category="pintura", name="Guardafango Izq.",        price_automovil=440000, price_camion_estandar=440000, price_camion_xl=440000),

@@ -90,9 +90,10 @@ class OrderItemIn(BaseModel):
 
 
 class ItemOverride(BaseModel):
-    service_id:  int
-    unit_price:  Decimal
-    custom_name: Optional[str] = None
+    service_id:              int
+    unit_price:              Decimal
+    custom_name:             Optional[str]     = None
+    standard_price_override: Optional[Decimal] = None
 
 
 class LatOperatorPayItem(BaseModel):

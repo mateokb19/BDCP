@@ -17,7 +17,7 @@ export interface NewOrderPayload {
   downpayment?: number
   downpaymentMethod?: string
   isWarranty?: boolean
-  itemOverrides?: { service_id: number; unit_price: number }[]
+  itemOverrides?: { service_id: number; unit_price: number; standard_price_override?: number }[]
   latoneraOperatorPays?: { service_id: number; amount: number }[]
 }
 

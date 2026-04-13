@@ -113,8 +113,14 @@ def create_order(payload: schemas.OrderCreate, db: Session = Depends(get_db)):
         display_std  = _get_service_price(svc, payload.vehicle_type)
         price        = ov.unit_price if ov else display_std
         name         = (ov.custom_name or svc.name) if ov else svc.name
-        # For motos, standard_price (commission base) = automovil price, not moto price
-        std_price    = svc.price_automovil if payload.vehicle_type == "moto" else display_std
+        # For motos, standard_price (commission base) = automovil price, not moto price.
+        # standard_price_override (e.g. parcial pintura) takes highest priority.
+        if ov and ov.standard_price_override is not None:
+            std_price = ov.standard_price_override
+        elif payload.vehicle_type == "moto":
+            std_price = svc.price_automovil
+        else:
+            std_price = display_std
         if price < display_std:
             discount += display_std - price
         item_rows.append(models.ServiceOrderItem(
