@@ -168,7 +168,7 @@ Se aceptan 4 métodos de pago:
 
 ## 🔐 Seguridad
 
-- **Liquidación**: Protegida con clave `BDCP123`
+- **Liquidación**: Protegida con clave 
 - **Modo Admin**: Acceso a órdenes PPF/Polarizado requiere clave
 - **Datos**: Almacenados en PostgreSQL con backup automático
 - **HTTPS**: Recomendado en producción (no configurado por defecto)
