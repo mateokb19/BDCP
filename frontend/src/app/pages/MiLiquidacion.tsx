@@ -1,10 +1,10 @@
 import { useState, useEffect, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
-  ShieldCheck, Lock, ChevronLeft, ChevronDown, ChevronUp,
+  ShieldCheck, Lock, ChevronLeft, ChevronRight, ChevronDown, ChevronUp,
   AlertCircle, CheckCircle2, Info,
 } from 'lucide-react'
-import { format, parseISO } from 'date-fns'
+import { format, parseISO, addDays } from 'date-fns'
 import { es } from 'date-fns/locale'
 import { toast } from 'sonner'
 import { GlassCard } from '@/app/components/ui/GlassCard'
@@ -31,12 +31,9 @@ function CedulaModal({
   const [cedula, setCedula] = useState('')
   const [shake,  setShake]  = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
+  const color    = OP_COLORS[0]
 
-  useEffect(() => {
-    setTimeout(() => inputRef.current?.focus(), 80)
-  }, [])
-
-  const color  = OP_COLORS[0]
+  useEffect(() => { setTimeout(() => inputRef.current?.focus(), 80) }, [])
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -97,31 +94,38 @@ function CedulaModal({
   )
 }
 
-// ── Week summary (read-only) ──────────────────────────────────────────────────
+// ── Week detail (read-only, with navigation) ──────────────────────────────────
 
-function WeekSummary({
+function WeekDetail({
   operator,
   weekData,
+  weekLoading,
+  weekOffset,
   debts,
   onBack,
+  onOffsetChange,
 }: {
   operator: Operator
-  weekData: ApiLiqWeekResponse
+  weekData: ApiLiqWeekResponse | null
+  weekLoading: boolean
+  weekOffset: number
   debts: ApiDebt[]
   onBack: () => void
+  onOffsetChange: (offset: number) => void
 }) {
   const [openDays, setOpenDays] = useState<Set<string>>(new Set())
-  const opIdx   = 0
-  const color   = OP_COLORS[0]
+  const color     = OP_COLORS[0]
   const typeStyle = OP_TYPE_STYLE[operator.operator_type ?? 'detallado']
 
-  const weekStart = parseISO(weekData.week_start)
-  const weekEnd   = parseISO(weekData.week_end)
+  // Reset expanded days when week changes
+  useEffect(() => { setOpenDays(new Set()) }, [weekOffset])
 
-  const pendingDebts = debts.filter(d => d.direction === 'operario_empresa' && !d.paid)
+  const weekStart = getWeekStart(weekOffset)
+  const weekEnd   = addDays(weekStart, 6)
+
+  const pendingDebts     = debts.filter(d => d.direction === 'operario_empresa' && !d.paid)
   const pendingDebtTotal = pendingDebts.reduce((s, d) => s + Number(d.amount) - Number(d.paid_amount), 0)
-
-  const estimatedNet = Math.max(0, Number(weekData.commission_amount) - pendingDebtTotal)
+  const estimatedNet     = weekData ? Math.max(0, Number(weekData.commission_amount) - pendingDebtTotal) : 0
 
   function toggleDay(date: string) {
     setOpenDays(prev => {
@@ -141,8 +145,9 @@ function WeekSummary({
         <ChevronLeft size={16} /> Operarios
       </button>
 
-      {/* Header card */}
-      <GlassCard padding className="space-y-3">
+      {/* Operator + week nav */}
+      <GlassCard padding className="space-y-4">
+        {/* Operator identity */}
         <div className="flex items-center gap-3">
           <div className={cn('rounded-2xl p-3 text-xl font-bold leading-none min-w-[48px] text-center shrink-0', color.bg, color.text)}>
             {getInitials(operator.name)}
@@ -157,168 +162,193 @@ function WeekSummary({
           </div>
         </div>
 
-        {/* Week range */}
-        <div className="text-sm text-gray-400">
-          Semana{' '}
-          <span className="text-gray-200 font-medium">
-            {format(weekStart, "d 'de' MMMM", { locale: es })}
-          </span>
-          {' – '}
-          <span className="text-gray-200 font-medium">
-            {format(weekEnd, "d 'de' MMMM", { locale: es })}
-          </span>
+        {/* Week navigation */}
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => onOffsetChange(weekOffset - 1)}
+            className="rounded-xl bg-white/5 p-2.5 text-gray-400 hover:bg-white/10 hover:text-white transition-colors"
+          >
+            <ChevronLeft size={16} />
+          </button>
+          <div className="flex-1 text-center">
+            <div className="text-sm font-semibold text-white">
+              {format(weekStart, "d MMM", { locale: es })}
+              {' – '}
+              {format(weekEnd, "d MMM yyyy", { locale: es })}
+            </div>
+            {weekOffset === 0 && (
+              <div className="text-xs text-yellow-500 mt-0.5">Semana actual</div>
+            )}
+            {weekOffset < 0 && (
+              <div className="text-xs text-gray-500 mt-0.5">
+                Hace {Math.abs(weekOffset)} semana{Math.abs(weekOffset) > 1 ? 's' : ''}
+              </div>
+            )}
+          </div>
+          <button
+            onClick={() => onOffsetChange(weekOffset + 1)}
+            disabled={weekOffset >= 0}
+            className="rounded-xl bg-white/5 p-2.5 text-gray-400 hover:bg-white/10 hover:text-white transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+          >
+            <ChevronRight size={16} />
+          </button>
         </div>
 
         {/* KPIs */}
-        <div className="grid grid-cols-3 gap-3 pt-1">
-          <div className="rounded-xl bg-white/4 px-3 py-2.5 text-center">
-            <div className="text-xs text-gray-500 mb-1">Servicios</div>
-            <div className="text-lg font-bold text-white">{weekData.week_services}</div>
-          </div>
-          <div className="rounded-xl bg-white/4 px-3 py-2.5 text-center">
-            <div className="text-xs text-gray-500 mb-1">
-              {operator.operator_type === 'pintura' ? 'Piezas' : 'Base'}
+        {weekLoading ? (
+          <div className="text-center py-4 text-gray-500 text-sm">Cargando...</div>
+        ) : weekData ? (
+          <>
+            <div className="grid grid-cols-3 gap-3">
+              <div className="rounded-xl bg-white/4 px-3 py-2.5 text-center">
+                <div className="text-xs text-gray-500 mb-1">Servicios</div>
+                <div className="text-lg font-bold text-white">{weekData.week_services}</div>
+              </div>
+              <div className="rounded-xl bg-white/4 px-3 py-2.5 text-center">
+                <div className="text-xs text-gray-500 mb-1">
+                  {operator.operator_type === 'pintura' ? 'Piezas' : 'Base'}
+                </div>
+                <div className="text-sm font-bold text-white">
+                  {operator.operator_type === 'pintura'
+                    ? weekData.piece_count ?? '0'
+                    : `$${cop(weekData.commission_base)}`
+                  }
+                </div>
+              </div>
+              <div className="rounded-xl bg-yellow-500/10 border border-yellow-500/20 px-3 py-2.5 text-center">
+                <div className="text-xs text-yellow-500/70 mb-1">Comisión</div>
+                <div className="text-sm font-bold text-yellow-400">${cop(weekData.commission_amount)}</div>
+              </div>
             </div>
-            <div className="text-sm font-bold text-white">
-              {operator.operator_type === 'pintura'
-                ? weekData.piece_count ?? '0'
-                : `$${cop(weekData.commission_base)}`
-              }
-            </div>
-          </div>
-          <div className="rounded-xl bg-yellow-500/10 border border-yellow-500/20 px-3 py-2.5 text-center">
-            <div className="text-xs text-yellow-500/70 mb-1">Comisión</div>
-            <div className="text-sm font-bold text-yellow-400">${cop(weekData.commission_amount)}</div>
-          </div>
-        </div>
 
-        {/* Ceramic bonus */}
-        {Number(weekData.ceramic_bonus_total ?? 0) > 0 && (
-          <div className="flex items-center justify-between rounded-xl bg-purple-500/10 border border-purple-500/20 px-3 py-2 text-sm">
-            <span className="text-purple-300">Bonos cerámico</span>
-            <span className="font-medium text-purple-300">+${cop(weekData.ceramic_bonus_total!)}</span>
-          </div>
-        )}
-
-        {/* Pending debts */}
-        {pendingDebtTotal > 0 && (
-          <div className="flex items-center justify-between rounded-xl bg-red-500/10 border border-red-500/20 px-3 py-2 text-sm">
-            <span className="text-red-400 flex items-center gap-1.5">
-              <AlertCircle size={14} /> Deuda pendiente
-            </span>
-            <span className="font-medium text-red-400">-${cop(pendingDebtTotal)}</span>
-          </div>
-        )}
-
-        {/* Estimated net */}
-        {pendingDebtTotal > 0 && (
-          <div className="flex items-center justify-between rounded-xl bg-green-500/10 border border-green-500/20 px-3 py-2.5 text-sm">
-            <span className="text-green-400 font-medium">Estimado neto</span>
-            <span className="text-lg font-bold text-green-400">${cop(estimatedNet)}</span>
-          </div>
-        )}
-
-        {/* Liquidated badge */}
-        {weekData.is_liquidated && (
-          <div className="flex items-center gap-2 rounded-xl bg-emerald-500/10 border border-emerald-500/20 px-3 py-2 text-sm text-emerald-400">
-            <CheckCircle2 size={14} />
-            <span>Esta semana ya fue liquidada</span>
-            {weekData.net_amount && (
-              <span className="ml-auto font-semibold">${cop(weekData.net_amount)}</span>
+            {/* Ceramic bonus */}
+            {Number(weekData.ceramic_bonus_total ?? 0) > 0 && (
+              <div className="flex items-center justify-between rounded-xl bg-purple-500/10 border border-purple-500/20 px-3 py-2 text-sm">
+                <span className="text-purple-300">Bonos cerámico</span>
+                <span className="font-medium text-purple-300">+${cop(weekData.ceramic_bonus_total!)}</span>
+              </div>
             )}
-          </div>
-        )}
 
-        {/* Disclaimer */}
-        {!weekData.is_liquidated && (
-          <div className="flex items-start gap-2 rounded-xl bg-white/3 px-3 py-2 text-xs text-gray-500">
-            <Info size={13} className="shrink-0 mt-0.5" />
-            <span>Este es un estimado. La liquidación final la confirma la administración al finalizar la semana.</span>
-          </div>
-        )}
+            {/* Debts */}
+            {pendingDebtTotal > 0 && (
+              <div className="flex items-center justify-between rounded-xl bg-red-500/10 border border-red-500/20 px-3 py-2 text-sm">
+                <span className="text-red-400 flex items-center gap-1.5">
+                  <AlertCircle size={14} /> Deuda pendiente
+                </span>
+                <span className="font-medium text-red-400">-${cop(pendingDebtTotal)}</span>
+              </div>
+            )}
+
+            {/* Net */}
+            {pendingDebtTotal > 0 && (
+              <div className="flex items-center justify-between rounded-xl bg-green-500/10 border border-green-500/20 px-3 py-2.5 text-sm">
+                <span className="text-green-400 font-medium">Estimado neto</span>
+                <span className="text-lg font-bold text-green-400">${cop(estimatedNet)}</span>
+              </div>
+            )}
+
+            {/* Liquidated */}
+            {weekData.is_liquidated ? (
+              <div className="flex items-center gap-2 rounded-xl bg-emerald-500/10 border border-emerald-500/20 px-3 py-2 text-sm text-emerald-400">
+                <CheckCircle2 size={14} />
+                <span>Semana liquidada</span>
+                {weekData.net_amount && (
+                  <span className="ml-auto font-semibold">${cop(weekData.net_amount)}</span>
+                )}
+              </div>
+            ) : (
+              <div className="flex items-start gap-2 rounded-xl bg-white/3 px-3 py-2 text-xs text-gray-500">
+                <Info size={13} className="shrink-0 mt-0.5" />
+                <span>Estimado — la liquidación final la confirma la administración.</span>
+              </div>
+            )}
+          </>
+        ) : null}
       </GlassCard>
 
       {/* Days breakdown */}
-      <div className="space-y-2">
-        {weekData.days.filter(d => d.orders.length > 0).map(day => (
-          <GlassCard key={day.date} padding={false} className="overflow-hidden">
-            <button
-              onClick={() => toggleDay(day.date)}
-              className="w-full flex items-center justify-between px-4 py-3 hover:bg-white/3 transition-colors"
-            >
-              <div className="flex items-center gap-3">
-                <div className="text-sm font-medium text-gray-200 capitalize">
-                  {day.day_name}
-                  <span className="text-gray-500 ml-2 text-xs font-normal">
-                    {format(parseISO(day.date), 'd MMM', { locale: es })}
+      {!weekLoading && weekData && (
+        <div className="space-y-2">
+          {weekData.days.filter(d => d.orders.length > 0).map(day => (
+            <GlassCard key={day.date} padding={false} className="overflow-hidden">
+              <button
+                onClick={() => toggleDay(day.date)}
+                className="w-full flex items-center justify-between px-4 py-3 hover:bg-white/3 transition-colors"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="text-sm font-medium text-gray-200 capitalize">
+                    {day.day_name}
+                    <span className="text-gray-500 ml-2 text-xs font-normal">
+                      {format(parseISO(day.date), 'd MMM', { locale: es })}
+                    </span>
+                  </div>
+                  <span className="text-xs bg-white/6 text-gray-400 rounded-full px-2 py-0.5">
+                    {day.orders.length} orden{day.orders.length !== 1 ? 'es' : ''}
                   </span>
                 </div>
-                <span className="text-xs bg-white/6 text-gray-400 rounded-full px-2 py-0.5">
-                  {day.orders.length} orden{day.orders.length !== 1 ? 'es' : ''}
-                </span>
-              </div>
-              <div className="flex items-center gap-3">
-                <span className="text-sm font-medium text-yellow-400">${cop(day.day_total)}</span>
-                {openDays.has(day.date)
-                  ? <ChevronUp size={16} className="text-gray-500" />
-                  : <ChevronDown size={16} className="text-gray-500" />
-                }
-              </div>
-            </button>
+                <div className="flex items-center gap-3">
+                  <span className="text-sm font-medium text-yellow-400">${cop(day.day_total)}</span>
+                  {openDays.has(day.date)
+                    ? <ChevronUp size={16} className="text-gray-500" />
+                    : <ChevronDown size={16} className="text-gray-500" />
+                  }
+                </div>
+              </button>
 
-            <AnimatePresence>
-              {openDays.has(day.date) && (
-                <motion.div
-                  initial={{ height: 0, opacity: 0 }}
-                  animate={{ height: 'auto', opacity: 1 }}
-                  exit={{ height: 0, opacity: 0 }}
-                  transition={{ duration: 0.2 }}
-                  className="overflow-hidden border-t border-white/6"
-                >
-                  <div className="divide-y divide-white/4">
-                    {day.orders.map(order => (
-                      <div key={order.order_id} className="px-4 py-3 space-y-2">
-                        <div className="flex items-center justify-between gap-2">
-                          <div className="text-sm text-gray-300 font-medium">
-                            {order.vehicle_brand} {order.vehicle_model}
-                            <span className="ml-1.5 text-xs text-gray-500 font-mono">{order.vehicle_plate}</span>
-                          </div>
-                          <span className={cn(
-                            'text-xs px-2 py-0.5 rounded-full border',
-                            order.is_liquidated
-                              ? 'text-emerald-400 border-emerald-500/30 bg-emerald-500/10'
-                              : 'text-gray-400 border-white/10 bg-white/4',
-                          )}>
-                            {order.is_liquidated ? 'Liquidado' : (PATIO_STATUS_LABEL[order.patio_status] ?? order.patio_status)}
-                          </span>
-                        </div>
-                        <div className="space-y-1">
-                          {order.items.map((item, i) => (
-                            <div key={i} className="flex items-center justify-between text-xs text-gray-400">
-                              <span>{item.service_name}</span>
-                              <span>${cop(item.subtotal)}</span>
+              <AnimatePresence>
+                {openDays.has(day.date) && (
+                  <motion.div
+                    initial={{ height: 0, opacity: 0 }}
+                    animate={{ height: 'auto', opacity: 1 }}
+                    exit={{ height: 0, opacity: 0 }}
+                    transition={{ duration: 0.2 }}
+                    className="overflow-hidden border-t border-white/6"
+                  >
+                    <div className="divide-y divide-white/4">
+                      {day.orders.map(order => (
+                        <div key={order.order_id} className="px-4 py-3 space-y-2">
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="text-sm text-gray-300 font-medium">
+                              {order.vehicle_brand} {order.vehicle_model}
+                              <span className="ml-1.5 text-xs text-gray-500 font-mono">{order.vehicle_plate}</span>
                             </div>
-                          ))}
+                            <span className={cn(
+                              'text-xs px-2 py-0.5 rounded-full border',
+                              order.is_liquidated
+                                ? 'text-emerald-400 border-emerald-500/30 bg-emerald-500/10'
+                                : 'text-gray-400 border-white/10 bg-white/4',
+                            )}>
+                              {order.is_liquidated ? 'Liquidado' : (PATIO_STATUS_LABEL[order.patio_status] ?? order.patio_status)}
+                            </span>
+                          </div>
+                          <div className="space-y-1">
+                            {order.items.map((item, i) => (
+                              <div key={i} className="flex items-center justify-between text-xs text-gray-400">
+                                <span>{item.service_name}</span>
+                                <span>${cop(item.subtotal)}</span>
+                              </div>
+                            ))}
+                          </div>
+                          <div className="flex justify-between text-xs pt-1 border-t border-white/6">
+                            <span className="text-gray-500">Base comisión</span>
+                            <span className="text-gray-200 font-medium">${cop(order.commission_base ?? order.total)}</span>
+                          </div>
                         </div>
-                        <div className="flex justify-between text-xs pt-1 border-t border-white/6">
-                          <span className="text-gray-500">Base</span>
-                          <span className="text-gray-200 font-medium">${cop(order.commission_base ?? order.total)}</span>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </motion.div>
-              )}
-            </AnimatePresence>
-          </GlassCard>
-        ))}
+                      ))}
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </GlassCard>
+          ))}
 
-        {weekData.days.every(d => d.orders.length === 0) && (
-          <div className="text-center py-10 text-gray-600 text-sm">
-            Sin órdenes esta semana
-          </div>
-        )}
-      </div>
+          {weekData.days.every(d => d.orders.length === 0) && (
+            <div className="text-center py-10 text-gray-600 text-sm">
+              Sin órdenes esta semana
+            </div>
+          )}
+        </div>
+      )}
     </div>
   )
 }
@@ -326,13 +356,14 @@ function WeekSummary({
 // ── Main page ─────────────────────────────────────────────────────────────────
 
 export default function MiLiquidacionPage() {
-  const [operators,     setOperators]     = useState<Operator[]>([])
-  const [opsLoading,    setOpsLoading]    = useState(true)
-  const [selectedOp,    setSelectedOp]    = useState<Operator | null>(null)
-  const [modalOp,       setModalOp]       = useState<Operator | null>(null)
-  const [weekData,      setWeekData]      = useState<ApiLiqWeekResponse | null>(null)
-  const [debts,         setDebts]         = useState<ApiDebt[]>([])
-  const [weekLoading,   setWeekLoading]   = useState(false)
+  const [operators,   setOperators]   = useState<Operator[]>([])
+  const [opsLoading,  setOpsLoading]  = useState(true)
+  const [selectedOp,  setSelectedOp]  = useState<Operator | null>(null)
+  const [modalOp,     setModalOp]     = useState<Operator | null>(null)
+  const [weekOffset,  setWeekOffset]  = useState(0)
+  const [weekData,    setWeekData]    = useState<ApiLiqWeekResponse | null>(null)
+  const [weekLoading, setWeekLoading] = useState(false)
+  const [debts,       setDebts]       = useState<ApiDebt[]>([])
 
   useEffect(() => {
     api.operators.list(false)
@@ -341,46 +372,48 @@ export default function MiLiquidacionPage() {
       .finally(() => setOpsLoading(false))
   }, [])
 
+  // Re-fetch week data when operator or offset changes
+  useEffect(() => {
+    if (!selectedOp) return
+    setWeekLoading(true)
+    setWeekData(null)
+    const ws = format(getWeekStart(weekOffset), 'yyyy-MM-dd')
+    api.liquidation.getWeek(selectedOp.id, ws)
+      .then(setWeekData)
+      .catch(() => toast.error('Error al cargar semana'))
+      .finally(() => setWeekLoading(false))
+  }, [selectedOp, weekOffset])
+
   async function handleCedulaSuccess() {
     if (!modalOp) return
     setModalOp(null)
-    setWeekLoading(true)
+    setWeekOffset(0)
+    setSelectedOp(modalOp)
+    // Fetch debts once (independent of week)
+    api.liquidation.listDebts(modalOp.id)
+      .then(setDebts)
+      .catch(() => {})
+  }
+
+  function handleBack() {
+    setSelectedOp(null)
     setWeekData(null)
     setDebts([])
-    setSelectedOp(modalOp)
-    try {
-      const ws = format(getWeekStart(0), 'yyyy-MM-dd')
-      const [week, opDebts] = await Promise.all([
-        api.liquidation.getWeek(modalOp.id, ws),
-        api.liquidation.listDebts(modalOp.id),
-      ])
-      setWeekData(week)
-      setDebts(opDebts)
-    } catch {
-      toast.error('Error al cargar liquidación')
-      setSelectedOp(null)
-    } finally {
-      setWeekLoading(false)
-    }
+    setWeekOffset(0)
   }
 
   // ── Detail view ───────────────────────────────────────────────────────────
-  if (selectedOp && weekData) {
+  if (selectedOp) {
     return (
-      <WeekSummary
+      <WeekDetail
         operator={selectedOp}
         weekData={weekData}
+        weekLoading={weekLoading}
+        weekOffset={weekOffset}
         debts={debts}
-        onBack={() => { setSelectedOp(null); setWeekData(null); setDebts([]) }}
+        onBack={handleBack}
+        onOffsetChange={setWeekOffset}
       />
-    )
-  }
-
-  if (selectedOp && weekLoading) {
-    return (
-      <div className="flex items-center justify-center min-h-[50vh]">
-        <div className="text-gray-500 text-sm">Cargando liquidación...</div>
-      </div>
     )
   }
 
@@ -394,7 +427,6 @@ export default function MiLiquidacionPage() {
 
   return (
     <div className="max-w-3xl mx-auto space-y-6">
-      {/* Cédula modal */}
       <AnimatePresence>
         {modalOp && (
           <CedulaModal
@@ -407,7 +439,7 @@ export default function MiLiquidacionPage() {
 
       <PageHeader
         title="Mi Liquidación"
-        subtitle="Selecciona tu nombre e ingresa tu cédula para ver tu estimado semanal"
+        subtitle="Selecciona tu nombre e ingresa tu cédula para ver tus semanas"
       />
 
       <GlassCard padding className="flex items-start gap-3 text-sm text-gray-400">
