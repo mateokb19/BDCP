@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
-  Lock, ChevronLeft, Check, Download, Phone, CreditCard, Calendar, Pencil, UserX, UserCheck,
+  ChevronLeft, Check, Download, Phone, CreditCard, Calendar, Pencil, UserX, UserCheck,
 } from 'lucide-react'
 import { format } from 'date-fns'
 import { toast } from 'sonner'
@@ -12,7 +12,7 @@ import { api, type ApiLiqWeekResponse, type ApiDebt, type LiquidatePayload, type
 import type { Operator } from '@/types'
 
 import {
-  CORRECT_PASSWORD, parseCOP, getWeekStart,
+  parseCOP, getWeekStart,
   getInitials,
   OP_COLORS, OP_TYPE_STYLE,
 } from './liquidacion/helpers'
@@ -27,9 +27,6 @@ import { OperatorGrid }   from './liquidacion/OperatorGrid'
 // ── Main page ─────────────────────────────────────────────────────────────────
 
 export default function LiquidacionPage() {
-  const [unlocked,    setUnlocked]    = useState(false)
-  const [pwd,         setPwd]         = useState('')
-  const [shake,       setShake]       = useState(false)
   const [operators,   setOperators]   = useState<Operator[]>([])
   const [opsLoading,  setOpsLoading]  = useState(true)
   const [selectedOp,  setSelectedOp]  = useState<number | null>(null)
@@ -66,12 +63,11 @@ export default function LiquidacionPage() {
   const [deactivateConfirm, setDeactivateConfirm] = useState(false)
 
   useEffect(() => {
-    if (!unlocked) return
     api.operators.list(true)
       .then(setOperators)
       .catch(() => toast.error('Error al cargar operarios'))
       .finally(() => setOpsLoading(false))
-  }, [unlocked])
+  }, [])
 
   useEffect(() => {
     if (selectedOp === null) return
@@ -91,18 +87,6 @@ export default function LiquidacionPage() {
       .then(setDebts)
       .catch(() => {})
   }, [selectedOp])
-
-  function handleLogin(e: React.FormEvent) {
-    e.preventDefault()
-    if (pwd === CORRECT_PASSWORD) {
-      setUnlocked(true)
-    } else {
-      setShake(true)
-      setTimeout(() => setShake(false), 600)
-      toast.error('Contraseña incorrecta')
-      setPwd('')
-    }
-  }
 
   function toggleDay(dateStr: string) {
     setOpenDays(prev => {
@@ -259,48 +243,6 @@ export default function LiquidacionPage() {
     const win  = window.open(url, '_blank')
     if (!win) { toast.error('Permite ventanas emergentes para descargar el PDF'); }
     setTimeout(() => URL.revokeObjectURL(url), 30_000)
-  }
-
-  // ── Lock screen ─────────────────────────────────────────────────────────────
-  if (!unlocked) {
-    return (
-      <div className="flex items-center justify-center min-h-[70vh]">
-        <motion.div
-          initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}
-          className="w-full max-w-sm"
-        >
-          <GlassCard padding className="space-y-6">
-            <div className="flex flex-col items-center gap-3">
-              <div className="rounded-2xl bg-yellow-500/10 p-4">
-                <Lock size={36} className="text-yellow-400" />
-              </div>
-              <div className="text-center">
-                <h2 className="text-xl font-semibold text-white">Acceso Restringido</h2>
-                <p className="text-sm text-gray-500 mt-1">Ingresa la contraseña para ver la liquidación</p>
-              </div>
-            </div>
-            <form onSubmit={handleLogin} className="space-y-4">
-              <motion.div
-                animate={shake ? { x: [0, -10, 10, -8, 8, -4, 4, 0] } : {}}
-                transition={{ duration: 0.5 }}
-              >
-                <input
-                  type="password"
-                  value={pwd}
-                  onChange={e => setPwd(e.target.value)}
-                  placeholder="••••••••"
-                  autoFocus
-                  className="w-full rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-center text-lg text-gray-100 placeholder:text-gray-600 tracking-widest focus:border-yellow-500/50 focus:outline-none focus:ring-2 focus:ring-yellow-500/20"
-                />
-              </motion.div>
-              <Button type="submit" variant="primary" size="lg" className="w-full">
-                Ingresar
-              </Button>
-            </form>
-          </GlassCard>
-        </motion.div>
-      </div>
-    )
   }
 
   // ── Operator detail ──────────────────────────────────────────────────────────

@@ -10,6 +10,7 @@ import IngresosEgresos   from '@/app/pages/IngresosEgresos'
 import Documentos        from '@/app/pages/Documentos'
 import Historial         from '@/app/pages/Historial'
 import Clientes          from '@/app/pages/Clientes'
+import MiLiquidacion     from '@/app/pages/MiLiquidacion'
 
 export const router = createBrowserRouter([
   {
@@ -26,6 +27,7 @@ export const router = createBrowserRouter([
       { path: 'documentos',        element: <Documentos /> },
       { path: 'historial',         element: <Historial /> },
       { path: 'clientes',          element: <Clientes /> },
+      { path: 'mi-liquidacion',    element: <MiLiquidacion /> },
     ],
   },
 ])
